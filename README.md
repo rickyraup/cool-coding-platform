@@ -71,11 +71,22 @@ npm run dev
 ```
 
 ### Backend Development
+
+**Quick Setup:**
 ```bash
 cd backend
-npm install
-cp .env.example .env  # Configure environment variables
-npm run dev
+./setup.sh  # Linux/macOS
+# or setup.bat on Windows
+```
+
+**Manual Setup:**
+```bash
+cd backend
+python3 -m venv venv
+source venv/bin/activate  # Linux/macOS
+# or venv\Scripts\activate.bat on Windows
+pip install -r requirements.txt
+python -m app.main
 ```
 
 ### Environment Variables
