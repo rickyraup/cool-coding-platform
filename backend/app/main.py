@@ -1,14 +1,20 @@
+"""Main FastAPI application for the Code Execution Platform."""
+
+import os
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from typing import Any
+
+import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import uvicorn
-import os
-from dotenv import load_dotenv
 
-from app.core.database import init_db
 from app.api import health, sessions
-from app.websockets.manager import WebSocketManager
+from app.core.database import init_db
 from app.websockets.handlers import handle_websocket_message
+from app.websockets.manager import WebSocketManager
+
 
 # Load environment variables
 load_dotenv()
@@ -17,7 +23,7 @@ load_dotenv()
 websocket_manager = WebSocketManager()
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     init_db()
     print("🗄️ Database initialized")
@@ -30,7 +36,7 @@ app = FastAPI(
     title="Code Execution Platform API",
     description="Backend API for the code execution platform with integrated terminal",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS middleware
@@ -47,32 +53,32 @@ app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket_manager.connect(websocket)
-    
+
     # Send welcome message
     await websocket_manager.send_personal_message(
-        websocket, 
+        websocket,
         {
             "type": "terminal_output",
             "sessionId": "system",
             "output": "Connected to Code Execution Platform\\n",
-            "timestamp": "2024-01-01T00:00:00Z"
-        }
+            "timestamp": "2024-01-01T00:00:00Z",
+        },
     )
-    
+
     try:
         while True:
             # Receive message from client
             data = await websocket.receive_json()
-            
+
             # Handle the message
             response = await handle_websocket_message(data, websocket)
-            
+
             # Send response back to client
             if response:
                 await websocket_manager.send_personal_message(websocket, response)
-                
+
     except WebSocketDisconnect:
         websocket_manager.disconnect(websocket)
         print("WebSocket client disconnected")
@@ -81,19 +87,19 @@ async def websocket_endpoint(websocket: WebSocket):
         websocket_manager.disconnect(websocket)
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, Any]:
     return {
         "message": "Code Execution Platform API",
         "status": "running",
-        "docs": "/docs"
+        "docs": "/docs",
     }
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(
-        "app.main:app", 
-        host="0.0.0.0", 
-        port=port, 
+        "app.main:app",
+        host="0.0.0.0",
+        port=port,
         reload=True,
-        log_level="info"
+        log_level="info",
     )

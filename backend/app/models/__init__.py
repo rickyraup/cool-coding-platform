@@ -1,11 +1,12 @@
 # Import all models to ensure they're registered with SQLAlchemy
 from .sessions import CodeSession, TerminalCommand
-from .users import User  
 from .submissions import CodeSubmission
+from .users import User
+
 
 __all__ = [
     "CodeSession",
-    "TerminalCommand", 
+    "CodeSubmission",
+    "TerminalCommand",
     "User",
-    "CodeSubmission"
 ]

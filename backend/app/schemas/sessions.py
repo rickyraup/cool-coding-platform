@@ -1,6 +1,8 @@
-from pydantic import BaseModel
-from typing import Optional, List
 from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel
+
 
 class SessionBase(BaseModel):
     user_id: Optional[str] = "anonymous"
@@ -19,7 +21,7 @@ class SessionData(SessionBase):
     id: str
     created_at: datetime
     updated_at: datetime
-    
+
     class Config:
         from_attributes = True
 

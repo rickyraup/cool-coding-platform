@@ -1,7 +1,9 @@
-from fastapi import APIRouter
-from datetime import datetime
-import psutil
 import os
+from datetime import datetime
+
+import psutil
+from fastapi import APIRouter
+
 
 router = APIRouter()
 
@@ -14,7 +16,7 @@ async def health_check():
         "uptime": psutil.boot_time(),
         "environment": os.getenv("ENVIRONMENT", "development"),
         "version": "1.0.0",
-        "message": "FastAPI server is running"
+        "message": "FastAPI server is running",
     }
 
 @router.get("/detailed")
@@ -22,7 +24,7 @@ async def detailed_health_check():
     """Detailed health check with system information"""
     memory = psutil.virtual_memory()
     cpu_percent = psutil.cpu_percent(interval=1)
-    
+
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
@@ -34,13 +36,13 @@ async def detailed_health_check():
                 "used": round(memory.used / 1024 / 1024, 2),
                 "total": round(memory.total / 1024 / 1024, 2),
                 "percent": memory.percent,
-                "unit": "MB"
+                "unit": "MB",
             },
             "cpu": {
                 "usage_percent": cpu_percent,
-                "count": psutil.cpu_count()
+                "count": psutil.cpu_count(),
             },
-            "platform": os.name
+            "platform": os.name,
         },
-        "message": "Detailed FastAPI server health information"
+        "message": "Detailed FastAPI server health information",
     }

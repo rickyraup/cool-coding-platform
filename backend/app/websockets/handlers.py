@@ -1,57 +1,54 @@
-from typing import Dict, Any, Optional
-from fastapi import WebSocket
+"""WebSocket message handlers for the coding platform."""
+
 from datetime import datetime
-import asyncio
-import subprocess
-import json
-import os
+from typing import Any, Dict, Optional
+
+from fastapi import WebSocket
 
 from app.services.code_execution import PythonExecutor
 from app.services.file_manager import FileManager
 
+
 async def handle_websocket_message(data: Dict[str, Any], websocket: WebSocket) -> Optional[Dict[str, Any]]:
-    """
-    Handle incoming WebSocket messages and return appropriate responses
-    """
+    """Handle incoming WebSocket messages and return appropriate responses."""
     message_type = data.get("type")
     session_id = data.get("sessionId", "default")
-    
+
     print(f"Handling WebSocket message: {message_type} for session: {session_id}")
-    
+
     try:
         if message_type == "terminal_input":
             return await handle_terminal_input(data, websocket)
-        elif message_type == "code_execution":
+        if message_type == "code_execution":
             return await handle_code_execution(data, websocket)
-        elif message_type == "file_system":
+        if message_type == "file_system":
             return await handle_file_system(data, websocket)
-        else:
-            return {
-                "type": "error",
-                "message": f"Unknown message type: {message_type}",
-                "timestamp": datetime.utcnow().isoformat()
-            }
+        return {
+            "type": "error",
+            "message": f"Unknown message type: {message_type}",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
     except Exception as e:
         print(f"Error handling WebSocket message: {e}")
         return {
             "type": "error",
-            "message": f"Server error: {str(e)}",
-            "timestamp": datetime.utcnow().isoformat()
+            "message": f"Server error: {e!s}",
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
 async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
-    """Handle terminal command input"""
+    """Handle terminal command input."""
     command = data.get("command", "").strip()
     session_id = data.get("sessionId", "default")
-    
+
     if not command:
         return {
             "type": "terminal_output",
             "sessionId": session_id,
             "output": "",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
-    
+
     # Handle built-in commands
     if command == "help":
         help_text = """Available commands:
@@ -67,10 +64,10 @@ async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> D
             "type": "terminal_output",
             "sessionId": session_id,
             "output": help_text,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
-    
-    elif command == "ls":
+
+    if command == "ls":
         # List files in session directory
         try:
             file_manager = FileManager(session_id)
@@ -80,24 +77,24 @@ async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> D
                 "type": "terminal_output",
                 "sessionId": session_id,
                 "output": output + "\\n",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             }
         except Exception as e:
             return {
                 "type": "terminal_output",
                 "sessionId": session_id,
-                "output": f"Error listing files: {str(e)}\\n",
-                "timestamp": datetime.utcnow().isoformat()
+                "output": f"Error listing files: {e!s}\\n",
+                "timestamp": datetime.utcnow().isoformat(),
             }
-    
+
     elif command == "pwd":
         return {
             "type": "terminal_output",
             "sessionId": session_id,
             "output": f"/workspace/{session_id}\\n",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
-    
+
     elif command.startswith("cat "):
         # Show file contents
         filename = command[4:].strip()
@@ -108,16 +105,16 @@ async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> D
                 "type": "terminal_output",
                 "sessionId": session_id,
                 "output": content + "\\n",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             }
         except Exception as e:
             return {
                 "type": "terminal_output",
                 "sessionId": session_id,
-                "output": f"Error reading file: {str(e)}\\n",
-                "timestamp": datetime.utcnow().isoformat()
+                "output": f"Error reading file: {e!s}\\n",
+                "timestamp": datetime.utcnow().isoformat(),
             }
-    
+
     elif command.startswith("python "):
         # Execute Python file
         filename = command[7:].strip()
@@ -128,106 +125,105 @@ async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> D
                 "type": "terminal_output",
                 "sessionId": session_id,
                 "output": result["output"],
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             }
         except Exception as e:
             return {
                 "type": "terminal_output",
                 "sessionId": session_id,
-                "output": f"Error executing Python file: {str(e)}\\n",
-                "timestamp": datetime.utcnow().isoformat()
+                "output": f"Error executing Python file: {e!s}\\n",
+                "timestamp": datetime.utcnow().isoformat(),
             }
-    
+
     else:
         # For now, return command not found
         return {
             "type": "terminal_output",
             "sessionId": session_id,
             "output": f"Command not found: {command}\\n",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
 async def handle_code_execution(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
-    """Handle Python code execution"""
+    """Handle Python code execution."""
     code = data.get("code", "")
     session_id = data.get("sessionId", "default")
     filename = data.get("filename", "main.py")
-    
+
     if not code.strip():
         return {
             "type": "terminal_output",
             "sessionId": session_id,
             "output": "No code provided\\n",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
-    
+
     try:
         executor = PythonExecutor(session_id)
         result = await executor.execute_code(code, filename)
-        
+
         return {
             "type": "terminal_output",
             "sessionId": session_id,
             "output": result["output"],
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         return {
             "type": "terminal_output",
             "sessionId": session_id,
-            "output": f"Execution error: {str(e)}\\n",
-            "timestamp": datetime.utcnow().isoformat()
+            "output": f"Execution error: {e!s}\\n",
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
 async def handle_file_system(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
-    """Handle file system operations"""
+    """Handle file system operations."""
     action = data.get("action")
     path = data.get("path", "")
     content = data.get("content", "")
     session_id = data.get("sessionId", "default")
-    
+
     try:
         file_manager = FileManager(session_id)
-        
+
         if action == "read":
             file_content = await file_manager.read_file(path)
             return {
                 "type": "terminal_output",
                 "sessionId": session_id,
                 "output": file_content,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             }
-        
-        elif action == "write":
+
+        if action == "write":
             await file_manager.write_file(path, content)
             return {
-                "type": "terminal_output", 
+                "type": "terminal_output",
                 "sessionId": session_id,
                 "output": f"File {path} saved successfully\\n",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             }
-        
-        elif action == "list":
+
+        if action == "list":
             files = await file_manager.list_files(path)
             files_str = "  ".join(files) if files else "No files found"
             return {
                 "type": "terminal_output",
                 "sessionId": session_id,
                 "output": files_str + "\\n",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             }
-        
-        else:
-            return {
-                "type": "error",
-                "message": f"Unknown file system action: {action}",
-                "timestamp": datetime.utcnow().isoformat()
-            }
-    
+
+        return {
+            "type": "error",
+            "message": f"Unknown file system action: {action}",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
     except Exception as e:
         return {
             "type": "terminal_output",
             "sessionId": session_id,
-            "output": f"File system error: {str(e)}\\n",
-            "timestamp": datetime.utcnow().isoformat()
+            "output": f"File system error: {e!s}\\n",
+            "timestamp": datetime.utcnow().isoformat(),
         }
