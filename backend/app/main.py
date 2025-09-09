@@ -56,13 +56,12 @@ app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket_manager.connect(websocket)
 
-    # Send welcome message
+    # Send initial connection confirmation
     await websocket_manager.send_personal_message(
         websocket,
         {
-            "type": "terminal_output",
-            "sessionId": "system",
-            "output": "Connected to Code Execution Platform\\n",
+            "type": "connection_established",
+            "message": "WebSocket connected successfully",
             "timestamp": "2024-01-01T00:00:00Z",
         },
     )
@@ -96,10 +95,24 @@ async def root() -> dict[str, Any]:
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=True,
-        log_level="info",
-    )
+    # Disable reload for stable WebSocket connections
+    # Use ENABLE_RELOAD=true env var to enable during development
+    enable_reload = os.getenv("ENABLE_RELOAD", "false").lower() == "true"
+    
+    uvicorn_config = {
+        "host": "0.0.0.0",
+        "port": port,
+        "log_level": "info",
+    }
+    
+    if enable_reload:
+        uvicorn_config.update({
+            "reload": True,
+            "reload_dirs": ["app/"],
+            "reload_excludes": ["venv/", "*.db", "__pycache__/", ".git/", "*.pyc"],
+        })
+        print("🔄 Running in development mode with auto-reload")
+    else:
+        print("🚀 Running in production mode (stable WebSocket connections)")
+    
+    uvicorn.run("app.main:app", **uvicorn_config)

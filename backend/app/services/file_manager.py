@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import List
+from typing import List, Dict, Any
 
 import aiofiles
 
@@ -15,7 +15,7 @@ class FileManager:
         os.makedirs(self.session_dir, exist_ok=True)
 
         # Allowed file extensions for security
-        self.allowed_extensions = {".py", ".txt", ".md", ".json", ".csv", ".dat"}
+        self.allowed_extensions = {".py", ".txt", ".md", ".json", ".csv", ".dat", ".js", ".ts", ".html", ".css"}
 
     def _validate_path(self, file_path: str) -> str:
         """Validate and sanitize file path to prevent directory traversal"""
@@ -69,6 +69,48 @@ class FileManager:
             raise
         except Exception as e:
             raise Exception(f"Failed to read file: {e!s}")
+
+    async def list_files_structured(self, directory: str = "") -> List[Dict[str, Any]]:
+        """List files in the session directory or subdirectory with structured data"""
+        try:
+            if directory:
+                # Validate subdirectory path
+                directory = os.path.basename(directory)
+                search_dir = os.path.join(self.session_dir, directory)
+                path_prefix = directory + "/"
+            else:
+                search_dir = self.session_dir
+                path_prefix = ""
+
+            if not os.path.exists(search_dir):
+                return []
+
+            files = []
+            for item in os.listdir(search_dir):
+                item_path = os.path.join(search_dir, item)
+                
+                if os.path.isfile(item_path):
+                    # Check if file extension is allowed
+                    _, ext = os.path.splitext(item)
+                    if ext in self.allowed_extensions:
+                        files.append({
+                            "name": item,
+                            "type": "file",
+                            "path": path_prefix + item
+                        })
+                elif os.path.isdir(item_path):
+                    files.append({
+                        "name": item,
+                        "type": "directory", 
+                        "path": path_prefix + item
+                    })
+
+            # Sort with directories first, then files
+            files.sort(key=lambda x: (x["type"] == "file", x["name"].lower()))
+            return files
+
+        except Exception as e:
+            raise Exception(f"Failed to list files: {e!s}")
 
     async def list_files(self, directory: str = "") -> List[str]:
         """List files in the session directory or subdirectory"""

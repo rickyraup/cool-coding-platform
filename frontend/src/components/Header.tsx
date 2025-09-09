@@ -1,27 +1,87 @@
 'use client';
 
+import { useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { apiService } from '../services/api';
 
-export function Header() {
-  const { state, updateCode } = useApp();
+export function Header(): JSX.Element {
+  const { state, setSession, setLoading, setError } = useApp();
   const { isConnected, executeCode } = useWebSocket();
 
-  const handleNewSession = async () => {
-    // TODO: Create new session via API
-    console.log('Creating new session...');
-  };
+  const handleNewSession = useCallback(async (): Promise<void> => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const newSession = await apiService.createSession({
+        user_id: 'anonymous',
+        code: '# Write your Python code here\nprint("Hello, World!")',
+        language: 'python'
+      });
+      
+      // Convert API response to internal format
+      const sessionData = {
+        id: newSession.id,
+        userId: newSession.user_id,
+        code: newSession.code,
+        language: 'python' as const,
+        createdAt: new Date(newSession.created_at),
+        updatedAt: new Date(newSession.updated_at),
+        isActive: newSession.is_active,
+      };
+      
+      setSession(sessionData);
+      console.log('New session created:', sessionData.id);
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      setError(error instanceof Error ? error.message : 'Failed to create session');
+    } finally {
+      setLoading(false);
+    }
+  }, [setSession, setLoading, setError]);
 
-  const handleRunCode = () => {
+  const handleRunCode = useCallback((): void => {
     if (state.code.trim()) {
       executeCode(state.code, 'main.py');
     }
-  };
+  }, [state.code, executeCode]);
 
-  const handleSave = async () => {
-    // TODO: Save current session
-    console.log('Saving session...');
-  };
+  const handleSave = useCallback(async (): Promise<void> => {
+    if (!state.currentSession) {
+      console.warn('No session to save');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const updatedSession = await apiService.updateSession(state.currentSession.id, {
+        code: state.code,
+        is_active: true,
+      });
+      
+      // Convert API response to internal format
+      const sessionData = {
+        id: updatedSession.id,
+        userId: updatedSession.user_id,
+        code: updatedSession.code,
+        language: 'python' as const,
+        createdAt: new Date(updatedSession.created_at),
+        updatedAt: new Date(updatedSession.updated_at),
+        isActive: updatedSession.is_active,
+      };
+      
+      setSession(sessionData);
+      console.log('Session saved:', sessionData.id);
+    } catch (error) {
+      console.error('Failed to save session:', error);
+      setError(error instanceof Error ? error.message : 'Failed to save session');
+    } finally {
+      setLoading(false);
+    }
+  }, [state.currentSession, state.code, setSession, setLoading, setError]);
 
   return (
     <header className="bg-gray-800 border-b border-gray-700 px-4 py-3">

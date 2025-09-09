@@ -189,9 +189,11 @@ async def handle_file_system(data: Dict[str, Any], websocket: WebSocket) -> Dict
         if action == "read":
             file_content = await file_manager.read_file(path)
             return {
-                "type": "terminal_output",
+                "type": "file_system",
+                "action": "read",
                 "sessionId": session_id,
-                "output": file_content,
+                "path": path,
+                "content": file_content,
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
@@ -205,12 +207,13 @@ async def handle_file_system(data: Dict[str, Any], websocket: WebSocket) -> Dict
             }
 
         if action == "list":
-            files = await file_manager.list_files(path)
-            files_str = "  ".join(files) if files else "No files found"
+            files = await file_manager.list_files_structured(path)
             return {
-                "type": "terminal_output",
+                "type": "file_system",
+                "action": "list",
                 "sessionId": session_id,
-                "output": files_str + "\\n",
+                "path": path,
+                "files": files,
                 "timestamp": datetime.utcnow().isoformat(),
             }
 

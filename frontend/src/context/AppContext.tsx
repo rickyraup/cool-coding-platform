@@ -20,10 +20,18 @@ interface TerminalLine {
   timestamp: Date;
 }
 
+export interface FileItem {
+  name: string;
+  type: 'file' | 'directory';
+  path: string;
+}
+
 interface AppState {
   currentSession: CodeSession | null;
   code: string;
   terminalLines: TerminalLine[];
+  files: FileItem[];
+  currentFile: string | null;
   isConnected: boolean;
   isLoading: boolean;
   error: string | null;
@@ -34,6 +42,8 @@ type AppAction =
   | { type: 'UPDATE_CODE'; payload: string }
   | { type: 'ADD_TERMINAL_LINE'; payload: TerminalLine }
   | { type: 'CLEAR_TERMINAL' }
+  | { type: 'SET_FILES'; payload: FileItem[] }
+  | { type: 'SET_CURRENT_FILE'; payload: string | null }
   | { type: 'SET_CONNECTED'; payload: boolean }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null };
@@ -42,6 +52,8 @@ const initialState: AppState = {
   currentSession: null,
   code: '# Write your Python code here\nprint("Hello, World!")',
   terminalLines: [],
+  files: [],
+  currentFile: null,
   isConnected: false,
   isLoading: false,
   error: null,
@@ -72,6 +84,18 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return {
         ...state,
         terminalLines: [],
+      };
+    
+    case 'SET_FILES':
+      return {
+        ...state,
+        files: action.payload,
+      };
+    
+    case 'SET_CURRENT_FILE':
+      return {
+        ...state,
+        currentFile: action.payload,
       };
     
     case 'SET_CONNECTED':
@@ -105,6 +129,8 @@ interface AppContextType {
   updateCode: (code: string) => void;
   addTerminalLine: (content: string, type: 'input' | 'output' | 'error') => void;
   clearTerminal: () => void;
+  setFiles: (files: FileItem[]) => void;
+  setCurrentFile: (path: string | null) => void;
   setConnected: (connected: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -136,6 +162,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     
     clearTerminal: () => {
       dispatch({ type: 'CLEAR_TERMINAL' });
+    },
+    
+    setFiles: (files: FileItem[]) => {
+      dispatch({ type: 'SET_FILES', payload: files });
+    },
+    
+    setCurrentFile: (path: string | null) => {
+      dispatch({ type: 'SET_CURRENT_FILE', payload: path });
     },
     
     setConnected: (connected: boolean) => {

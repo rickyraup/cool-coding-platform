@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 
 interface WebSocketMessage {
-  type: 'terminal_input' | 'terminal_output' | 'code_execution' | 'file_system' | 'error';
+  type: 'terminal_input' | 'terminal_output' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list';
   sessionId?: string;
   command?: string;
   output?: string;
@@ -15,26 +15,47 @@ interface WebSocketMessage {
   path?: string;
   content?: string;
   message?: string;
+  files?: { name: string; type: 'file' | 'directory'; path: string; }[];
 }
 
 export function useWebSocket() {
-  const { state, setConnected, addTerminalLine, setError } = useApp();
+  const { state, setConnected, addTerminalLine, setError, setFiles, updateCode } = useApp();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
+  const isConnectingRef = useRef(false);
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    console.log('🔄 [WS] Connect called, current state:', {
+      readyState: wsRef.current?.readyState,
+      isConnecting: isConnectingRef.current,
+      reconnectAttempts: reconnectAttempts.current
+    });
+
+    // Prevent multiple simultaneous connection attempts
+    if (wsRef.current?.readyState === WebSocket.OPEN || isConnectingRef.current) {
+      console.log('🛑 [WS] Already connected or connecting, skipping');
       return;
     }
 
+    // Clean up any existing connection
+    if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
+      console.log('🧹 [WS] Cleaning up existing CONNECTING websocket');
+      wsRef.current.close();
+    }
+
     try {
-      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
+      isConnectingRef.current = true;
+      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8001/ws';
+      console.log('🔌 [WS] Attempting WebSocket connection to:', wsUrl);
       wsRef.current = new WebSocket(wsUrl);
+      console.log('📞 [WS] WebSocket instance created, readyState:', wsRef.current.readyState);
 
       wsRef.current.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('✅ [WS] WebSocket connected successfully');
+        console.log('🔧 [WS] Setting state: isConnecting=false, connected=true, reconnectAttempts=0');
+        isConnectingRef.current = false;
         setConnected(true);
         setError(null);
         reconnectAttempts.current = 0;
@@ -42,52 +63,83 @@ export function useWebSocket() {
       };
 
       wsRef.current.onmessage = (event) => {
+        console.log('📥 [WS] Received message:', event.data);
         try {
           const message: WebSocketMessage = JSON.parse(event.data);
+          console.log('📋 [WS] Parsed message:', message);
           handleMessage(message);
         } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
+          console.error('❌ [WS] Failed to parse WebSocket message:', error);
           addTerminalLine('Error: Invalid message from server', 'error');
         }
       };
 
       wsRef.current.onclose = (event) => {
-        console.log('WebSocket disconnected:', event.code, event.reason);
+        console.log('❌ [WS] WebSocket closed - Code:', event.code, 'Reason:', event.reason, 'WasClean:', event.wasClean);
+        console.log('🔧 [WS] Setting state: isConnecting=false, connected=false');
+        isConnectingRef.current = false;
         setConnected(false);
         
-        if (!event.wasClean && reconnectAttempts.current < maxReconnectAttempts) {
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-          addTerminalLine(`Connection lost. Reconnecting in ${delay/1000}s...`, 'error');
+        // Only attempt reconnection for specific error codes and if under max attempts
+        const shouldReconnect = !event.wasClean && reconnectAttempts.current < maxReconnectAttempts && event.code !== 1006;
+        console.log('🤔 [WS] Should reconnect?', {
+          wasClean: event.wasClean,
+          reconnectAttempts: reconnectAttempts.current,
+          maxAttempts: maxReconnectAttempts,
+          code: event.code,
+          shouldReconnect
+        });
+
+        if (shouldReconnect) {
+          reconnectAttempts.current++;
+          const delay = Math.min(2000 * reconnectAttempts.current, 10000); // Longer delays
+          console.log(`⏰ [WS] Scheduling reconnect attempt ${reconnectAttempts.current}/${maxReconnectAttempts} in ${delay}ms`);
+          addTerminalLine(`Connection lost. Reconnecting in ${delay/1000}s... (${reconnectAttempts.current}/${maxReconnectAttempts})`, 'error');
           
           reconnectTimeoutRef.current = setTimeout(() => {
-            reconnectAttempts.current++;
+            console.log('🔄 [WS] Executing scheduled reconnect');
             connect();
           }, delay);
         } else {
+          console.log('🚫 [WS] Not attempting reconnection - max attempts reached or clean disconnect');
           addTerminalLine('Disconnected from server', 'error');
+          if (reconnectAttempts.current >= maxReconnectAttempts) {
+            setError('Maximum reconnection attempts reached');
+          }
         }
       };
 
       wsRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('💥 [WS] WebSocket error:', error);
+        console.log('🔧 [WS] Setting state: isConnecting=false');
+        isConnectingRef.current = false;
         setError('WebSocket connection error');
         addTerminalLine('Connection error occurred', 'error');
       };
 
     } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
+      console.error('💥 [WS] Failed to create WebSocket connection:', error);
+      console.log('🔧 [WS] Setting state: isConnecting=false');
+      isConnectingRef.current = false;
       setError('Failed to connect to server');
       addTerminalLine('Failed to connect to server', 'error');
     }
   }, [setConnected, addTerminalLine, setError]);
 
   const disconnect = useCallback(() => {
+    console.log('🔌 [WS] Disconnect called');
     if (reconnectTimeoutRef.current) {
+      console.log('⏰ [WS] Clearing reconnect timeout');
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
     
+    console.log('🔧 [WS] Setting state: isConnecting=false, reconnectAttempts=0');
+    isConnectingRef.current = false;
+    reconnectAttempts.current = 0;
+    
     if (wsRef.current) {
+      console.log('🔌 [WS] Closing WebSocket with code 1000');
       wsRef.current.close(1000, 'Client disconnect');
       wsRef.current = null;
     }
@@ -109,6 +161,11 @@ export function useWebSocket() {
     console.log('Received WebSocket message:', message);
 
     switch (message.type) {
+      case 'connection_established':
+        console.log('WebSocket connection confirmed:', message.message);
+        addTerminalLine('Connected to Code Execution Platform', 'output');
+        break;
+
       case 'terminal_output':
         if (message.output) {
           addTerminalLine(message.output, 'output');
@@ -121,10 +178,25 @@ export function useWebSocket() {
         }
         break;
 
+      case 'file_list':
+        if (message.files) {
+          setFiles(message.files);
+        }
+        break;
+
+      case 'file_system':
+        // Handle file system responses
+        if (message.action === 'read' && message.content) {
+          updateCode(message.content);
+        } else if (message.action === 'list' && message.files) {
+          setFiles(message.files);
+        }
+        break;
+
       default:
         console.log('Unknown message type:', message.type);
     }
-  }, [addTerminalLine]);
+  }, [addTerminalLine, setFiles, updateCode]);
 
   // WebSocket actions
   const sendTerminalCommand = useCallback((command: string) => {
@@ -161,9 +233,11 @@ export function useWebSocket() {
 
   // Connect on mount, disconnect on unmount
   useEffect(() => {
+    console.log('🚀 [WS] useWebSocket hook mounted, calling connect');
     connect();
     
     return () => {
+      console.log('🧹 [WS] useWebSocket hook unmounting, calling disconnect');
       disconnect();
     };
   }, [connect, disconnect]);
