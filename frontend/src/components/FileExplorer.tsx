@@ -15,20 +15,22 @@ export function FileExplorer(): JSX.Element {
   const [allFiles, setAllFiles] = useState<{[key: string]: FileItem[]}>({});
   const hasLoadedInitialFiles = useRef(false);
 
-  const loadFiles = useCallback(async (path: string = '') => {
+  const loadFiles = useCallback(async (path: string = '', showErrors: boolean = false) => {
     if (!state.currentSession) return;
     
     setLoading(true);
     try {
       // Use WebSocket file system operation to list files
       const success = performFileOperation('list', path);
-      if (!success) {
+      if (!success && showErrors) {
         console.error('Failed to load files');
       }
       // Note: The actual file list will be received via WebSocket message
       // and handled in the WebSocket message handler
     } catch (error) {
-      console.error('Error loading files:', error);
+      if (showErrors) {
+        console.error('Error loading files:', error);
+      }
     } finally {
       setLoading(false);
     }
@@ -83,7 +85,7 @@ export function FileExplorer(): JSX.Element {
       // Navigate into directory on double-click
       setCurrentDirectory(file.path);
       setExpandedDirs(new Set()); // Reset expanded dirs when navigating
-      loadFiles(file.path);
+      loadFiles(file.path, true); // Show errors for user-initiated actions
     }
   }, [loadFiles]);
 
@@ -92,13 +94,13 @@ export function FileExplorer(): JSX.Element {
       // Navigate to parent directory
       const parentPath = currentDirectory.split('/').slice(0, -1).join('/');
       setCurrentDirectory(parentPath);
-      loadFiles(parentPath);
+      loadFiles(parentPath, true); // Show errors for user-initiated actions
     }
   }, [currentDirectory, loadFiles]);
 
   const handleNavigateToRoot = useCallback(() => {
     setCurrentDirectory('');
-    loadFiles('');
+    loadFiles('', true); // Show errors for user-initiated actions
   }, [loadFiles]);
 
   const handleCreateItem = useCallback(() => {
@@ -145,10 +147,11 @@ export function FileExplorer(): JSX.Element {
 
   // Load real files from backend when connected
   useEffect(() => {
-    if (state.isConnected && state.currentSession) {
+    if (state.isConnected && state.currentSession && !hasLoadedInitialFiles.current) {
+      hasLoadedInitialFiles.current = true;
       loadFiles('');
     }
-  }, [state.isConnected, state.currentSession, loadFiles]);
+  }, [state.isConnected, state.currentSession]);
 
   const getFileIcon = useCallback((file: FileItem): string => {
     if (file.type === 'directory') {
@@ -182,7 +185,14 @@ export function FileExplorer(): JSX.Element {
   }, [expandedDirs]);
 
   // Build hierarchical tree structure for rendering
-  const buildFileTree = useCallback((basePath: string = currentDirectory, depth: number = 0) => {
+  const buildFileTree = useCallback((basePath: string = currentDirectory, depth: number = 0, visited: Set<string> = new Set()) => {
+    // Prevent infinite recursion
+    if (visited.has(basePath) || depth > 10) {
+      console.warn('Preventing infinite recursion in buildFileTree:', basePath, depth);
+      return [];
+    }
+    
+    visited.add(basePath);
     const files = allFiles[basePath] || [];
     const items: React.ReactElement[] = [];
     
@@ -191,8 +201,30 @@ export function FileExplorer(): JSX.Element {
       items.push(
         <div
           key={`${file.path}-${index}`}
-          onClick={() => handleFileClick(file)}
-          onDoubleClick={() => handleDirectoryDoubleClick(file)}
+          onClick={() => {
+            if (file.type === 'directory') {
+              setExpandedDirs(prev => {
+                const newSet = new Set(prev);
+                if (newSet.has(file.path)) {
+                  newSet.delete(file.path);
+                } else {
+                  newSet.add(file.path);
+                  loadDirectoryContents(file.path);
+                }
+                return newSet;
+              });
+            } else {
+              setCurrentFile(file.path);
+              performFileOperation('read', file.path);
+            }
+          }}
+          onDoubleClick={() => {
+            if (file.type === 'directory') {
+              setCurrentDirectory(file.path);
+              setExpandedDirs(new Set());
+              loadFiles(file.path, true); // Show errors for user-initiated actions
+            }
+          }}
           className={`flex items-center gap-3 px-3 py-2 cursor-pointer group text-sm transition-all duration-150 ${
             state.currentFile === file.path 
               ? 'bg-blue-600/90 text-white border-r-2 border-blue-400' 
@@ -207,14 +239,23 @@ export function FileExplorer(): JSX.Element {
               }`}
               onClick={(e) => {
                 e.stopPropagation();
-                handleFileClick(file);
+                setExpandedDirs(prev => {
+                  const newSet = new Set(prev);
+                  if (newSet.has(file.path)) {
+                    newSet.delete(file.path);
+                  } else {
+                    newSet.add(file.path);
+                    loadDirectoryContents(file.path);
+                  }
+                  return newSet;
+                });
               }}
             >
               ▶
             </span>
           )}
           
-          <span className="text-base flex-shrink-0">{getFileIcon(file)}</span>
+          <span className="text-base flex-shrink-0">{file.type === 'directory' ? (expandedDirs.has(file.path) ? '📂' : '📁') : '🐍'}</span>
           <span className="truncate flex-1 font-medium">
             {file.name}
           </span>
@@ -223,7 +264,13 @@ export function FileExplorer(): JSX.Element {
           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {file.type === 'file' && file.name.endsWith('.py') && (
               <button
-                onClick={(e) => handleExecuteFile(file, e)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (file.type === 'file' && file.name.endsWith('.py')) {
+                    const command = `python ${file.name}`;
+                    sendTerminalCommand(command);
+                  }
+                }}
                 className="p-1 text-green-400 hover:text-green-300 hover:bg-green-400/20 rounded transition-colors"
                 title="Run Python file"
               >
@@ -231,7 +278,15 @@ export function FileExplorer(): JSX.Element {
               </button>
             )}
             <button
-              onClick={(e) => handleDeleteItem(file, e)}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Are you sure you want to delete "${file.name}"?`)) {
+                  performFileOperation('delete', file.path);
+                  if (state.currentFile === file.path) {
+                    setCurrentFile(null);
+                  }
+                }
+              }}
               className="p-1 text-red-400 hover:text-red-300 hover:bg-red-400/20 rounded transition-colors"
               title="Delete"
             >
@@ -242,14 +297,14 @@ export function FileExplorer(): JSX.Element {
       );
       
       // If directory is expanded, recursively render its contents
-      if (file.type === 'directory' && expandedDirs.has(file.path) && allFiles[file.path]) {
-        const subItems = buildFileTree(file.path, depth + 1);
+      if (file.type === 'directory' && expandedDirs.has(file.path) && allFiles[file.path] && !visited.has(file.path)) {
+        const subItems = buildFileTree(file.path, depth + 1, new Set(visited));
         items.push(...subItems);
       }
     });
     
     return items;
-  }, [allFiles, currentDirectory, expandedDirs, state.currentFile, handleFileClick, handleDirectoryDoubleClick, handleExecuteFile, handleDeleteItem, getFileIcon]);
+  }, [allFiles, currentDirectory, expandedDirs, state.currentFile]);
 
 
   return (
@@ -260,7 +315,7 @@ export function FileExplorer(): JSX.Element {
           <h2 className="text-sm font-semibold text-gray-200">Explorer</h2>
           <div className="flex gap-1">
             <button
-              onClick={() => loadFiles(currentDirectory)}
+              onClick={() => loadFiles(currentDirectory, true)} // Show errors for user-initiated refresh
               disabled={loading}
               className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 disabled:opacity-50 rounded transition-colors"
               title="Refresh"
@@ -307,7 +362,7 @@ export function FileExplorer(): JSX.Element {
                       <button
                         onClick={() => {
                           setCurrentDirectory(pathSoFar);
-                          loadFiles(pathSoFar);
+                          loadFiles(pathSoFar, true); // Show errors for user-initiated navigation
                         }}
                         className="hover:text-white transition-colors px-1 py-0.5 rounded"
                       >

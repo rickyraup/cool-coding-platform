@@ -85,10 +85,13 @@ All commands run in your isolated session environment.
     try:
         output, return_code = await session_manager.execute_command(session_id, command)
         
+        # Format output with command prompt to show what was executed
+        formatted_output = f"$ {command}\n{output}" if output else f"$ {command}"
+        
         return {
             "type": "terminal_output",
             "sessionId": session_id,
-            "output": output,
+            "output": formatted_output,
             "return_code": return_code,
             "timestamp": datetime.utcnow().isoformat(),
         }
@@ -97,7 +100,7 @@ All commands run in your isolated session environment.
         return {
             "type": "terminal_output",
             "sessionId": session_id,
-            "output": f"Session error: {e!s}\n",
+            "output": f"$ {command}\nSession error: {e!s}",
             "return_code": 1,
             "timestamp": datetime.utcnow().isoformat(),
         }

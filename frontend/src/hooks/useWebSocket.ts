@@ -44,30 +44,20 @@ export function useWebSocket() {
     const now = Date.now();
     const timeSinceLastAttempt = now - globalConnectionState.lastConnectionAttempt;
     
-    console.log('🔄 [WS] Connect called, current state:', {
-      readyState: globalWebSocket?.readyState,
-      globalIsConnecting: globalConnectionState.isConnecting,
-      reconnectAttempts: globalConnectionState.reconnectAttempts,
-      timeSinceLastAttempt
-    });
-
     // Prevent multiple simultaneous connection attempts using global state
     if (globalWebSocket?.readyState === WebSocket.OPEN || 
         globalWebSocket?.readyState === WebSocket.CONNECTING ||
         globalConnectionState.isConnecting) {
-      console.log('🛑 [WS] Already connected or connecting, skipping');
       return;
     }
 
     // Prevent rapid connection attempts with cooldown
     if (timeSinceLastAttempt < globalConnectionState.cooldownPeriod) {
-      console.log('🕐 [WS] Connection cooldown active, waiting...', globalConnectionState.cooldownPeriod - timeSinceLastAttempt, 'ms');
       return;
     }
 
     // Clean up any existing connection
     if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
-      console.log('🧹 [WS] Cleaning up existing CONNECTING websocket');
       wsRef.current.close();
     }
 
@@ -76,20 +66,18 @@ export function useWebSocket() {
       globalConnectionState.isConnecting = true;
       globalConnectionState.lastConnectionAttempt = now;
       const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8001/ws';
-      console.log('🔌 [WS] Attempting WebSocket connection to:', wsUrl);
+      console.log('🔌 [WS] Connecting to:', wsUrl);
       wsRef.current = new WebSocket(wsUrl);
-      console.log('📞 [WS] WebSocket instance created, readyState:', wsRef.current.readyState);
 
       wsRef.current.onopen = () => {
         console.log('✅ [WS] WebSocket connected successfully');
-        console.log('🔧 [WS] Setting state: isConnecting=false, connected=true, reconnectAttempts=0');
         isConnectingRef.current = false;
         globalConnectionState.isConnecting = false;
         globalConnectionState.hasEverConnected = true; // Mark that we've connected at least once
         setConnected(true);
         setError(null);
         reconnectAttempts.current = 0;
-        addTerminalLine('Connected to server', 'output');
+        // Don't add connection messages to terminal - show in status header only
       };
 
       wsRef.current.onmessage = (event) => {
@@ -105,39 +93,31 @@ export function useWebSocket() {
       };
 
       wsRef.current.onclose = (event) => {
-        console.log('❌ [WS] WebSocket closed - Code:', event.code, 'Reason:', event.reason, 'WasClean:', event.wasClean);
-        console.log('🔧 [WS] Setting state: isConnecting=false, connected=false');
+        console.log('❌ [WS] WebSocket closed - Code:', event.code, 'WasClean:', event.wasClean);
         isConnectingRef.current = false;
         globalConnectionState.isConnecting = false;
         setConnected(false);
         
         // Only attempt reconnection for non-clean disconnects and if under max attempts
-        // Allow reconnection for 1006 (abnormal closure) as it often indicates network issues
-        const shouldReconnect = !event.wasClean && reconnectAttempts.current < maxReconnectAttempts;
-        console.log('🤔 [WS] Should reconnect?', {
-          wasClean: event.wasClean,
-          reconnectAttempts: reconnectAttempts.current,
-          maxAttempts: maxReconnectAttempts,
-          code: event.code,
-          shouldReconnect
-        });
-
+        const shouldReconnect = !event.wasClean && reconnectAttempts.current < maxReconnectAttempts && globalConnectionState.hasEverConnected;
+        
         if (shouldReconnect) {
           reconnectAttempts.current++;
-          const delay = Math.min(2000 * reconnectAttempts.current, 10000); // Longer delays
-          console.log(`⏰ [WS] Scheduling reconnect attempt ${reconnectAttempts.current}/${maxReconnectAttempts} in ${delay}ms`);
-          addTerminalLine(`Connection lost. Reconnecting in ${delay/1000}s... (${reconnectAttempts.current}/${maxReconnectAttempts})`, 'error');
+          const delay = Math.min(2000 * reconnectAttempts.current, 10000);
+          console.log(`⏰ [WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`);
           
           reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('🔄 [WS] Executing scheduled reconnect');
             connect();
           }, delay);
-        } else {
-          console.log('🚫 [WS] Not attempting reconnection - max attempts reached or clean disconnect');
-          addTerminalLine('Disconnected from server', 'error');
-          if (reconnectAttempts.current >= maxReconnectAttempts) {
-            setError('Maximum reconnection attempts reached');
-          }
+        } else if (event.wasClean) {
+          // Clean disconnect, don't show error
+          console.log('🚫 [WS] Clean disconnect');
+        } else if (reconnectAttempts.current >= maxReconnectAttempts) {
+          console.log('🚫 [WS] Max reconnection attempts reached');
+          setError('Connection lost - please refresh page');
+        } else if (!globalConnectionState.hasEverConnected) {
+          // Never connected, likely server is down
+          console.log('🚫 [WS] Unable to establish initial connection');
         }
       };
 
@@ -202,14 +182,10 @@ export function useWebSocket() {
         connect();
       }
       
-      // Only show disconnection error if we've previously been connected
-      // This prevents flooding during initial connection attempts
-      if (globalConnectionState.hasEverConnected) {
-        addTerminalLine('Error: Not connected to server', 'error');
-      }
+      // Don't add error messages to terminal - connection status shown in header
       return false;
     }
-  }, [addTerminalLine, connect]);
+  }, [connect]);
 
   const handleMessage = useCallback((message: WebSocketMessage) => {
     console.log('Received WebSocket message:', message);
@@ -217,13 +193,18 @@ export function useWebSocket() {
     switch (message.type) {
       case 'connection_established':
         console.log('WebSocket connection confirmed:', message.message);
-        addTerminalLine('Connected to Code Execution Platform', 'output');
+        // Don't add connection messages to terminal - show in status header only
         break;
 
       case 'terminal_output':
         if (message.output) {
           addTerminalLine(message.output, 'output');
         }
+        break;
+
+      case 'terminal_clear':
+        // Clear terminal - this will be handled by the Terminal component
+        addTerminalLine('CLEAR_TERMINAL', 'output');
         break;
 
       case 'error':
@@ -274,12 +255,11 @@ export function useWebSocket() {
 
     console.log('🎯 [WS] sendMessage returned:', success);
 
-    if (success) {
-      addTerminalLine(`$ ${command}`, 'input');
-    }
+    // Don't add the command to terminal lines here - let the terminal component handle display
+    // The actual output will come back via WebSocket message
 
     return success;
-  }, [sendMessage, state.currentSession?.id, addTerminalLine]);
+  }, [sendMessage, state.currentSession?.id]);
 
   const executeCode = useCallback((code: string, filename?: string) => {
     return sendMessage({

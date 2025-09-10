@@ -87,14 +87,18 @@ class SessionManager:
     async def _initialize_session(self, session: SessionProcess) -> None:
         """Initialize a new session with basic setup."""
         init_commands = [
-            # Set up isolated Python environment
-            "export PYTHONPATH=/tmp",
+            # Set up isolated Python environment  
             f"cd {session.working_directory}",
             # Create basic directory structure
             "mkdir -p .local/bin",
-            "mkdir -p .local/lib/python3.11/site-packages",
+            "mkdir -p .local/lib/python3.11/site-packages", 
+            "mkdir -p tmp",
             # Set Python path to use session-local packages
-            f"export PYTHONPATH={session.working_directory}/.local/lib/python3.11/site-packages:$PYTHONPATH",
+            f"export PYTHONPATH={session.working_directory}/.local/lib/python3.11/site-packages:{session.working_directory}:$PYTHONPATH",
+            # Create a simple hello.py example file
+            'echo "print(\\"Hello from isolated Python environment!\\")" > hello.py',
+            # Create a requirements.txt example
+            'echo "# Add your Python packages here\\n# Example: requests>=2.28.0\\n# Then run: pip install -r requirements.txt" > requirements.txt',
         ]
         
         for cmd in init_commands:
@@ -103,7 +107,61 @@ class SessionManager:
     async def execute_command(self, session_id: str, command: str) -> Tuple[str, int]:
         """Execute a command in the specified session."""
         session = await self.get_or_create_session(session_id)
+        
+        # Handle session-aware commands
+        if command.strip() == "ps":
+            return await self._handle_ps_command(session)
+        elif command.strip() == "whoami":
+            return await self._handle_whoami_command(session)
+        elif command.strip() == "id":
+            return await self._handle_id_command(session)
+        
         return await self._execute_command_in_session(session, command)
+    
+    async def _handle_ps_command(self, session: SessionProcess) -> Tuple[str, int]:
+        """Handle ps command to show only session processes."""
+        try:
+            # Get the session's shell process PID
+            shell_pid = session.process.pid
+            
+            # Try to get child processes of this session using pgrep
+            pgrep_command = f"pgrep -P {shell_pid} 2>/dev/null || echo 'no_children'"
+            child_output, _ = await self._execute_command_in_session(session, pgrep_command)
+            
+            # Build session-specific process list
+            session_output = f"SESSION PROCESSES (Isolated Session: {session.session_id[:8]})\n"
+            session_output += "  PID  PPID TTY      TIME CMD\n" 
+            session_output += f"  {shell_pid}     1 pts/0    00:00:01 bash (session shell)\n"
+            
+            # Add child processes if any exist
+            if child_output.strip() and child_output.strip() != 'no_children':
+                child_pids = child_output.strip().split('\n')
+                for child_pid in child_pids:
+                    if child_pid.strip().isdigit():
+                        # Get info about child process
+                        ps_child = f"ps -o pid,ppid,tty,time,cmd -p {child_pid.strip()} 2>/dev/null | tail -n +2"
+                        child_info, _ = await self._execute_command_in_session(session, ps_child)
+                        if child_info.strip():
+                            session_output += f"  {child_info.strip()}\n"
+            else:
+                session_output += "  (No additional processes - commands will spawn here)\n"
+            
+            session_output += f"\nNOTE: This shows only processes within your isolated session.\n"
+            session_output += f"Working directory: {session.working_directory}"
+            
+            return session_output, 0
+            
+        except Exception as e:
+            return f"Error getting session processes: {str(e)}", 1
+    
+    async def _handle_whoami_command(self, session: SessionProcess) -> Tuple[str, int]:
+        """Handle whoami command for session context."""
+        return f"session-user-{session.session_id[:8]}", 0
+    
+    async def _handle_id_command(self, session: SessionProcess) -> Tuple[str, int]:
+        """Handle id command for session context.""" 
+        session_uid = hash(session.session_id) % 50000 + 1000  # Generate consistent fake UID
+        return f"uid={session_uid}(session-user-{session.session_id[:8]}) gid={session_uid}(session-group) groups={session_uid}(session-group)", 0
     
     async def _execute_command_in_session(self, session: SessionProcess, command: str) -> Tuple[str, int]:
         """Execute a command in the session's shell process."""

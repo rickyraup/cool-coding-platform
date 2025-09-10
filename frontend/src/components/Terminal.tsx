@@ -6,7 +6,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 
 export function Terminal(): JSX.Element {
   const { state, clearTerminal } = useApp();
-  const { sendTerminalCommand } = useWebSocket();
+  const { sendTerminalCommand, isConnected } = useWebSocket();
   
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<any>(null);
@@ -90,9 +90,12 @@ export function Terminal(): JSX.Element {
         }
         
         // Welcome message
-        terminal.writeln('\x1b[32mCode Execution Platform Terminal\x1b[0m');
-        terminal.writeln('Type commands or "help" for available commands.');
-        terminal.write('\r\n$ ');
+        terminal.writeln('\x1b[36m╭─────────────────────────────────────────╮\x1b[0m');
+        terminal.writeln('\x1b[36m│    \x1b[32mCode Execution Platform Terminal\x1b[36m    │\x1b[0m');
+        terminal.writeln('\x1b[36m│  \x1b[33mType commands or "help" for available\x1b[36m  │\x1b[0m');
+        terminal.writeln('\x1b[36m│              \x1b[33mcommands.\x1b[36m               │\x1b[0m');
+        terminal.writeln('\x1b[36m╰─────────────────────────────────────────╯\x1b[0m');
+        terminal.write('\x1b[32m$ \x1b[0m');
         
         xtermRef.current = terminal;
         fitAddonRef.current = fitAddon;
@@ -110,10 +113,11 @@ export function Terminal(): JSX.Element {
 
           // Handle special keys
           if (data === '\r') { // Enter key
-            // Get current value from state using functional update
+            // Get current value from state and handle command after state update
             setCurrentLine(currentCmd => {
               console.log('🔥 [Terminal] Enter pressed, currentLine:', JSON.stringify(currentCmd));
-              handleCommand(currentCmd);
+              // Schedule command handling after state update
+              setTimeout(() => handleCommand(currentCmd), 0);
               return ''; // Clear the line
             });
             setCursorX(0);
@@ -221,7 +225,7 @@ export function Terminal(): JSX.Element {
     terminal.write('\r\n');
     
     if (!command.trim()) {
-      terminal.write('$ ');
+      terminal.write('\x1b[32m$ \x1b[0m');
       setCursorX(0);
       return;
     }
@@ -233,7 +237,7 @@ export function Terminal(): JSX.Element {
     // Handle local commands
     if (command === 'clear') {
       terminal.clear();
-      terminal.write('$ ');
+      terminal.write('\x1b[32m$ \x1b[0m');
       setCursorX(0);
       return;
     }
@@ -251,29 +255,72 @@ export function Terminal(): JSX.Element {
         ''
       ];
       helpText.forEach(line => terminal.writeln(line));
-      terminal.write('$ ');
+      terminal.write('\x1b[32m$ \x1b[0m');
       setCursorX(0);
       return;
     }
 
-    // Send command via WebSocket
-    sendTerminalCommand(command);
+    // Send command via WebSocket - don't show command here, backend will handle it
+    const success = sendTerminalCommand(command);
+    
+    if (!success) {
+      // If command failed to send, just show new prompt (connection status shown in header)
+      terminal.write('\r\n\x1b[32m$ \x1b[0m');
+    } else {
+      // Command sent successfully, just move to next line and wait for response
+      terminal.write('\r\n');
+    }
+    
     setCursorX(0);
   }, [sendTerminalCommand]);
+
+  // Track the last processed line index to avoid duplicate processing
+  const lastProcessedLineRef = useRef(0);
 
   // Handle terminal output from WebSocket
   useEffect(() => {
     const terminal = xtermRef.current;
     if (!terminal || !state.terminalLines.length) return;
 
-    const lastLine = state.terminalLines[state.terminalLines.length - 1];
-    if (!lastLine || lastLine.type === 'input') return;
+    // Process only new lines since the last processed index
+    const newLines = state.terminalLines.slice(lastProcessedLineRef.current);
+    
+    newLines.forEach((line, index) => {
+      if (line.type === 'input') {
+        // Don't show input lines in terminal output - they're already shown when typed
+        return;
+      }
+      
+      if (line.type === 'output' || line.type === 'error') {
+        // Handle special clear terminal command
+        if (line.content === 'CLEAR_TERMINAL') {
+          terminal.clear();
+          terminal.write('\x1b[32m$ \x1b[0m');
+          return;
+        }
+        
+        // Write the output content (backend now includes command + output)
+        if (line.content) {
+          // Handle different line types with proper formatting
+          if (line.type === 'error') {
+            terminal.write(`\x1b[31m${line.content}\x1b[0m`); // Red for errors
+          } else {
+            // Backend includes command and output, just write it directly
+            const formattedContent = line.content.replace(/\n$/, ''); // Remove trailing newline
+            terminal.write(formattedContent);
+          }
+        }
+        
+        // Add newline and prompt after output
+        terminal.write('\r\n\x1b[32m$ \x1b[0m');
+        
+        // Ensure terminal scrolls to bottom
+        terminal.scrollToBottom();
+      }
+    });
 
-    // Write output and prompt
-    if (lastLine.content) {
-      terminal.write(lastLine.content);
-    }
-    terminal.write('\r\n$ ');
+    // Update the last processed line index
+    lastProcessedLineRef.current = state.terminalLines.length;
   }, [state.terminalLines]);
 
   // Fit terminal when container resizes
@@ -295,6 +342,25 @@ export function Terminal(): JSX.Element {
 
   return (
     <div className="h-full flex flex-col bg-black">
+      {/* Connection Status Header */}
+      <div className="bg-gray-900 px-4 py-2 border-b border-gray-700 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm">
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+          <span className="text-gray-300">
+            {isConnected ? 'Connected' : 'Disconnected'} 
+            {state.currentSession && (
+              <span className="text-gray-500 ml-2">
+                Session: {state.currentSession.id.substring(0, 8)}...
+              </span>
+            )}
+          </span>
+        </div>
+        <div className="text-xs text-gray-500">
+          Terminal - Isolated Python 3.11+ Environment
+        </div>
+      </div>
+      
+      {/* Terminal Content */}
       <div 
         ref={terminalRef} 
         className="flex-1 p-2"
