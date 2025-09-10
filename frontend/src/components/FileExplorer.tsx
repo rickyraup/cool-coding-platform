@@ -1,15 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useApp, FileItem } from '../context/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 export function FileExplorer(): JSX.Element {
   const { state, setFiles, setCurrentFile } = useApp();
-  const { performFileOperation } = useWebSocket();
+  const { performFileOperation, sendTerminalCommand } = useWebSocket();
   const [loading, setLoading] = useState(false);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
-
+  const [showCreateDialog, setShowCreateDialog] = useState<'file' | 'folder' | null>(null);
+  const [newItemName, setNewItemName] = useState('');
+  const [currentDirectory, setCurrentDirectory] = useState('');
+  const [allFiles, setAllFiles] = useState<{[key: string]: FileItem[]}>({});
+  const hasLoadedInitialFiles = useRef(false);
 
   const loadFiles = useCallback(async (path: string = '') => {
     if (!state.currentSession) return;
@@ -30,6 +34,29 @@ export function FileExplorer(): JSX.Element {
     }
   }, [state.currentSession, performFileOperation]);
 
+  const loadDirectoryContents = useCallback(async (path: string) => {
+    if (!state.currentSession) return;
+    
+    try {
+      const success = performFileOperation('list', path);
+      if (!success) {
+        console.error('Failed to load directory contents');
+      }
+    } catch (error) {
+      console.error('Error loading directory contents:', error);
+    }
+  }, [state.currentSession, performFileOperation]);
+
+  // Update allFiles when state.files changes
+  useEffect(() => {
+    if (state.files.length > 0) {
+      setAllFiles(prev => ({
+        ...prev,
+        [currentDirectory]: state.files
+      }));
+    }
+  }, [state.files, currentDirectory]);
+
   const handleFileClick = useCallback((file: FileItem) => {
     if (file.type === 'directory') {
       // Toggle directory expansion
@@ -39,8 +66,8 @@ export function FileExplorer(): JSX.Element {
           newSet.delete(file.path);
         } else {
           newSet.add(file.path);
-          // Load directory contents
-          loadFiles(file.path);
+          // Load directory contents for expansion
+          loadDirectoryContents(file.path);
         }
         return newSet;
       });
@@ -49,9 +76,81 @@ export function FileExplorer(): JSX.Element {
       setCurrentFile(file.path);
       performFileOperation('read', file.path);
     }
-  }, [loadFiles, performFileOperation, setCurrentFile]);
+  }, [loadDirectoryContents, performFileOperation, setCurrentFile]);
 
-  const getFileIcon = (file: FileItem): string => {
+  const handleDirectoryDoubleClick = useCallback((file: FileItem) => {
+    if (file.type === 'directory') {
+      // Navigate into directory on double-click
+      setCurrentDirectory(file.path);
+      setExpandedDirs(new Set()); // Reset expanded dirs when navigating
+      loadFiles(file.path);
+    }
+  }, [loadFiles]);
+
+  const handleNavigateUp = useCallback(() => {
+    if (currentDirectory) {
+      // Navigate to parent directory
+      const parentPath = currentDirectory.split('/').slice(0, -1).join('/');
+      setCurrentDirectory(parentPath);
+      loadFiles(parentPath);
+    }
+  }, [currentDirectory, loadFiles]);
+
+  const handleNavigateToRoot = useCallback(() => {
+    setCurrentDirectory('');
+    loadFiles('');
+  }, [loadFiles]);
+
+  const handleCreateItem = useCallback(() => {
+    if (!newItemName.trim()) return;
+
+    const action = showCreateDialog === 'file' ? 'create_file' : 'create_directory';
+    let fileName = showCreateDialog === 'file' && !newItemName.includes('.') ? 
+      `${newItemName}.py` : newItemName;
+
+    // If we're in a subdirectory, prepend the current directory path
+    if (currentDirectory) {
+      fileName = `${currentDirectory}/${fileName}`;
+    }
+
+    performFileOperation(action, fileName, showCreateDialog === 'file' ? '# New file\n' : '');
+    
+    setShowCreateDialog(null);
+    setNewItemName('');
+  }, [newItemName, showCreateDialog, currentDirectory, performFileOperation]);
+
+  const handleDeleteItem = useCallback((file: FileItem, event: React.MouseEvent) => {
+    event.stopPropagation();
+    
+    if (confirm(`Are you sure you want to delete "${file.name}"?`)) {
+      performFileOperation('delete', file.path);
+      
+      // If deleting current file, clear it
+      if (state.currentFile === file.path) {
+        setCurrentFile(null);
+      }
+    }
+  }, [performFileOperation, state.currentFile, setCurrentFile]);
+
+  const handleExecuteFile = useCallback((file: FileItem, event: React.MouseEvent) => {
+    event.stopPropagation();
+    
+    if (file.type === 'file' && file.name.endsWith('.py')) {
+      // Execute Python file via terminal
+      const command = `python ${file.name}`;
+      sendTerminalCommand(command);
+    }
+  }, [sendTerminalCommand]);
+
+
+  // Load real files from backend when connected
+  useEffect(() => {
+    if (state.isConnected && state.currentSession) {
+      loadFiles('');
+    }
+  }, [state.isConnected, state.currentSession, loadFiles]);
+
+  const getFileIcon = useCallback((file: FileItem): string => {
     if (file.type === 'directory') {
       return expandedDirs.has(file.path) ? '📂' : '📁';
     }
@@ -80,87 +179,233 @@ export function FileExplorer(): JSX.Element {
       default:
         return '📄';
     }
-  };
+  }, [expandedDirs]);
 
-  // Load real files from backend when connected
-  useEffect(() => {
-    if (state.isConnected && state.currentSession) {
-      loadFiles('');
-    }
-  }, [state.isConnected, state.currentSession, loadFiles]);
+  // Build hierarchical tree structure for rendering
+  const buildFileTree = useCallback((basePath: string = currentDirectory, depth: number = 0) => {
+    const files = allFiles[basePath] || [];
+    const items: React.ReactElement[] = [];
+    
+    files.forEach((file, index) => {
+      // File/directory item
+      items.push(
+        <div
+          key={`${file.path}-${index}`}
+          onClick={() => handleFileClick(file)}
+          onDoubleClick={() => handleDirectoryDoubleClick(file)}
+          className={`flex items-center gap-3 px-3 py-2 cursor-pointer group text-sm transition-all duration-150 ${
+            state.currentFile === file.path 
+              ? 'bg-blue-600/90 text-white border-r-2 border-blue-400' 
+              : 'hover:bg-gray-700/70 text-gray-200 hover:text-white'
+          }`}
+          style={{ paddingLeft: `${12 + depth * 20}px` }}
+        >
+          {file.type === 'directory' && (
+            <span 
+              className={`text-xs transition-transform duration-200 flex-shrink-0 ${
+                expandedDirs.has(file.path) ? 'rotate-90' : ''
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleFileClick(file);
+              }}
+            >
+              ▶
+            </span>
+          )}
+          
+          <span className="text-base flex-shrink-0">{getFileIcon(file)}</span>
+          <span className="truncate flex-1 font-medium">
+            {file.name}
+          </span>
+          
+          {/* Action buttons */}
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {file.type === 'file' && file.name.endsWith('.py') && (
+              <button
+                onClick={(e) => handleExecuteFile(file, e)}
+                className="p-1 text-green-400 hover:text-green-300 hover:bg-green-400/20 rounded transition-colors"
+                title="Run Python file"
+              >
+                ▶
+              </button>
+            )}
+            <button
+              onClick={(e) => handleDeleteItem(file, e)}
+              className="p-1 text-red-400 hover:text-red-300 hover:bg-red-400/20 rounded transition-colors"
+              title="Delete"
+            >
+              🗑
+            </button>
+          </div>
+        </div>
+      );
+      
+      // If directory is expanded, recursively render its contents
+      if (file.type === 'directory' && expandedDirs.has(file.path) && allFiles[file.path]) {
+        const subItems = buildFileTree(file.path, depth + 1);
+        items.push(...subItems);
+      }
+    });
+    
+    return items;
+  }, [allFiles, currentDirectory, expandedDirs, state.currentFile, handleFileClick, handleDirectoryDoubleClick, handleExecuteFile, handleDeleteItem, getFileIcon]);
+
 
   return (
     <div className="h-full flex flex-col bg-gray-900 text-white">
       {/* Header */}
-      <div className="bg-gray-800 px-4 py-2 border-b border-gray-700 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-gray-300">Files</h2>
-        <div className="flex gap-2">
+      <div className="bg-gray-800 px-4 py-3 border-b border-gray-600">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-semibold text-gray-200">Explorer</h2>
+          <div className="flex gap-1">
+            <button
+              onClick={() => loadFiles(currentDirectory)}
+              disabled={loading}
+              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 disabled:opacity-50 rounded transition-colors"
+              title="Refresh"
+            >
+              🔄
+            </button>
+            <button
+              onClick={() => setShowCreateDialog('file')}
+              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              title="New File"
+            >
+              📄
+            </button>
+            <button
+              onClick={() => setShowCreateDialog('folder')}
+              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              title="New Folder"
+            >
+              📁
+            </button>
+          </div>
+        </div>
+        
+        {/* Breadcrumb Navigation */}
+        <div className="flex items-center gap-1 text-xs text-gray-400">
           <button
-            onClick={() => loadFiles('')}
-            disabled={loading}
-            className="text-xs text-gray-400 hover:text-white disabled:opacity-50"
-            title="Refresh"
+            onClick={handleNavigateToRoot}
+            className="hover:text-white transition-colors px-1 py-0.5 rounded"
           >
-            🔄
+            📁 Root
           </button>
-          <button
-            className="text-xs text-gray-400 hover:text-white"
-            title="New File"
-          >
-            📄+
-          </button>
-          <button
-            className="text-xs text-gray-400 hover:text-white"
-            title="New Folder"
-          >
-            📁+
-          </button>
+          {currentDirectory && (
+            <>
+              {currentDirectory.split('/').map((folder, index, arr) => {
+                const isLast = index === arr.length - 1;
+                const pathSoFar = arr.slice(0, index + 1).join('/');
+                
+                return (
+                  <div key={index} className="flex items-center gap-1">
+                    <span className="text-gray-600">/</span>
+                    {isLast ? (
+                      <span className="text-blue-400 font-medium">{folder}</span>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setCurrentDirectory(pathSoFar);
+                          loadFiles(pathSoFar);
+                        }}
+                        className="hover:text-white transition-colors px-1 py-0.5 rounded"
+                      >
+                        {folder}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                onClick={handleNavigateUp}
+                className="ml-2 p-1 text-gray-500 hover:text-white transition-colors rounded"
+                title="Go up"
+              >
+                ↑
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* File List */}
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="p-4 text-sm text-gray-400">Loading files...</div>
+          <div className="p-4 text-sm text-gray-400 flex items-center gap-2">
+            <div className="animate-spin">🔄</div>
+            Loading files...
+          </div>
         ) : state.files.length === 0 ? (
-          <div className="p-4 text-sm text-gray-400">No files found</div>
+          <div className="p-4 text-sm text-gray-400 text-center">
+            <div className="text-2xl mb-2">📂</div>
+            No files found
+          </div>
         ) : (
-          <div className="py-2">
-            {state.files.map((file, index) => (
-              <div
-                key={`${file.path}-${index}`}
-                onClick={() => handleFileClick(file)}
-                className={`flex items-center gap-2 px-4 py-1.5 cursor-pointer group text-sm ${
-                  state.currentFile === file.path 
-                    ? 'bg-blue-600 text-white' 
-                    : 'hover:bg-gray-700 text-gray-200'
-                }`}
-              >
-                <span className="text-base">{getFileIcon(file)}</span>
-                <span className={`truncate ${
-                  state.currentFile === file.path 
-                    ? 'text-white' 
-                    : 'group-hover:text-white'
-                }`}>
-                  {file.name}
-                </span>
-                {file.type === 'directory' && (
-                  <span className="text-gray-500 ml-auto">
-                    {expandedDirs.has(file.path) ? '▼' : '▶'}
-                  </span>
-                )}
-              </div>
-            ))}
+          <div className="py-1">
+            {buildFileTree()}
           </div>
         )}
       </div>
 
       {/* Status */}
-      <div className="bg-gray-800 px-4 py-2 border-t border-gray-700">
-        <div className="text-xs text-gray-400">
-          Session: {state.currentSession?.id || 'None'}
+      <div className="bg-gray-800 px-3 py-2 border-t border-gray-600">
+        <div className="text-xs text-gray-400 font-mono">
+          {state.files.length} {state.files.length === 1 ? 'item' : 'items'}
         </div>
       </div>
+
+      {/* Create Item Dialog */}
+      {showCreateDialog && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-80 border border-gray-600">
+            <h3 className="text-lg font-semibold text-white mb-2">
+              Create New {showCreateDialog === 'file' ? 'File' : 'Folder'}
+            </h3>
+            
+            {currentDirectory && (
+              <p className="text-sm text-gray-400 mb-4">
+                in: /{currentDirectory}
+              </p>
+            )}
+            
+            <input
+              type="text"
+              value={newItemName}
+              onChange={(e) => setNewItemName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateItem();
+                if (e.key === 'Escape') {
+                  setShowCreateDialog(null);
+                  setNewItemName('');
+                }
+              }}
+              placeholder={showCreateDialog === 'file' ? 'filename.py' : 'folder-name'}
+              className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+              autoFocus
+            />
+            
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={handleCreateItem}
+                disabled={!newItemName.trim()}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Create
+              </button>
+              <button
+                onClick={() => {
+                  setShowCreateDialog(null);
+                  setNewItemName('');
+                }}
+                className="flex-1 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

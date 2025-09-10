@@ -7,6 +7,7 @@ from fastapi import WebSocket
 
 from app.services.code_execution import PythonExecutor
 from app.services.file_manager import FileManager
+from app.core.session_manager import session_manager
 
 
 async def handle_websocket_message(data: Dict[str, Any], websocket: WebSocket) -> Optional[Dict[str, Any]]:
@@ -37,7 +38,7 @@ async def handle_websocket_message(data: Dict[str, Any], websocket: WebSocket) -
         }
 
 async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
-    """Handle terminal command input."""
+    """Handle terminal command input using isolated session processes."""
     command = data.get("command", "").strip()
     session_id = data.get("sessionId", "default")
 
@@ -49,16 +50,21 @@ async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> D
             "timestamp": datetime.utcnow().isoformat(),
         }
 
-    # Handle built-in commands
+    # Handle built-in help command
     if command == "help":
         help_text = """Available commands:
   python script.py    - Run Python script
-  pip install <pkg>   - Install Python package
+  pip install <pkg>   - Install Python package  
+  ps                  - Show running processes (session-isolated)
   ls                  - List files
   cat <file>          - Show file contents
   clear               - Clear terminal
   help                - Show this help
   pwd                 - Show current directory
+  touch <file>        - Create empty file
+  mkdir <dir>         - Create directory
+  
+All commands run in your isolated session environment.
 """
         return {
             "type": "terminal_output",
@@ -67,80 +73,32 @@ async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> D
             "timestamp": datetime.utcnow().isoformat(),
         }
 
-    if command == "ls":
-        # List files in session directory
-        try:
-            file_manager = FileManager(session_id)
-            files = await file_manager.list_files()
-            output = "  ".join(files) if files else "No files found"
-            return {
-                "type": "terminal_output",
-                "sessionId": session_id,
-                "output": output + "\\n",
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        except Exception as e:
-            return {
-                "type": "terminal_output",
-                "sessionId": session_id,
-                "output": f"Error listing files: {e!s}\\n",
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-
-    elif command == "pwd":
+    # Handle clear command (frontend should handle this)
+    if command == "clear":
         return {
-            "type": "terminal_output",
+            "type": "terminal_clear",
             "sessionId": session_id,
-            "output": f"/workspace/{session_id}\\n",
             "timestamp": datetime.utcnow().isoformat(),
         }
 
-    elif command.startswith("cat "):
-        # Show file contents
-        filename = command[4:].strip()
-        try:
-            file_manager = FileManager(session_id)
-            content = await file_manager.read_file(filename)
-            return {
-                "type": "terminal_output",
-                "sessionId": session_id,
-                "output": content + "\\n",
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        except Exception as e:
-            return {
-                "type": "terminal_output",
-                "sessionId": session_id,
-                "output": f"Error reading file: {e!s}\\n",
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-
-    elif command.startswith("python "):
-        # Execute Python file
-        filename = command[7:].strip()
-        try:
-            executor = PythonExecutor(session_id)
-            result = await executor.execute_file(filename)
-            return {
-                "type": "terminal_output",
-                "sessionId": session_id,
-                "output": result["output"],
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        except Exception as e:
-            return {
-                "type": "terminal_output",
-                "sessionId": session_id,
-                "output": f"Error executing Python file: {e!s}\\n",
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-
-    else:
-        # For now, return command not found
+    # Execute command in isolated session
+    try:
+        output, return_code = await session_manager.execute_command(session_id, command)
+        
         return {
             "type": "terminal_output",
             "sessionId": session_id,
-            "output": f"Command not found: {command}\\n",
+            "output": output,
+            "return_code": return_code,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        
+    except Exception as e:
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "output": f"Session error: {e!s}\n",
+            "return_code": 1,
             "timestamp": datetime.utcnow().isoformat(),
         }
 
@@ -211,6 +169,45 @@ async def handle_file_system(data: Dict[str, Any], websocket: WebSocket) -> Dict
             return {
                 "type": "file_system",
                 "action": "list",
+                "sessionId": session_id,
+                "path": path,
+                "files": files,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+        if action == "create_file":
+            await file_manager.create_file(path, content or "")
+            # Refresh file list
+            files = await file_manager.list_files_structured("")
+            return {
+                "type": "file_system",
+                "action": "file_created",
+                "sessionId": session_id,
+                "path": path,
+                "files": files,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+        if action == "create_directory":
+            await file_manager.create_directory(path)
+            # Refresh file list
+            files = await file_manager.list_files_structured("")
+            return {
+                "type": "file_system",
+                "action": "directory_created",
+                "sessionId": session_id,
+                "path": path,
+                "files": files,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+        if action == "delete":
+            await file_manager.delete_file(path)
+            # Refresh file list
+            files = await file_manager.list_files_structured("")
+            return {
+                "type": "file_system",
+                "action": "deleted",
                 "sessionId": session_id,
                 "path": path,
                 "files": files,

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
+import { apiService } from '../services/api';
 
 // Import shared types
 interface CodeSession {
@@ -140,6 +141,51 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+
+  // Create a session automatically on app startup
+  useEffect(() => {
+    const initializeSession = async () => {
+      if (!state.currentSession) {
+        try {
+          console.log('Creating new session automatically...');
+          const newSession = await apiService.createSession({
+            user_id: 'user-' + Date.now(),
+            code: '# Write your Python code here\nprint("Hello, World!")',
+            language: 'python'
+          });
+          
+          // Convert backend session format to frontend format
+          const frontendSession: CodeSession = {
+            id: newSession.id,
+            userId: newSession.user_id,
+            code: newSession.code,
+            language: 'python',
+            createdAt: new Date(newSession.created_at),
+            updatedAt: new Date(newSession.updated_at),
+            isActive: newSession.is_active
+          };
+          
+          dispatch({ type: 'SET_SESSION', payload: frontendSession });
+          console.log('Session created:', frontendSession.id);
+        } catch (error) {
+          console.error('Failed to create session:', error);
+          // Create a fallback local session
+          const fallbackSession: CodeSession = {
+            id: 'local-' + Date.now(),
+            userId: 'local-user',
+            code: '# Write your Python code here\nprint("Hello, World!")',
+            language: 'python',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            isActive: true
+          };
+          dispatch({ type: 'SET_SESSION', payload: fallbackSession });
+        }
+      }
+    };
+
+    initializeSession();
+  }, []); // Only run on mount
 
   const actions = {
     setSession: (session: CodeSession) => {

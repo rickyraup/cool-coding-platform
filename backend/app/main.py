@@ -14,6 +14,7 @@ from app.api import health, sessions
 from app.core.database import init_db
 from app.websockets.handlers import handle_websocket_message
 from app.websockets.manager import WebSocketManager
+from app.core.session_manager import session_manager
 
 
 # Load environment variables
@@ -27,9 +28,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     init_db()
     print("🗄️ Database initialized")
+    print("🚀 Session manager ready")
     yield
     # Shutdown
     print("🔄 Shutting down...")
+    print("🧹 Cleaning up active sessions...")
+    await session_manager.cleanup_all_sessions()
+    print("✅ Cleanup complete")
 
 # Create FastAPI app
 app = FastAPI(
@@ -42,7 +47,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3002", "http://127.0.0.1:3002"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,9 +75,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         while True:
             # Receive message from client
             data = await websocket.receive_json()
+            print(f"🔍 WebSocket received data: {data}")
 
             # Handle the message
             response = await handle_websocket_message(data, websocket)
+            print(f"🔍 WebSocket handler response: {response}")
 
             # Send response back to client
             if response:

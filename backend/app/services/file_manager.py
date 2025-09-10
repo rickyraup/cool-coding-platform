@@ -17,18 +17,31 @@ class FileManager:
         # Allowed file extensions for security
         self.allowed_extensions = {".py", ".txt", ".md", ".json", ".csv", ".dat", ".js", ".ts", ".html", ".css"}
 
-    def _validate_path(self, file_path: str) -> str:
+    def _validate_path(self, file_path: str, is_directory: bool = False) -> str:
         """Validate and sanitize file path to prevent directory traversal"""
-        # Remove any directory traversal attempts
-        file_path = os.path.basename(file_path)
+        # Normalize the path and remove any directory traversal attempts
+        file_path = os.path.normpath(file_path)
+        
+        # Remove leading slashes and ensure no parent directory references
+        file_path = file_path.lstrip('/')
+        if '..' in file_path:
+            raise ValueError("Parent directory references are not allowed")
 
-        # Check file extension
-        _, ext = os.path.splitext(file_path)
-        if ext not in self.allowed_extensions:
-            raise ValueError(f"File extension '{ext}' is not allowed")
+        # For files, check file extension on the filename (not the path)
+        if not is_directory:
+            filename = os.path.basename(file_path)
+            _, ext = os.path.splitext(filename)
+            if ext and ext not in self.allowed_extensions:
+                raise ValueError(f"File extension '{ext}' is not allowed")
 
         # Return full path within session directory
-        return os.path.join(self.session_dir, file_path)
+        full_path = os.path.join(self.session_dir, file_path)
+        
+        # Ensure the path is still within the session directory
+        if not full_path.startswith(self.session_dir):
+            raise ValueError("Path is outside of allowed directory")
+            
+        return full_path
 
     async def write_file(self, file_path: str, content: str) -> bool:
         """Write content to a file"""
@@ -74,10 +87,9 @@ class FileManager:
         """List files in the session directory or subdirectory with structured data"""
         try:
             if directory:
-                # Validate subdirectory path
-                directory = os.path.basename(directory)
-                search_dir = os.path.join(self.session_dir, directory)
-                path_prefix = directory + "/"
+                # Validate subdirectory path using our validation method
+                search_dir = self._validate_path(directory, is_directory=True)
+                path_prefix = directory + "/" if not directory.endswith("/") else directory
             else:
                 search_dir = self.session_dir
                 path_prefix = ""
@@ -92,7 +104,7 @@ class FileManager:
                 if os.path.isfile(item_path):
                     # Check if file extension is allowed
                     _, ext = os.path.splitext(item)
-                    if ext in self.allowed_extensions:
+                    if ext in self.allowed_extensions or ext == "":  # Allow files without extensions
                         files.append({
                             "name": item,
                             "type": "file",
@@ -143,20 +155,63 @@ class FileManager:
             raise Exception(f"Failed to list files: {e!s}")
 
     async def delete_file(self, file_path: str) -> bool:
-        """Delete a file"""
+        """Delete a file or directory"""
         try:
-            full_path = self._validate_path(file_path)
+            # Try as directory first, then as file
+            try:
+                full_path = self._validate_path(file_path, is_directory=True)
+            except ValueError:
+                full_path = self._validate_path(file_path, is_directory=False)
 
             if not os.path.exists(full_path):
                 raise FileNotFoundError(f"File '{file_path}' not found")
 
-            os.remove(full_path)
+            if os.path.isfile(full_path):
+                os.remove(full_path)
+            elif os.path.isdir(full_path):
+                shutil.rmtree(full_path)
+            
             return True
 
         except FileNotFoundError:
             raise
         except Exception as e:
             raise Exception(f"Failed to delete file: {e!s}")
+
+    async def create_directory(self, dir_path: str) -> bool:
+        """Create a new directory"""
+        try:
+            full_path = self._validate_path(dir_path, is_directory=True)
+            
+            if os.path.exists(full_path):
+                raise ValueError(f"Directory '{dir_path}' already exists")
+            
+            os.makedirs(full_path, exist_ok=True)
+            return True
+            
+        except Exception as e:
+            raise Exception(f"Failed to create directory: {e!s}")
+
+    async def create_file(self, file_path: str, content: str = "") -> bool:
+        """Create a new file with optional content"""
+        try:
+            full_path = self._validate_path(file_path, is_directory=False)
+            
+            if os.path.exists(full_path):
+                raise ValueError(f"File '{file_path}' already exists")
+            
+            # Create directory structure if needed
+            dir_path = os.path.dirname(full_path)
+            if dir_path and dir_path != self.session_dir:
+                os.makedirs(dir_path, exist_ok=True)
+            
+            async with aiofiles.open(full_path, "w", encoding="utf-8") as f:
+                await f.write(content)
+            
+            return True
+            
+        except Exception as e:
+            raise Exception(f"Failed to create file: {e!s}")
 
     async def file_exists(self, file_path: str) -> bool:
         """Check if a file exists"""

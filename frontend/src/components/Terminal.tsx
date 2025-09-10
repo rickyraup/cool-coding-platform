@@ -38,32 +38,38 @@ export function Terminal(): JSX.Element {
 
         const terminal = new Terminal({
           theme: {
-            background: '#000000',
-            foreground: '#00ff00',
-            cursor: '#00ff00',
+            background: '#0f0f23',
+            foreground: '#cccccc',
+            cursor: '#64ffda',
+            cursorAccent: '#1a1a2e',
             black: '#000000',
-            red: '#ff5555',
-            green: '#50fa7b',
-            yellow: '#f1fa8c',
-            blue: '#bd93f9',
-            magenta: '#ff79c6',
-            cyan: '#8be9fd',
-            white: '#f8f8f2',
-            brightBlack: '#6272a4',
-            brightRed: '#ff6e6e',
-            brightGreen: '#69ff94',
-            brightYellow: '#ffffa5',
-            brightBlue: '#d6acff',
-            brightMagenta: '#ff92df',
-            brightCyan: '#a4ffff',
-            brightWhite: '#ffffff'
+            red: '#ff6b6b',
+            green: '#51cf66',
+            yellow: '#ffd43b',
+            blue: '#339af0',
+            magenta: '#e599f7',
+            cyan: '#64ffda',
+            white: '#f8f9fa',
+            brightBlack: '#495057',
+            brightRed: '#ff8787',
+            brightGreen: '#69db7c',
+            brightYellow: '#ffe066',
+            brightBlue: '#4dabf7',
+            brightMagenta: '#da77f2',
+            brightCyan: '#77eeff',
+            brightWhite: '#ffffff',
+            selectionBackground: '#364954',
+            selectionForeground: '#ffffff'
           },
-          fontFamily: 'ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
+          fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace',
           fontSize: 14,
+          lineHeight: 1.4,
           cursorBlink: true,
           cursorStyle: 'block',
-          scrollback: 1000,
+          cursorWidth: 2,
+          scrollback: 5000,
           tabStopWidth: 4,
+          allowTransparency: true,
         });
 
         const fitAddon = new FitAddon();
@@ -75,6 +81,12 @@ export function Terminal(): JSX.Element {
         if (terminalRef.current) {
           terminal.open(terminalRef.current);
           fitAddon.fit();
+          
+          // Ensure terminal gets focus for keyboard input
+          setTimeout(() => {
+            terminal.focus();
+            console.log('🎯 [Terminal] Terminal focused for keyboard input');
+          }, 100);
         }
         
         // Welcome message
@@ -90,13 +102,25 @@ export function Terminal(): JSX.Element {
           const terminal = xtermRef.current;
           if (!terminal) return;
 
+          // Debug: log ALL key data
+          console.log('🎹 [Terminal] onData received:', JSON.stringify(data), 'charCode:', data.charCodeAt(0));
+          if (data.charCodeAt(0) <= 32 || data.includes('\u001b')) {
+            console.log('🔑 [Terminal] Special key pressed:', data.charCodeAt(0), JSON.stringify(data));
+          }
+
           // Handle special keys
           if (data === '\r') { // Enter key
-            handleCommand(currentLine);
+            // Get current value from state using functional update
+            setCurrentLine(currentCmd => {
+              console.log('🔥 [Terminal] Enter pressed, currentLine:', JSON.stringify(currentCmd));
+              handleCommand(currentCmd);
+              return ''; // Clear the line
+            });
+            setCursorX(0);
             return;
           }
           
-          if (data === '\u007F') { // Backspace
+          if (data === '\u007F' || data === '\b' || data === '\u0008') { // Backspace (multiple variants)
             if (cursorX > 0) {
               const newLine = currentLine.slice(0, -1);
               setCurrentLine(newLine);
@@ -138,9 +162,16 @@ export function Terminal(): JSX.Element {
           
           // Regular character input
           if (data >= ' ' || data === '\t') {
-            setCurrentLine(prev => prev + data);
+            console.log('📝 [Terminal] Adding character to currentLine:', JSON.stringify(data), 'charCode:', data.charCodeAt(0));
+            setCurrentLine(prev => {
+              const newLine = prev + data;
+              console.log('📝 [Terminal] Updated currentLine:', JSON.stringify(newLine));
+              return newLine;
+            });
             setCursorX(prev => prev + 1);
             terminal.write(data);
+          } else {
+            console.log('🚫 [Terminal] Character ignored:', JSON.stringify(data), 'charCode:', data.charCodeAt(0));
           }
         });
 
@@ -183,6 +214,7 @@ export function Terminal(): JSX.Element {
   }, [currentLine]);
 
   const handleCommand = useCallback((command: string): void => {
+    console.log('🎯 [Terminal] handleCommand called with:', JSON.stringify(command));
     const terminal = xtermRef.current;
     if (!terminal) return;
 
@@ -190,7 +222,6 @@ export function Terminal(): JSX.Element {
     
     if (!command.trim()) {
       terminal.write('$ ');
-      setCurrentLine('');
       setCursorX(0);
       return;
     }
@@ -203,7 +234,6 @@ export function Terminal(): JSX.Element {
     if (command === 'clear') {
       terminal.clear();
       terminal.write('$ ');
-      setCurrentLine('');
       setCursorX(0);
       return;
     }
@@ -222,14 +252,12 @@ export function Terminal(): JSX.Element {
       ];
       helpText.forEach(line => terminal.writeln(line));
       terminal.write('$ ');
-      setCurrentLine('');
       setCursorX(0);
       return;
     }
 
     // Send command via WebSocket
     sendTerminalCommand(command);
-    setCurrentLine('');
     setCursorX(0);
   }, [sendTerminalCommand]);
 
@@ -271,6 +299,12 @@ export function Terminal(): JSX.Element {
         ref={terminalRef} 
         className="flex-1 p-2"
         style={{ minHeight: '200px' }}
+        onClick={() => {
+          if (xtermRef.current) {
+            xtermRef.current.focus();
+            console.log('🖱️ [Terminal] Terminal clicked and focused');
+          }
+        }}
       />
     </div>
   );
