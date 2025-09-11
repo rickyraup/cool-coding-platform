@@ -8,6 +8,7 @@ from fastapi import WebSocket
 from app.services.code_execution import PythonExecutor
 from app.services.file_manager import FileManager
 from app.core.session_manager import session_manager
+from app.services.container_manager import container_manager
 
 
 async def handle_websocket_message(data: Dict[str, Any], websocket: WebSocket) -> Optional[Dict[str, Any]]:
@@ -24,6 +25,8 @@ async def handle_websocket_message(data: Dict[str, Any], websocket: WebSocket) -
             return await handle_code_execution(data, websocket)
         if message_type == "file_system":
             return await handle_file_system(data, websocket)
+        if message_type == "container_status":
+            return await handle_container_status(data, websocket)
         return {
             "type": "error",
             "message": f"Unknown message type: {message_type}",
@@ -31,6 +34,8 @@ async def handle_websocket_message(data: Dict[str, Any], websocket: WebSocket) -
         }
     except Exception as e:
         print(f"Error handling WebSocket message: {e}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
         return {
             "type": "error",
             "message": f"Server error: {e!s}",
@@ -38,7 +43,7 @@ async def handle_websocket_message(data: Dict[str, Any], websocket: WebSocket) -
         }
 
 async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
-    """Handle terminal command input using isolated session processes."""
+    """Handle terminal command input using Docker containers."""
     command = data.get("command", "").strip()
     session_id = data.get("sessionId", "default")
 
@@ -52,20 +57,22 @@ async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> D
 
     # Handle built-in help command
     if command == "help":
-        help_text = """Available commands:
-  python script.py    - Run Python script
-  pip install <pkg>   - Install Python package  
-  ps                  - Show running processes (session-isolated)
-  ls                  - List files
-  cat <file>          - Show file contents
-  clear               - Clear terminal
-  help                - Show this help
-  pwd                 - Show current directory
-  touch <file>        - Create empty file
-  mkdir <dir>         - Create directory
-  
-All commands run in your isolated session environment.
-"""
+        help_text = """
+                    Available commands:
+                        python script.py    - Run Python script
+                        pip install <pkg>   - Install Python package  
+                        ps                  - Show running processes (container-isolated)
+                        ls                  - List files
+                        cat <file>          - Show file contents
+                        clear               - Clear terminal
+                        help                - Show this help
+                        pwd                 - Show current directory
+                        touch <file>        - Create empty file
+                        mkdir <dir>         - Create directory
+                        echo "text" > file  - Write text to file
+                        
+                        All commands run in your isolated Docker container.
+                    """
         return {
             "type": "terminal_output",
             "sessionId": session_id,
@@ -81,29 +88,73 @@ All commands run in your isolated session environment.
             "timestamp": datetime.utcnow().isoformat(),
         }
 
-    # Execute command in isolated session
-    try:
-        output, return_code = await session_manager.execute_command(session_id, command)
-        
-        # Format output with command prompt to show what was executed
-        formatted_output = f"$ {command}\n{output}" if output else f"$ {command}"
-        
-        return {
-            "type": "terminal_output",
-            "sessionId": session_id,
-            "output": formatted_output,
-            "return_code": return_code,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-        
-    except Exception as e:
-        return {
-            "type": "terminal_output",
-            "sessionId": session_id,
-            "output": f"$ {command}\nSession error: {e!s}",
-            "return_code": 1,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
+    # Check if Docker is available, fallback to subprocess if not
+    if container_manager.is_docker_available():
+        try:
+            # Execute command in Docker container
+            print(f"Executing Docker command for session {session_id}: {command}")
+            output, return_code = await container_manager.execute_command(session_id, command)
+            print(f"Docker command completed with exit code {return_code}")
+            
+            # Return just the command output, frontend will handle prompt formatting
+            formatted_output = output if output else ""
+            
+            return {
+                "type": "terminal_output",
+                "sessionId": session_id,
+                "command": command,
+                "output": formatted_output,
+                "return_code": return_code,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            
+        except Exception as e:
+            # If Docker fails, try fallback to subprocess
+            print(f"Docker execution failed, falling back to subprocess: {e}")
+            import traceback
+            print(f"Docker error traceback: {traceback.format_exc()}")
+            
+            try:
+                output, return_code = await session_manager.execute_command(session_id, command)
+                formatted_output = f"{output} (fallback mode)" if output else "(fallback mode)"
+                
+                return {
+                    "type": "terminal_output",
+                    "sessionId": session_id,
+                    "output": formatted_output,
+                    "return_code": return_code,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            except Exception as fallback_error:
+                print(f"Subprocess fallback also failed: {fallback_error}")
+                return {
+                    "type": "terminal_output",
+                    "sessionId": session_id,
+                    "output": f"Execution error: {fallback_error!s}",
+                    "return_code": 1,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+    else:
+        # Docker not available, use subprocess fallback
+        try:
+            output, return_code = await session_manager.execute_command(session_id, command)
+            formatted_output = f"{output} (subprocess mode)" if output else "(subprocess mode)"
+            
+            return {
+                "type": "terminal_output",
+                "sessionId": session_id,
+                "output": formatted_output,
+                "return_code": return_code,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        except Exception as e:
+            return {
+                "type": "terminal_output",
+                "sessionId": session_id,
+                "output": f"Session error: {e!s}",
+                "return_code": 1,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
 
 async def handle_code_execution(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
     """Handle Python code execution."""
@@ -228,5 +279,48 @@ async def handle_file_system(data: Dict[str, Any], websocket: WebSocket) -> Dict
             "type": "terminal_output",
             "sessionId": session_id,
             "output": f"File system error: {e!s}\\n",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+
+async def handle_container_status(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
+    """Handle container status requests."""
+    session_id = data.get("sessionId", "default")
+    
+    try:
+        if container_manager.is_docker_available():
+            session_info = await container_manager.get_session_info(session_id)
+            
+            if session_info:
+                return {
+                    "type": "container_status",
+                    "sessionId": session_id,
+                    "status": "active",
+                    "container_info": session_info,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            else:
+                return {
+                    "type": "container_status",
+                    "sessionId": session_id,
+                    "status": "not_found",
+                    "message": "Container session not found",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+        else:
+            return {
+                "type": "container_status",
+                "sessionId": session_id,
+                "status": "docker_unavailable",
+                "message": "Docker not available, using subprocess mode",
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            
+    except Exception as e:
+        return {
+            "type": "container_status",
+            "sessionId": session_id,
+            "status": "error",
+            "message": f"Failed to get container status: {e!s}",
             "timestamp": datetime.utcnow().isoformat(),
         }

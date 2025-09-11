@@ -19,6 +19,7 @@ interface TerminalLine {
   content: string;
   type: 'input' | 'output' | 'error';
   timestamp: Date;
+  command?: string;
 }
 
 export interface FileItem {
@@ -128,7 +129,7 @@ interface AppContextType {
   // Actions
   setSession: (session: CodeSession) => void;
   updateCode: (code: string) => void;
-  addTerminalLine: (content: string, type: 'input' | 'output' | 'error') => void;
+  addTerminalLine: (content: string, type: 'input' | 'output' | 'error', command?: string) => void;
   clearTerminal: () => void;
   setFiles: (files: FileItem[]) => void;
   setCurrentFile: (path: string | null) => void;
@@ -196,12 +197,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'UPDATE_CODE', payload: code });
     },
     
-    addTerminalLine: (content: string, type: 'input' | 'output' | 'error') => {
+    addTerminalLine: (content: string, type: 'input' | 'output' | 'error', command?: string) => {
       const line: TerminalLine = {
         id: Date.now().toString() + Math.random().toString(36).substring(2),
         content,
         type,
         timestamp: new Date(),
+        command,
       };
       dispatch({ type: 'ADD_TERMINAL_LINE', payload: line });
     },

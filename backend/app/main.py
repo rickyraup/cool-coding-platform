@@ -26,13 +26,21 @@ websocket_manager = WebSocketManager()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
+    from app.services.background_tasks import background_task_manager
+    
     init_db()
     print("🗄️ Database initialized")
     print("🚀 Session manager ready")
+    
+    # Start background tasks for container management
+    print("🐳 Starting container lifecycle background tasks...")
+    await background_task_manager.start_background_tasks()
+    
     yield
     # Shutdown
     print("🔄 Shutting down...")
-    print("🧹 Cleaning up active sessions...")
+    print("🧹 Cleaning up active sessions and stopping background tasks...")
+    await background_task_manager.stop_background_tasks()
     await session_manager.cleanup_all_sessions()
     print("✅ Cleanup complete")
 

@@ -44,28 +44,51 @@ export function useWebSocket() {
     const now = Date.now();
     const timeSinceLastAttempt = now - globalConnectionState.lastConnectionAttempt;
     
-    // Prevent multiple simultaneous connection attempts using global state
-    if (globalWebSocket?.readyState === WebSocket.OPEN || 
-        globalWebSocket?.readyState === WebSocket.CONNECTING ||
-        globalConnectionState.isConnecting) {
+    console.log('🔌 [WS] Connect called - checking current state');
+    console.log('🔌 [WS] Global WebSocket state:', globalWebSocket?.readyState);
+    console.log('🔌 [WS] Local ref state:', wsRef.current?.readyState);
+    console.log('🔌 [WS] Global isConnecting:', globalConnectionState.isConnecting);
+    
+    // Reset stale global state if WebSocket is closed but global state says connecting
+    if (globalWebSocket && globalWebSocket.readyState === WebSocket.CLOSED && globalConnectionState.isConnecting) {
+      console.log('🔄 [WS] Resetting stale global state');
+      globalWebSocket = null;
+      globalConnectionState.isConnecting = false;
+      isConnectingRef.current = false;
+    }
+    
+    // Check if we already have a working connection
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('🔒 [WS] Connection already open, updating global reference');
+      globalWebSocket = wsRef.current;
+      setConnected(true);
+      return;
+    }
+
+    // Check if we're already connecting
+    if (wsRef.current?.readyState === WebSocket.CONNECTING) {
+      console.log('🔒 [WS] Connection already in progress');
       return;
     }
 
     // Prevent rapid connection attempts with cooldown
     if (timeSinceLastAttempt < globalConnectionState.cooldownPeriod) {
+      console.log('🔒 [WS] Cooldown period active, waiting');
       return;
     }
 
     // Clean up any existing connection
-    if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
+    if (wsRef.current) {
+      console.log('🧹 [WS] Cleaning up existing connection');
       wsRef.current.close();
+      wsRef.current = null;
     }
 
     try {
       isConnectingRef.current = true;
       globalConnectionState.isConnecting = true;
       globalConnectionState.lastConnectionAttempt = now;
-      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8001/ws';
+      const wsUrl = 'ws://localhost:8001/ws'; // Force correct URL to bypass browser cache
       console.log('🔌 [WS] Connecting to:', wsUrl);
       wsRef.current = new WebSocket(wsUrl);
 
@@ -74,6 +97,7 @@ export function useWebSocket() {
         isConnectingRef.current = false;
         globalConnectionState.isConnecting = false;
         globalConnectionState.hasEverConnected = true; // Mark that we've connected at least once
+        globalWebSocket = wsRef.current; // Update global reference
         setConnected(true);
         setError(null);
         reconnectAttempts.current = 0;
@@ -158,6 +182,7 @@ export function useWebSocket() {
       console.log('🔌 [WS] Closing WebSocket with code 1000');
       wsRef.current.close(1000, 'Client disconnect');
       wsRef.current = null;
+      globalWebSocket = null; // Clear global reference
     }
     
     setConnected(false);
@@ -198,7 +223,7 @@ export function useWebSocket() {
 
       case 'terminal_output':
         if (message.output) {
-          addTerminalLine(message.output, 'output');
+          addTerminalLine(message.output, 'output', message.command);
         }
         break;
 
@@ -282,21 +307,26 @@ export function useWebSocket() {
   // Track the last session ID to prevent duplicate messages
   const lastSessionIdRef = useRef<string | null>(null);
 
-  // Monitor session changes and refresh files
-  useEffect(() => {
-    if (state.isConnected && state.currentSession && state.currentSession.id !== lastSessionIdRef.current) {
-      console.log('🔄 [WS] Session changed, refreshing files for session:', state.currentSession.id);
-      lastSessionIdRef.current = state.currentSession.id;
-      
-      // Small delay to ensure session is fully set up
-      const refreshTimeout = setTimeout(() => {
-        performFileOperation('list', '');
-        addTerminalLine(`🔄 Switched to session: ${state.currentSession?.id.substring(0, 8)}...`, 'output');
-      }, 200);
-      
-      return () => clearTimeout(refreshTimeout);
-    }
-  }, [state.currentSession?.id, state.isConnected, performFileOperation]);
+  const handledSessionIdRef = useRef<string | null>(null);
+
+useEffect(() => {
+  if (
+    state.isConnected && 
+    state.currentSession && 
+    state.currentSession.id !== handledSessionIdRef.current
+  ) {
+    console.log('🔄 [WS] Session changed, refreshing files for session:', state.currentSession.id);
+    handledSessionIdRef.current = state.currentSession.id;
+    
+    const refreshTimeout = setTimeout(() => {
+      performFileOperation('list', '');
+      addTerminalLine(`🔄 Switched to session: ${state.currentSession?.id.substring(0, 8)}...`, 'output');
+    }, 200);
+    
+    return () => clearTimeout(refreshTimeout);
+  }
+}, [state.currentSession?.id, state.isConnected, performFileOperation]);
+
 
   // Only connect from the first hook instance (prevent multiple connections)
   useEffect(() => {
@@ -308,7 +338,7 @@ export function useWebSocket() {
       console.log('🎯 [WS] First hook instance - initiating connection');
       const connectTimeout = setTimeout(() => {
         connect();
-      }, 100);
+      }, 500); // Increased delay to let session creation complete
       
       return () => {
         console.log('🧹 [WS] First hook instance unmounting - disconnecting');
@@ -324,6 +354,18 @@ export function useWebSocket() {
       };
     }
   }, []);
+
+  // Also try to connect when a session becomes available
+  useEffect(() => {
+    if (state.currentSession && !state.isConnected && !isConnectingRef.current) {
+      console.log('🎯 [WS] Session available, attempting connection');
+      const sessionConnectTimeout = setTimeout(() => {
+        connect();
+      }, 100);
+      
+      return () => clearTimeout(sessionConnectTimeout);
+    }
+  }, [state.currentSession, state.isConnected, connect]);
 
   // Cleanup on unmount
   useEffect(() => {
