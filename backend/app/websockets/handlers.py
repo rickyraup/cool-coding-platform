@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import WebSocket
 
-from app.services.code_execution import PythonExecutor
+# from app.services.code_execution import PythonExecutor  # TODO: Fix missing module
 from app.services.file_manager import FileManager
 from app.core.session_manager import session_manager
 from app.services.container_manager import container_manager

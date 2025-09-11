@@ -11,7 +11,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import health, sessions
-from app.core.database import init_db
+from app.api import users, postgres_sessions, workspace, session_workspace
+from app.core.postgres import init_db
 from app.websockets.handlers import handle_websocket_message
 from app.websockets.manager import WebSocketManager
 from app.core.session_manager import session_manager
@@ -64,6 +65,12 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
+
+# PostgreSQL-based routers
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(postgres_sessions.router, prefix="/api/postgres_sessions", tags=["postgres_sessions"])
+app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
+app.include_router(session_workspace.router, prefix="/api/session_workspace", tags=["session_workspace"])
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
