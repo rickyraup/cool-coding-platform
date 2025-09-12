@@ -15,7 +15,7 @@ class DockerClientService:
     
     def __init__(self):
         self._client: Optional[docker.DockerClient] = None
-        self._image_name = "python:3.11-slim"  # Use official Python image with all packages
+        self._image_name = "code-platform-python"  # Use custom Python image with pandas, scipy, etc.
         
     @property
     def client(self) -> docker.DockerClient:
@@ -81,15 +81,18 @@ class DockerClientService:
         """Get the security configuration for containers."""
         return {
             'user': '1000:1000',  # Non-root user
-            'read_only': True,    # Read-only filesystem
+            'read_only': False,   # Allow write access for pip installations
             'security_opt': ['no-new-privileges'],
             'mem_limit': '512m',
             'memswap_limit': '512m',
             'cpu_count': 1,
-            'pids_limit': 50,
-            'network_mode': 'none',  # No network access
+            'pids_limit': 100,  # Increased for pip operations
+            'network_mode': 'bridge',  # Allow network access for pip
             'remove': True,  # Auto-remove when stopped
             'detach': True,  # Run in background
+            'tmpfs': {
+                '/tmp': 'rw,size=100m',  # Writable tmp directory
+            }
         }
     
     def create_session_container(self, session_id: str, working_dir: str) -> Container:

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
 
 // Import shared types
@@ -143,61 +143,23 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
-  // Create a session automatically on app startup
+  // Session management is now handled manually through authentication and workspace selection
+  // No longer auto-create sessions on app startup since we have proper user-based session management
   useEffect(() => {
-    const initializeSession = async () => {
-      if (!state.currentSession) {
-        try {
-          console.log('Creating new session automatically...');
-          const newSession = await apiService.createSession({
-            user_id: 'user-' + Date.now(),
-            code: '# Write your Python code here\nprint("Hello, World!")',
-            language: 'python'
-          });
-          
-          // Convert backend session format to frontend format
-          const frontendSession: CodeSession = {
-            id: newSession.id,
-            userId: newSession.user_id,
-            code: newSession.code,
-            language: 'python',
-            createdAt: new Date(newSession.created_at),
-            updatedAt: new Date(newSession.updated_at),
-            isActive: newSession.is_active
-          };
-          
-          dispatch({ type: 'SET_SESSION', payload: frontendSession });
-          console.log('Session created:', frontendSession.id);
-        } catch (error) {
-          console.error('Failed to create session:', error);
-          // Create a fallback local session
-          const fallbackSession: CodeSession = {
-            id: 'local-' + Date.now(),
-            userId: 'local-user',
-            code: '# Write your Python code here\nprint("Hello, World!")',
-            language: 'python',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            isActive: true
-          };
-          dispatch({ type: 'SET_SESSION', payload: fallbackSession });
-        }
-      }
-    };
-
-    initializeSession();
+    console.log('AppContext initialized - session management handled by authentication system');
+    // Sessions are now created/loaded explicitly when users navigate to workspaces
   }, []); // Only run on mount
 
   const actions = {
-    setSession: (session: CodeSession) => {
+    setSession: useCallback((session: CodeSession) => {
       dispatch({ type: 'SET_SESSION', payload: session });
-    },
+    }, []),
     
-    updateCode: (code: string) => {
+    updateCode: useCallback((code: string) => {
       dispatch({ type: 'UPDATE_CODE', payload: code });
-    },
+    }, []),
     
-    addTerminalLine: (content: string, type: 'input' | 'output' | 'error', command?: string) => {
+    addTerminalLine: useCallback((content: string, type: 'input' | 'output' | 'error', command?: string) => {
       const line: TerminalLine = {
         id: Date.now().toString() + Math.random().toString(36).substring(2),
         content,
@@ -206,31 +168,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
         command,
       };
       dispatch({ type: 'ADD_TERMINAL_LINE', payload: line });
-    },
+    }, []),
     
-    clearTerminal: () => {
+    clearTerminal: useCallback(() => {
       dispatch({ type: 'CLEAR_TERMINAL' });
-    },
+    }, []),
     
-    setFiles: (files: FileItem[]) => {
+    setFiles: useCallback((files: FileItem[]) => {
       dispatch({ type: 'SET_FILES', payload: files });
-    },
+    }, []),
     
-    setCurrentFile: (path: string | null) => {
+    setCurrentFile: useCallback((path: string | null) => {
       dispatch({ type: 'SET_CURRENT_FILE', payload: path });
-    },
+    }, []),
     
-    setConnected: (connected: boolean) => {
+    setConnected: useCallback((connected: boolean) => {
       dispatch({ type: 'SET_CONNECTED', payload: connected });
-    },
+    }, []),
     
-    setLoading: (loading: boolean) => {
+    setLoading: useCallback((loading: boolean) => {
       dispatch({ type: 'SET_LOADING', payload: loading });
-    },
+    }, []),
     
-    setError: (error: string | null) => {
+    setError: useCallback((error: string | null) => {
       dispatch({ type: 'SET_ERROR', payload: error });
-    },
+    }, []),
   };
 
   return (

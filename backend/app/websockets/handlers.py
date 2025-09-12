@@ -9,6 +9,151 @@ from fastapi import WebSocket
 from app.services.file_manager import FileManager
 from app.core.session_manager import session_manager
 from app.services.container_manager import container_manager
+import re
+
+
+async def handle_file_creation_command(command: str, session_id: str, websocket: WebSocket) -> Dict[str, Any]:
+    """Handle interactive file creation commands like 'cat > file.py'."""
+    
+    # Parse the command to extract filename
+    # Support patterns like: cat > file.py, echo "content" > file.py
+    if " > " in command:
+        parts = command.split(" > ")
+        if len(parts) == 2:
+            filename = parts[1].strip()
+            left_part = parts[0].strip()
+            
+            # Handle echo commands with content
+            if left_part.startswith("echo "):
+                echo_content = left_part[5:].strip()
+                # Remove quotes if present
+                if echo_content.startswith('"') and echo_content.endswith('"'):
+                    echo_content = echo_content[1:-1]
+                elif echo_content.startswith("'") and echo_content.endswith("'"):
+                    echo_content = echo_content[1:-1]
+                
+                # Execute the echo command directly
+                try:
+                    output, return_code = await container_manager.execute_command(
+                        session_id, 
+                        f'echo "{echo_content}" > {filename}'
+                    )
+                    
+                    return {
+                        "type": "terminal_output",
+                        "sessionId": session_id,
+                        "command": command,
+                        "output": f"Content written to {filename}",
+                        "return_code": return_code,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                except Exception as e:
+                    return {
+                        "type": "terminal_output",
+                        "sessionId": session_id,
+                        "output": f"Error writing to file: {e}",
+                        "return_code": 1,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+            
+            # Handle cat > filename (interactive mode)
+            elif left_part == "cat":
+                # Return interactive prompt for file content
+                return {
+                    "type": "file_input_prompt",
+                    "sessionId": session_id,
+                    "filename": filename,
+                    "message": f"Enter content for {filename} (type 'EOF' on a new line to finish):",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+    
+    # If we can't parse it, execute normally
+    try:
+        output, return_code = await container_manager.execute_command(session_id, command)
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "command": command,
+            "output": output,
+            "return_code": return_code,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "output": f"Command error: {e}",
+            "return_code": 1,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+
+async def handle_file_input_response(data: Dict[str, Any], websocket: WebSocket) -> Dict[str, Any]:
+    """Handle response from interactive file input prompt."""
+    session_id = data.get("sessionId", "default")
+    filename = data.get("filename", "")
+    content = data.get("content", "")
+    
+    if not filename:
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "output": "Error: No filename specified",
+            "return_code": 1,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    
+    try:
+        # Write the content to the file using container command
+        # Escape content properly for shell
+        escaped_content = content.replace('"', '\\"').replace('\\', '\\\\')
+        
+        output, return_code = await container_manager.execute_command(
+            session_id,
+            f'cat > {filename} << \'EOF\'\n{content}\nEOF'
+        )
+        
+        if return_code == 0:
+            # Also refresh file list
+            try:
+                from app.services.file_manager import FileManager
+                file_manager = FileManager(session_id)
+                files = await file_manager.list_files_structured("")
+                
+                return {
+                    "type": "file_created",
+                    "sessionId": session_id,
+                    "filename": filename,
+                    "message": f"File '{filename}' created successfully",
+                    "files": files,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            except Exception:
+                # Return success even if file list refresh fails
+                return {
+                    "type": "terminal_output",
+                    "sessionId": session_id,
+                    "output": f"File '{filename}' created successfully",
+                    "return_code": 0,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+        else:
+            return {
+                "type": "terminal_output",
+                "sessionId": session_id,
+                "output": f"Error creating file: {output}",
+                "return_code": return_code,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            
+    except Exception as e:
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "output": f"Error creating file: {e}",
+            "return_code": 1,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
 
 
 async def handle_websocket_message(data: Dict[str, Any], websocket: WebSocket) -> Optional[Dict[str, Any]]:
@@ -21,6 +166,8 @@ async def handle_websocket_message(data: Dict[str, Any], websocket: WebSocket) -
     try:
         if message_type == "terminal_input":
             return await handle_terminal_input(data, websocket)
+        if message_type == "file_input_response":
+            return await handle_file_input_response(data, websocket)
         if message_type == "code_execution":
             return await handle_code_execution(data, websocket)
         if message_type == "file_system":
@@ -46,6 +193,10 @@ async def handle_terminal_input(data: Dict[str, Any], websocket: WebSocket) -> D
     """Handle terminal command input using Docker containers."""
     command = data.get("command", "").strip()
     session_id = data.get("sessionId", "default")
+    
+    # Check for interactive file editing commands
+    if ">" in command and any(cmd in command for cmd in ["cat >", "echo >", "cat >"]):
+        return await handle_file_creation_command(command, session_id, websocket)
 
     if not command:
         return {
@@ -194,6 +345,8 @@ async def handle_file_system(data: Dict[str, Any], websocket: WebSocket) -> Dict
     path = data.get("path", "")
     content = data.get("content", "")
     session_id = data.get("sessionId", "default")
+    
+    print(f"📁 [FileSystem] Handling file operation: {action}, path: {path}, session: {session_id}")
 
     try:
         file_manager = FileManager(session_id)

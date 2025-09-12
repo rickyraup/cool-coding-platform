@@ -4,10 +4,13 @@ import { useCallback, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import { useApp } from '../context/AppContext';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 export function CodeEditor(): JSX.Element {
   const { state, updateCode } = useApp();
+  const { saveCurrentFile } = useWebSocket();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleEditorDidMount = useCallback((editorInstance: editor.IStandaloneCodeEditor): void => {
     editorRef.current = editorInstance;
@@ -25,8 +28,29 @@ export function CodeEditor(): JSX.Element {
   }, []);
 
   const handleEditorChange = useCallback((value: string | undefined): void => {
-    updateCode(value ?? '');
-  }, [updateCode]);
+    const newCode = value ?? '';
+    updateCode(newCode);
+    
+    // Auto-save with debounce (save 2 seconds after user stops typing)
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      if (newCode.trim() && state.currentSession) {
+        saveCurrentFile(newCode);
+      }
+    }, 2000);
+  }, [updateCode, saveCurrentFile, state.currentSession]);
+
+  // Cleanup auto-save timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Configure Monaco editor options

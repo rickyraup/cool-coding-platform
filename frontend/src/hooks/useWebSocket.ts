@@ -17,7 +17,7 @@ let globalConnectionState = {
 };
 
 interface WebSocketMessage {
-  type: 'terminal_input' | 'terminal_output' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list';
+  type: 'terminal_input' | 'terminal_output' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created';
   sessionId?: string;
   command?: string;
   output?: string;
@@ -244,6 +244,26 @@ export function useWebSocket() {
         }
         break;
 
+      case 'file_input_prompt':
+        // Handle interactive file input prompt
+        if (message.filename) {
+          console.log('📝 File input prompt received for:', message.filename);
+          // Store the filename and show interactive prompt in terminal
+          addTerminalLine(message.message || `Enter content for ${message.filename}:`, 'output');
+          // The terminal component should handle this by enabling interactive mode
+        }
+        break;
+
+      case 'file_created':
+        // Handle successful file creation
+        if (message.files) {
+          setFiles(message.files);
+        }
+        if (message.message) {
+          addTerminalLine(message.message, 'output');
+        }
+        break;
+
       case 'file_system':
         // Handle file system responses
         if (message.action === 'read' && message.content) {
@@ -298,11 +318,29 @@ export function useWebSocket() {
   const performFileOperation = useCallback((action: string, path: string, content?: string) => {
     return sendMessage({
       type: 'file_system',
+      sessionId: state.currentSession?.id || 'default',
       action,
       path,
       content
     });
-  }, [sendMessage]);
+  }, [sendMessage, state.currentSession?.id]);
+
+  // Auto-save functionality
+  const saveCurrentFile = useCallback((content: string, filename?: string) => {
+    const currentFile = filename || state.currentFile || 'main.py';
+    console.log('💾 [WS] Auto-saving file:', currentFile);
+    return performFileOperation('write', currentFile, content);
+  }, [performFileOperation, state.currentFile]);
+
+  // Send file input response for interactive file creation
+  const sendFileInputResponse = useCallback((filename: string, content: string) => {
+    return sendMessage({
+      type: 'file_input_response',
+      sessionId: state.currentSession?.id || 'default',
+      filename,
+      content
+    });
+  }, [sendMessage, state.currentSession?.id]);
 
   // Track the last session ID to prevent duplicate messages
   const lastSessionIdRef = useRef<string | null>(null);
@@ -383,6 +421,8 @@ useEffect(() => {
     sendTerminalCommand,
     executeCode,
     performFileOperation,
+    saveCurrentFile,
+    sendFileInputResponse,
     sendMessage
   };
 }

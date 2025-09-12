@@ -25,6 +25,7 @@ class ContainerSession:
     working_dir: str
     created_at: datetime
     last_activity: datetime
+    current_dir: str = "/app"  # Track current directory for cd commands
     status: str = "active"
 
 
@@ -85,6 +86,15 @@ class ContainerSessionManager:
             self.active_sessions[session_id] = session
             logger.info(f"Created container session {session_id} with container {container.short_id}")
             
+            # Load workspace from database (if session_id is numeric)
+            try:
+                if session_id.isdigit():
+                    from app.services.workspace_loader import workspace_loader
+                    await workspace_loader.load_workspace_into_container(int(session_id))
+                    logger.info(f"Loaded workspace for session {session_id}")
+            except Exception as workspace_error:
+                logger.warning(f"Failed to load workspace for session {session_id}: {workspace_error}")
+            
             return session
             
         except Exception as e:
@@ -116,9 +126,14 @@ class ContainerSessionManager:
                 await self.cleanup_session(session_id)
                 session = await self.create_session(session_id)
             
-            # Execute command in container
-            logger.debug(f"Executing command in session {session_id}: {command}")
-            output, exit_code = docker_client_service.execute_command(session.container, command)
+            # Handle cd commands specially to maintain directory state
+            if command.strip().startswith('cd '):
+                return await self._handle_cd_command(session, command)
+            
+            # For other commands, execute in the current directory context
+            full_command = f"cd {session.current_dir} && {command}"
+            logger.debug(f"Executing command in session {session_id} from {session.current_dir}: {command}")
+            output, exit_code = docker_client_service.execute_command(session.container, full_command)
             
             return output, exit_code
             
@@ -127,6 +142,41 @@ class ContainerSessionManager:
             import traceback
             logger.error(f"Full traceback: {traceback.format_exc()}")
             return f"Session error: {e}", 1
+    
+    async def _handle_cd_command(self, session: ContainerSession, command: str) -> Tuple[str, int]:
+        """Handle cd command and update session directory state."""
+        parts = command.strip().split()
+        if len(parts) < 2:
+            # cd with no arguments goes to home directory
+            new_dir = "/app"
+        else:
+            target_dir = parts[1]
+            if target_dir.startswith('/'):
+                # Absolute path
+                new_dir = target_dir
+            else:
+                # Relative path
+                new_dir = f"{session.current_dir}/{target_dir}" if session.current_dir != "/" else f"/{target_dir}"
+        
+        # Normalize the path
+        import os
+        new_dir = os.path.normpath(new_dir)
+        
+        # Ensure we stay within the app directory for security
+        if not new_dir.startswith('/app'):
+            return "cd: permission denied", 1
+        
+        # Test if the directory exists
+        test_command = f"cd {new_dir} && pwd"
+        output, exit_code = docker_client_service.execute_command(session.container, test_command)
+        
+        if exit_code == 0:
+            # Update the session's current directory
+            session.current_dir = new_dir
+            logger.debug(f"Session {session.session_id} changed directory to: {new_dir}")
+            return output.strip(), 0
+        else:
+            return output, exit_code
     
     async def get_session_info(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Get information about a session including resource usage."""
@@ -164,6 +214,15 @@ class ContainerSessionManager:
             return False
         
         try:
+            # Save workspace to database before cleanup (if session_id is numeric)
+            try:
+                if session_id.isdigit():
+                    from app.services.workspace_loader import workspace_loader
+                    await workspace_loader.save_workspace_from_container(int(session_id))
+                    logger.info(f"Saved workspace for session {session_id}")
+            except Exception as workspace_error:
+                logger.warning(f"Failed to save workspace for session {session_id}: {workspace_error}")
+            
             # Stop container
             docker_client_service.stop_container(session.container)
             

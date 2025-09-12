@@ -8,7 +8,7 @@ import aiofiles
 class FileManager:
     def __init__(self, session_id: str):
         self.session_id = session_id
-        self.session_dir = os.path.join("/tmp", "code_platform", session_id)
+        self.session_dir = os.path.join("/tmp", "coding_platform_sessions", session_id)
         self.max_file_size = 1024 * 1024  # 1MB max file size
 
         # Create session directory if it doesn't exist
