@@ -1,22 +1,27 @@
 """Pydantic schemas for PostgreSQL models."""
 
-from typing import Optional, List
 from datetime import datetime
+from typing import Optional
+
 from pydantic import BaseModel, Field
+
 
 # Base response models
 class BaseResponse(BaseModel):
     success: bool
     message: str
 
+
 class BaseDataResponse(BaseResponse):
     data: Optional[dict] = None
+
 
 # User schemas
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=1, max_length=255)
     email: str = Field(..., min_length=1, max_length=255)
     password: str = Field(..., min_length=8)
+
 
 class UserResponse(BaseModel):
     id: int
@@ -25,17 +30,21 @@ class UserResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
 class UserLogin(BaseModel):
     username: str
     password: str
 
-# Session schemas  
+
+# Session schemas
 class SessionCreate(BaseModel):
     user_id: int
     name: Optional[str] = None
 
+
 class SessionUpdate(BaseModel):
     name: Optional[str] = None
+
 
 class SessionResponse(BaseModel):
     id: int
@@ -44,12 +53,15 @@ class SessionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+
 class SessionListResponse(BaseResponse):
-    data: List[SessionResponse]
+    data: list[SessionResponse]
     count: int
+
 
 class SessionDetailResponse(BaseResponse):
     data: SessionResponse
+
 
 # Workspace Item schemas
 class WorkspaceItemCreate(BaseModel):
@@ -59,9 +71,11 @@ class WorkspaceItemCreate(BaseModel):
     type: str = Field(..., pattern="^(file|folder)$")
     content: Optional[str] = None
 
+
 class WorkspaceItemUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     content: Optional[str] = None
+
 
 class WorkspaceItemResponse(BaseModel):
     id: int
@@ -74,19 +88,25 @@ class WorkspaceItemResponse(BaseModel):
     updated_at: datetime
     full_path: Optional[str] = None
 
+
 class WorkspaceItemListResponse(BaseResponse):
-    data: List[WorkspaceItemResponse]
+    data: list[WorkspaceItemResponse]
     count: int
+
 
 class WorkspaceItemDetailResponse(BaseResponse):
     data: WorkspaceItemResponse
 
+
 # File operations schemas
 class FileOperationRequest(BaseModel):
-    action: str = Field(..., pattern="^(create_file|create_folder|read|write|rename|delete|list)$")
+    action: str = Field(
+        ..., pattern="^(create_file|create_folder|read|write|rename|delete|list)$",
+    )
     path: str
     content: Optional[str] = None
     new_name: Optional[str] = None
+
 
 # Workspace tree structure for nested display
 class WorkspaceTreeItem(BaseModel):
@@ -94,13 +114,16 @@ class WorkspaceTreeItem(BaseModel):
     name: str
     type: str
     full_path: str
-    children: Optional[List['WorkspaceTreeItem']] = None
+    children: Optional[list["WorkspaceTreeItem"]] = None
+
 
 class WorkspaceTreeResponse(BaseResponse):
-    data: List[WorkspaceTreeItem]
+    data: list[WorkspaceTreeItem]
+
 
 # Update forward reference
 WorkspaceTreeItem.model_rebuild()
+
 
 # Authentication schemas
 class AuthResponse(BaseResponse):
@@ -108,8 +131,9 @@ class AuthResponse(BaseResponse):
     user: Optional[UserResponse] = None
     token: Optional[str] = None
 
+
 # Combined session with workspace
 class SessionWithWorkspaceResponse(BaseResponse):
     session: SessionResponse
-    workspace_items: List[WorkspaceItemResponse]
-    workspace_tree: List[WorkspaceTreeItem]
+    workspace_items: list[WorkspaceItemResponse]
+    workspace_tree: list[WorkspaceTreeItem]

@@ -1,22 +1,25 @@
 """PostgreSQL data models and database operations."""
 
-from typing import Optional, List, Dict, Any
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional
+
 from app.core.postgres import get_db
+
 
 @dataclass
 class User:
     """User model matching PostgreSQL schema."""
+
     id: Optional[int] = None
     username: str = ""
     email: str = ""
     password_hash: str = ""
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     @classmethod
-    def create(cls, username: str, email: str, password_hash: str) -> 'User':
+    def create(cls, username: str, email: str, password_hash: str) -> "User":
         """Create a new user."""
         db = get_db()
         query = """
@@ -25,9 +28,9 @@ class User:
         """
         user_id = db.execute_insert(query, (username, email, password_hash))
         return cls.get_by_id(user_id)
-    
+
     @classmethod
-    def get_by_id(cls, user_id: int) -> Optional['User']:
+    def get_by_id(cls, user_id: int) -> Optional["User"]:
         """Get user by ID."""
         db = get_db()
         query = """
@@ -38,17 +41,17 @@ class User:
         result = db.execute_one(query, (user_id,))
         if result:
             return cls(
-                id=result['id'],
-                username=result['username'],
-                email=result['email'],
-                password_hash=result['password_hash'],
-                created_at=result['created_at'],
-                updated_at=result['updated_at']
+                id=result["id"],
+                username=result["username"],
+                email=result["email"],
+                password_hash=result["password_hash"],
+                created_at=result["created_at"],
+                updated_at=result["updated_at"],
             )
         return None
-    
+
     @classmethod
-    def get_by_username(cls, username: str) -> Optional['User']:
+    def get_by_username(cls, username: str) -> Optional["User"]:
         """Get user by username."""
         db = get_db()
         query = """
@@ -59,17 +62,17 @@ class User:
         result = db.execute_one(query, (username,))
         if result:
             return cls(
-                id=result['id'],
-                username=result['username'],
-                email=result['email'],
-                password_hash=result['password_hash'],
-                created_at=result['created_at'],
-                updated_at=result['updated_at']
+                id=result["id"],
+                username=result["username"],
+                email=result["email"],
+                password_hash=result["password_hash"],
+                created_at=result["created_at"],
+                updated_at=result["updated_at"],
             )
         return None
-    
+
     @classmethod
-    def get_by_email(cls, email: str) -> Optional['User']:
+    def get_by_email(cls, email: str) -> Optional["User"]:
         """Get user by email."""
         db = get_db()
         query = """
@@ -80,26 +83,28 @@ class User:
         result = db.execute_one(query, (email,))
         if result:
             return cls(
-                id=result['id'],
-                username=result['username'],
-                email=result['email'],
-                password_hash=result['password_hash'],
-                created_at=result['created_at'],
-                updated_at=result['updated_at']
+                id=result["id"],
+                username=result["username"],
+                email=result["email"],
+                password_hash=result["password_hash"],
+                created_at=result["created_at"],
+                updated_at=result["updated_at"],
             )
         return None
+
 
 @dataclass
 class CodeSession:
     """Code session model matching PostgreSQL schema."""
+
     id: Optional[int] = None
     user_id: int = 0
     name: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     @classmethod
-    def create(cls, user_id: int, name: Optional[str] = None) -> 'CodeSession':
+    def create(cls, user_id: int, name: Optional[str] = None) -> "CodeSession":
         """Create a new session."""
         db = get_db()
         query = """
@@ -108,9 +113,9 @@ class CodeSession:
         """
         session_id = db.execute_insert(query, (user_id, name))
         return cls.get_by_id(session_id)
-    
+
     @classmethod
-    def get_by_id(cls, session_id: int) -> Optional['CodeSession']:
+    def get_by_id(cls, session_id: int) -> Optional["CodeSession"]:
         """Get session by ID."""
         db = get_db()
         query = """
@@ -121,16 +126,16 @@ class CodeSession:
         result = db.execute_one(query, (session_id,))
         if result:
             return cls(
-                id=result['id'],
-                user_id=result['user_id'],
-                name=result['name'],
-                created_at=result['created_at'],
-                updated_at=result['updated_at']
+                id=result["id"],
+                user_id=result["user_id"],
+                name=result["name"],
+                created_at=result["created_at"],
+                updated_at=result["updated_at"],
             )
         return None
-    
+
     @classmethod
-    def get_by_user_id(cls, user_id: int) -> List['CodeSession']:
+    def get_by_user_id(cls, user_id: int) -> list["CodeSession"]:
         """Get all sessions for a user."""
         db = get_db()
         query = """
@@ -142,15 +147,15 @@ class CodeSession:
         results = db.execute_query(query, (user_id,))
         return [
             cls(
-                id=row['id'],
-                user_id=row['user_id'],
-                name=row['name'],
-                created_at=row['created_at'],
-                updated_at=row['updated_at']
+                id=row["id"],
+                user_id=row["user_id"],
+                name=row["name"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
             )
             for row in results
         ]
-    
+
     def update_name(self, name: str) -> bool:
         """Update session name."""
         if not self.id:
@@ -166,7 +171,7 @@ class CodeSession:
             self.name = name
             return True
         return False
-    
+
     def delete(self) -> bool:
         """Delete session and all associated workspace items."""
         if not self.id:
@@ -179,9 +184,11 @@ class CodeSession:
         affected = db.execute_update(query, (self.id,))
         return affected > 0
 
+
 @dataclass
 class WorkspaceItem:
     """Workspace item model matching PostgreSQL schema."""
+
     id: Optional[int] = None
     session_id: int = 0
     parent_id: Optional[int] = None
@@ -190,23 +197,33 @@ class WorkspaceItem:
     content: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
+
     @classmethod
-    def create(cls, session_id: int, name: str, item_type: str, parent_id: Optional[int] = None, content: Optional[str] = None) -> 'WorkspaceItem':
+    def create(
+        cls,
+        session_id: int,
+        name: str,
+        item_type: str,
+        parent_id: Optional[int] = None,
+        content: Optional[str] = None,
+    ) -> "WorkspaceItem":
         """Create a new workspace item."""
-        if item_type not in ['file', 'folder']:
-            raise ValueError("Type must be 'file' or 'folder'")
-        
+        if item_type not in ["file", "folder"]:
+            msg = "Type must be 'file' or 'folder'"
+            raise ValueError(msg)
+
         db = get_db()
         query = """
             INSERT INTO code_editor_project.workspace_items (session_id, parent_id, name, type, content)
             VALUES (%s, %s, %s, %s, %s)
         """
-        item_id = db.execute_insert(query, (session_id, parent_id, name, item_type, content))
+        item_id = db.execute_insert(
+            query, (session_id, parent_id, name, item_type, content),
+        )
         return cls.get_by_id(item_id)
-    
+
     @classmethod
-    def get_by_id(cls, item_id: int) -> Optional['WorkspaceItem']:
+    def get_by_id(cls, item_id: int) -> Optional["WorkspaceItem"]:
         """Get workspace item by ID."""
         db = get_db()
         query = """
@@ -217,19 +234,21 @@ class WorkspaceItem:
         result = db.execute_one(query, (item_id,))
         if result:
             return cls(
-                id=result['id'],
-                session_id=result['session_id'],
-                parent_id=result['parent_id'],
-                name=result['name'],
-                type=result['type'],
-                content=result['content'],
-                created_at=result['created_at'],
-                updated_at=result['updated_at']
+                id=result["id"],
+                session_id=result["session_id"],
+                parent_id=result["parent_id"],
+                name=result["name"],
+                type=result["type"],
+                content=result["content"],
+                created_at=result["created_at"],
+                updated_at=result["updated_at"],
             )
         return None
-    
+
     @classmethod
-    def get_by_session_and_parent(cls, session_id: int, parent_id: Optional[int] = None) -> List['WorkspaceItem']:
+    def get_by_session_and_parent(
+        cls, session_id: int, parent_id: Optional[int] = None,
+    ) -> list["WorkspaceItem"]:
         """Get all items in a session/folder."""
         db = get_db()
         query = """
@@ -245,24 +264,24 @@ class WorkspaceItem:
         else:
             query = query.replace("IS %s", "= %s")
             params = (session_id, parent_id)
-        
+
         results = db.execute_query(query, params)
         return [
             cls(
-                id=row['id'],
-                session_id=row['session_id'],
-                parent_id=row['parent_id'],
-                name=row['name'],
-                type=row['type'],
-                content=row['content'],
-                created_at=row['created_at'],
-                updated_at=row['updated_at']
+                id=row["id"],
+                session_id=row["session_id"],
+                parent_id=row["parent_id"],
+                name=row["name"],
+                type=row["type"],
+                content=row["content"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
             )
             for row in results
         ]
-    
+
     @classmethod
-    def get_all_by_session(cls, session_id: int) -> List['WorkspaceItem']:
+    def get_all_by_session(cls, session_id: int) -> list["WorkspaceItem"]:
         """Get all workspace items for a session."""
         db = get_db()
         query = """
@@ -274,21 +293,21 @@ class WorkspaceItem:
         results = db.execute_query(query, (session_id,))
         return [
             cls(
-                id=row['id'],
-                session_id=row['session_id'],
-                parent_id=row['parent_id'],
-                name=row['name'],
-                type=row['type'],
-                content=row['content'],
-                created_at=row['created_at'],
-                updated_at=row['updated_at']
+                id=row["id"],
+                session_id=row["session_id"],
+                parent_id=row["parent_id"],
+                name=row["name"],
+                type=row["type"],
+                content=row["content"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
             )
             for row in results
         ]
-    
+
     def update_content(self, content: str) -> bool:
         """Update file content."""
-        if not self.id or self.type != 'file':
+        if not self.id or self.type != "file":
             return False
         db = get_db()
         query = """
@@ -301,7 +320,7 @@ class WorkspaceItem:
             self.content = content
             return True
         return False
-    
+
     def rename(self, new_name: str) -> bool:
         """Rename workspace item."""
         if not self.id:
@@ -317,7 +336,7 @@ class WorkspaceItem:
             self.name = new_name
             return True
         return False
-    
+
     def delete(self) -> bool:
         """Delete workspace item (cascades to children)."""
         if not self.id:
@@ -329,12 +348,12 @@ class WorkspaceItem:
         """
         affected = db.execute_update(query, (self.id,))
         return affected > 0
-    
+
     def get_full_path(self) -> str:
         """Get the full path of this item from root."""
         if not self.parent_id:
             return self.name
-        
+
         # Get parent item
         parent = WorkspaceItem.get_by_id(self.parent_id)
         if parent:

@@ -10,12 +10,18 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health, sessions
-from app.api import users, postgres_sessions, workspace, session_workspace
+from app.api import (
+    health,
+    postgres_sessions,
+    session_workspace,
+    sessions,
+    users,
+    workspace,
+)
 from app.core.postgres import init_db
+from app.core.session_manager import session_manager
 from app.websockets.handlers import handle_websocket_message
 from app.websockets.manager import WebSocketManager
-from app.core.session_manager import session_manager
 
 
 # Load environment variables
@@ -24,19 +30,20 @@ load_dotenv()
 # Initialize WebSocket manager
 websocket_manager = WebSocketManager()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     from app.services.background_tasks import background_task_manager
-    
+
     init_db()
     print("🗄️ Database initialized")
     print("🚀 Session manager ready")
-    
+
     # Start background tasks for container management
     print("🐳 Starting container lifecycle background tasks...")
     await background_task_manager.start_background_tasks()
-    
+
     yield
     # Shutdown
     print("🔄 Shutting down...")
@@ -44,6 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await background_task_manager.stop_background_tasks()
     await session_manager.cleanup_all_sessions()
     print("✅ Cleanup complete")
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -56,7 +64,12 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3002", "http://127.0.0.1:3002"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3002",
+        "http://127.0.0.1:3002",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -68,9 +81,18 @@ app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
 
 # PostgreSQL-based routers
 app.include_router(users.router, prefix="/api/users", tags=["users"])
-app.include_router(postgres_sessions.router, prefix="/api/postgres_sessions", tags=["postgres_sessions"])
+app.include_router(
+    postgres_sessions.router,
+    prefix="/api/postgres_sessions",
+    tags=["postgres_sessions"],
+)
 app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
-app.include_router(session_workspace.router, prefix="/api/session_workspace", tags=["session_workspace"])
+app.include_router(
+    session_workspace.router,
+    prefix="/api/session_workspace",
+    tags=["session_workspace"],
+)
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -107,6 +129,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         print(f"WebSocket error: {e}")
         websocket_manager.disconnect(websocket)
 
+
 @app.get("/")
 async def root() -> dict[str, Any]:
     return {
@@ -115,26 +138,29 @@ async def root() -> dict[str, Any]:
         "docs": "/docs",
     }
 
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     # Disable reload for stable WebSocket connections
     # Use ENABLE_RELOAD=true env var to enable during development
     enable_reload = os.getenv("ENABLE_RELOAD", "false").lower() == "true"
-    
+
     uvicorn_config = {
         "host": "0.0.0.0",
         "port": port,
         "log_level": "info",
     }
-    
+
     if enable_reload:
-        uvicorn_config.update({
-            "reload": True,
-            "reload_dirs": ["app/"],
-            "reload_excludes": ["venv/", "*.db", "__pycache__/", ".git/", "*.pyc"],
-        })
+        uvicorn_config.update(
+            {
+                "reload": True,
+                "reload_dirs": ["app/"],
+                "reload_excludes": ["venv/", "*.db", "__pycache__/", ".git/", "*.pyc"],
+            },
+        )
         print("🔄 Running in development mode with auto-reload")
     else:
         print("🚀 Running in production mode (stable WebSocket connections)")
-    
+
     uvicorn.run("app.main:app", **uvicorn_config)

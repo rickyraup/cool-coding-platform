@@ -26,6 +26,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Create declarative base
 Base = declarative_base()
 
+
 def init_db() -> None:
     """Initialize the database by creating all tables."""
     # Import models to ensure they're registered with Base
@@ -39,6 +40,7 @@ def init_db() -> None:
     # Create all tables
     Base.metadata.create_all(bind=engine)
     print("✅ Database tables created")
+
 
 def get_db() -> Generator[Session, None, None]:
     """Dependency to get database session."""

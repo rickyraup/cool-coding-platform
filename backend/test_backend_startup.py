@@ -2,94 +2,105 @@
 """Test backend startup and fallback mode functionality."""
 
 import asyncio
-import sys
 import os
+import sys
+
 
 # Add the backend directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.services.container_manager import container_manager
 from app.core.session_manager import session_manager
+from app.services.container_manager import container_manager
 
-async def test_backend_startup():
+
+async def test_backend_startup() -> bool:
     """Test that backend starts properly even with Docker issues."""
     print("🚀 Testing backend startup and fallback functionality...\n")
-    
+
     # Test 1: Container manager recognizes Docker is unavailable
     print("🔍 Testing Docker availability detection...")
     docker_available = container_manager.is_docker_available()
     print(f"Docker available: {docker_available}")
-    
+
     if not docker_available:
         print("✅ Container manager correctly detects Docker is unavailable")
     else:
         print("⚠️  Container manager thinks Docker is available")
-    
+
     # Test 2: Fallback to subprocess works
     print("\n🔍 Testing subprocess fallback functionality...")
     try:
         test_session_id = "fallback-test-123"
-        output, exit_code = await session_manager.execute_command(test_session_id, "echo 'Fallback mode works!'")
+        output, exit_code = await session_manager.execute_command(
+            test_session_id, "echo 'Fallback mode works!'",
+        )
         print(f"✅ Subprocess fallback: {output} (exit code: {exit_code})")
-        
+
         # Test some basic commands
         commands_to_test = [
             "pwd",
             "ls -la",
             "python3 -c \"print('Python works in subprocess mode')\"",
-            "echo 'Hello World' > test.txt && cat test.txt"
+            "echo 'Hello World' > test.txt && cat test.txt",
         ]
-        
+
         for cmd in commands_to_test:
             try:
-                output, exit_code = await session_manager.execute_command(test_session_id, cmd)
+                output, exit_code = await session_manager.execute_command(
+                    test_session_id, cmd,
+                )
                 print(f"✅ Command '{cmd}': success (exit code: {exit_code})")
             except Exception as e:
                 print(f"❌ Command '{cmd}': failed - {e}")
-        
+
         # Cleanup
         await session_manager.cleanup_session(test_session_id)
         print("✅ Session cleanup successful")
-        
+
     except Exception as e:
         print(f"❌ Subprocess fallback failed: {e}")
         return False
-    
+
     # Test 3: WebSocket handlers can handle missing Docker
     print("\n🔍 Testing WebSocket handler fallback...")
     try:
-        from app.websockets.handlers import handle_terminal_input
         from unittest.mock import MagicMock
-        
+
+        from app.websockets.handlers import handle_terminal_input
+
         # Mock WebSocket
         mock_websocket = MagicMock()
-        
+
         # Test terminal input handling
         test_data = {
             "command": "echo 'WebSocket fallback test'",
-            "sessionId": "websocket-test-123"
+            "sessionId": "websocket-test-123",
         }
-        
+
         response = await handle_terminal_input(test_data, mock_websocket)
-        
+
         if response and response.get("type") == "terminal_output":
             print("✅ WebSocket handler works with fallback mode")
             output_text = response.get("output", "")
-            if "subprocess mode" in output_text or "fallback mode" in output_text or "WebSocket fallback test" in output_text:
+            if (
+                "subprocess mode" in output_text
+                or "fallback mode" in output_text
+                or "WebSocket fallback test" in output_text
+            ):
                 print("✅ WebSocket correctly indicates fallback mode")
             else:
                 print("⚠️  WebSocket response doesn't indicate mode")
         else:
             print(f"❌ WebSocket handler failed: {response}")
             return False
-            
+
     except Exception as e:
         print(f"❌ WebSocket handler test failed: {e}")
         return False
-    
-    print("\n" + "="*50)
+
+    print("\n" + "=" * 50)
     print("🎉 BACKEND READY FOR PRODUCTION")
-    print("="*50)
+    print("=" * 50)
     print("✅ Backend can start successfully")
     print("✅ Subprocess fallback mode works")
     print("✅ WebSocket handlers work without Docker")
@@ -99,7 +110,7 @@ async def test_backend_startup():
     print("- Users can execute Python code via subprocess")
     print("- Docker integration can be fixed later")
     print("- All core functionality is working")
-    
+
     return True
 
 
