@@ -77,10 +77,14 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     
     case 'ADD_TERMINAL_LINE':
-      return {
+      console.log('🔍 [AppContext] Reducer ADD_TERMINAL_LINE:', action.payload);
+      console.log('🔍 [AppContext] Current terminalLines count:', state.terminalLines.length);
+      const newState = {
         ...state,
         terminalLines: [...state.terminalLines, action.payload],
       };
+      console.log('🔍 [AppContext] New terminalLines count:', newState.terminalLines.length);
+      return newState;
     
     case 'CLEAR_TERMINAL':
       return {
@@ -160,6 +164,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, []),
     
     addTerminalLine: useCallback((content: string, type: 'input' | 'output' | 'error', command?: string) => {
+      console.log('🔍 [AppContext] addTerminalLine called:', { content, type, command });
       const line: TerminalLine = {
         id: Date.now().toString() + Math.random().toString(36).substring(2),
         content,
@@ -167,6 +172,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         timestamp: new Date(),
         command,
       };
+      console.log('🔍 [AppContext] Created terminal line:', line);
       dispatch({ type: 'ADD_TERMINAL_LINE', payload: line });
     }, []),
     

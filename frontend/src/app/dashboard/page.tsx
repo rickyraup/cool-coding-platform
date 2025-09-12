@@ -12,6 +12,12 @@ export default function DashboardPage() {
   const [workspaces, setWorkspaces] = useState<CodeSession[]>([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [workspacesError, setWorkspacesError] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalWorkspaces, setTotalWorkspaces] = useState(0);
+  const [workspacesPerPage] = useState(16); // 4 columns * 4 rows on xl screens
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -19,7 +25,7 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, isLoading, router]);
 
-  // Fetch user's workspaces
+  // Fetch user's workspaces with pagination
   useEffect(() => {
     const fetchWorkspaces = async () => {
       if (!isAuthenticated || !user) return;
@@ -28,8 +34,10 @@ export default function DashboardPage() {
         setLoadingWorkspaces(true);
         setWorkspacesError(null);
         
-        const response = await apiService.getSessions(user.id);
+        const skip = (currentPage - 1) * workspacesPerPage;
+        const response = await apiService.getSessions(user.id, skip, workspacesPerPage);
         setWorkspaces(response.data);
+        setTotalWorkspaces(response.count);
       } catch (error) {
         console.error('Failed to fetch workspaces:', error);
         setWorkspacesError(error instanceof Error ? error.message : 'Failed to load workspaces');
@@ -39,19 +47,28 @@ export default function DashboardPage() {
     };
 
     fetchWorkspaces();
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, currentPage, workspacesPerPage]);
+
+  const handleShowCreateModal = () => {
+    setNewProjectName('');
+    setShowCreateModal(true);
+  };
 
   const handleCreateWorkspace = async () => {
-    if (!isAuthenticated || !user) return;
+    if (!isAuthenticated || !user || !newProjectName.trim()) return;
     
     try {
-      setLoadingWorkspaces(true);
+      setIsCreating(true);
       
       // Create a new session
       const response = await apiService.createSession({
         user_id: user.id,
-        name: `New Project ${Date.now()}`
+        name: newProjectName.trim()
       });
+      
+      // Close modal and reset state
+      setShowCreateModal(false);
+      setNewProjectName('');
       
       // Navigate to the new workspace
       router.push(`/workspace/${response.data.id}`);
@@ -60,8 +77,31 @@ export default function DashboardPage() {
       console.error('Failed to create workspace:', error);
       // Could add a toast notification here
     } finally {
-      setLoadingWorkspaces(false);
+      setIsCreating(false);
     }
+  };
+
+  const handleCancelCreate = () => {
+    setShowCreateModal(false);
+    setNewProjectName('');
+  };
+
+  const totalPages = Math.ceil(totalWorkspaces / workspacesPerPage);
+  
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+  
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+  
+  const handlePageClick = (page: number) => {
+    setCurrentPage(page);
   };
 
   if (isLoading) {
@@ -114,14 +154,30 @@ export default function DashboardPage() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-white mb-2">Your Workspaces</h2>
-          <p className="text-gray-400">Create and manage your coding projects</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-3xl font-bold text-white mb-2">Your Workspaces</h2>
+              <p className="text-gray-400">
+                Create and manage your coding projects
+                {totalWorkspaces > 0 && (
+                  <span className="ml-2">
+                    ({totalWorkspaces} workspace{totalWorkspaces !== 1 ? 's' : ''})
+                  </span>
+                )}
+              </p>
+            </div>
+            {totalWorkspaces > workspacesPerPage && (
+              <div className="text-sm text-gray-400">
+                Page {currentPage} of {totalPages}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Create New Workspace Button */}
         <div className="mb-8">
           <button
-            onClick={handleCreateWorkspace}
+            onClick={handleShowCreateModal}
             disabled={loadingWorkspaces}
             className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -131,7 +187,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Workspaces Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {loadingWorkspaces ? (
             // Loading state
             Array.from({ length: 3 }).map((_, index) => (
@@ -207,7 +263,7 @@ export default function DashboardPage() {
                 <h3 className="text-xl font-semibold text-white mb-2">No workspaces yet</h3>
                 <p className="text-gray-400 mb-6">Create your first workspace to get started</p>
                 <button
-                  onClick={handleCreateWorkspace}
+                  onClick={handleShowCreateModal}
                   className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-medium"
                 >
                   <span className="mr-2">+</span>
@@ -217,7 +273,123 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {/* Pagination Controls */}
+        {totalWorkspaces > workspacesPerPage && (
+          <div className="mt-8 flex items-center justify-center space-x-2">
+            {/* Previous Button */}
+            <button
+              onClick={handlePrevPage}
+              disabled={currentPage === 1}
+              className="px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+            >
+              Previous
+            </button>
+
+            {/* Page Numbers */}
+            <div className="flex space-x-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, index) => {
+                // Calculate which page numbers to show (max 5)
+                const startPage = Math.max(1, currentPage - 2);
+                const endPage = Math.min(totalPages, startPage + 4);
+                const adjustedStartPage = Math.max(1, endPage - 4);
+                const pageNumber = adjustedStartPage + index;
+                
+                if (pageNumber > totalPages) return null;
+                
+                return (
+                  <button
+                    key={pageNumber}
+                    onClick={() => handlePageClick(pageNumber)}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      currentPage === pageNumber
+                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
+                        : 'bg-gray-800 border border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white'
+                    }`}
+                  >
+                    {pageNumber}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Next Button */}
+            <button
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </main>
+
+      {/* Create Workspace Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black bg-opacity-75"
+            onClick={handleCancelCreate}
+          ></div>
+          
+          {/* Modal */}
+          <div className="relative bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 border border-gray-700">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white">Create New Workspace</h3>
+                <button
+                  onClick={handleCancelCreate}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <div className="mb-6">
+                <label htmlFor="project-name" className="block text-sm font-medium text-gray-300 mb-2">
+                  Project Name
+                </label>
+                <input
+                  id="project-name"
+                  type="text"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && newProjectName.trim()) {
+                      handleCreateWorkspace();
+                    }
+                  }}
+                  placeholder="My Awesome Project"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  autoFocus
+                  disabled={isCreating}
+                />
+              </div>
+              
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={handleCancelCreate}
+                  disabled={isCreating}
+                  className="px-4 py-2 text-gray-300 hover:text-white transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateWorkspace}
+                  disabled={!newProjectName.trim() || isCreating}
+                  className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isCreating ? 'Creating...' : 'Create Workspace'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useAuth, useUserId } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { apiService } from '../services/api';
 import { Auth } from './Auth';
+import { useRouter, usePathname } from 'next/navigation';
 
 export function Header(): JSX.Element {
   const { state, setSession, setLoading, setError, clearTerminal, setFiles, setCurrentFile, updateCode } = useApp();
@@ -14,6 +15,8 @@ export function Header(): JSX.Element {
   const { isConnected, executeCode } = useWebSocket();
   const [showAuth, setShowAuth] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
 
   const handleNewSession = useCallback(async (): Promise<void> => {
     if (!isAuthenticated || !userId) {
@@ -130,9 +133,21 @@ export function Header(): JSX.Element {
       <header className="bg-gradient-to-r from-gray-800 to-gray-750 border-b border-gray-600 px-6 py-4 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-6">
-            <h1 className="text-xl font-bold text-white tracking-tight">
-              Code Execution Platform
-            </h1>
+            <div className="flex items-center space-x-4">
+              <h1 className="text-xl font-bold text-white tracking-tight">
+                Code Execution Platform
+              </h1>
+              
+              {/* Dashboard Navigation - only show in workspace */}
+              {pathname?.startsWith('/workspace/') && isAuthenticated && (
+                <button
+                  onClick={() => router.push('/dashboard')}
+                  className="px-3 py-1.5 text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-200 hover:text-white rounded-md transition-colors"
+                >
+                  ← Dashboard
+                </button>
+              )}
+            </div>
             
             <div className="flex items-center space-x-3 bg-gray-700/50 px-3 py-1.5 rounded-lg">
               <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-red-400 shadow-sm shadow-red-400/50'}`} />
@@ -192,13 +207,6 @@ export function Header(): JSX.Element {
             )}
 
             {/* Action Buttons */}
-            <button 
-              onClick={handleNewSession}
-              className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-              disabled={state.isLoading}
-            >
-              New Session
-            </button>
             
             <button 
               onClick={handleRunCode}

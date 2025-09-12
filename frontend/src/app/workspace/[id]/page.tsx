@@ -17,7 +17,7 @@ interface WorkspacePageProps {
 
 export default function WorkspacePage({ params: paramsPromise }: WorkspacePageProps) {
   const params = use(paramsPromise);
-  const { state, setSession, setLoading, setError } = useApp();
+  const { state, setSession, setLoading, setError, updateCode } = useApp();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
@@ -61,12 +61,26 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
         // Set session in context
         setSession(session);
         
-        // Try to load workspace files and start container (non-blocking)
+        // Try to load workspace files and start container
         Promise.all([
           apiService.loadSessionWorkspace(sessionId),
           apiService.startContainerSession(sessionId)
-        ]).then(() => {
+        ]).then(async () => {
           console.log('Workspace initialized successfully');
+          
+          // Load the workspace files to get script.py content
+          try {
+            const workspaceResponse = await apiService.getSessionWithWorkspace(sessionId);
+            const scriptFile = workspaceResponse.workspace_items.find(item => item.name === 'script.py' && item.type === 'file');
+            
+            if (scriptFile && scriptFile.content) {
+              // Update the code in the context and session
+              updateCode(scriptFile.content);
+              console.log('Loaded script.py content into editor');
+            }
+          } catch (workspaceLoadError) {
+            console.warn('Could not load workspace files:', workspaceLoadError);
+          }
         }).catch(workspaceError => {
           console.warn('Could not initialize workspace:', workspaceError);
           // Continue anyway - workspace might not exist yet or container might be starting

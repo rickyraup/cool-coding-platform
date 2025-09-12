@@ -16,25 +16,41 @@ export function FileExplorer(): JSX.Element {
   const hasLoadedInitialFiles = useRef(false);
 
   const loadFiles = useCallback(async (path: string = '', showErrors: boolean = false) => {
-    if (!state.currentSession) return;
+    if (!state.currentSession) {
+      if (showErrors) {
+        console.error('No current session available');
+      }
+      return;
+    }
+    
+    if (!state.isConnected) {
+      if (showErrors) {
+        console.error('WebSocket not connected');
+      }
+      return;
+    }
     
     setLoading(true);
     try {
+      console.log('🔄 [FileExplorer] Loading files for path:', path);
       // Use WebSocket file system operation to list files
       const success = performFileOperation('list', path);
-      if (!success && showErrors) {
-        console.error('Failed to load files');
+      if (!success) {
+        if (showErrors) {
+          console.error('Failed to send file list request - WebSocket not ready');
+        }
+        // Don't keep loading state if the request failed
+        setLoading(false);
       }
       // Note: The actual file list will be received via WebSocket message
-      // and handled in the WebSocket message handler
+      // and handled in the WebSocket message handler. Loading state will be cleared there.
     } catch (error) {
       if (showErrors) {
         console.error('Error loading files:', error);
       }
-    } finally {
       setLoading(false);
     }
-  }, [state.currentSession, performFileOperation]);
+  }, [state.currentSession, state.isConnected, performFileOperation]);
 
   const loadDirectoryContents = useCallback(async (path: string) => {
     if (!state.currentSession) return;
@@ -51,11 +67,13 @@ export function FileExplorer(): JSX.Element {
 
   // Update allFiles when state.files changes
   useEffect(() => {
-    if (state.files.length > 0) {
+    if (state.files.length >= 0) { // Include empty arrays (0 files is valid)
       setAllFiles(prev => ({
         ...prev,
         [currentDirectory]: state.files
       }));
+      // Clear loading state when files are received
+      setLoading(false);
     }
   }, [state.files, currentDirectory]);
 
@@ -138,8 +156,9 @@ export function FileExplorer(): JSX.Element {
     event.stopPropagation();
     
     if (file.type === 'file' && file.name.endsWith('.py')) {
-      // Execute Python file via terminal
-      const command = `python ${file.name}`;
+      // Execute Python file via terminal using full path
+      const command = `python "${file.path}"`;
+      console.log('🚀 Executing file via handleExecuteFile:', command);
       sendTerminalCommand(command);
     }
   }, [sendTerminalCommand]);
@@ -267,7 +286,9 @@ export function FileExplorer(): JSX.Element {
                 onClick={(e) => {
                   e.stopPropagation();
                   if (file.type === 'file' && file.name.endsWith('.py')) {
-                    const command = `python ${file.name}`;
+                    // Use the full path for execution
+                    const command = `python "${file.path}"`;
+                    console.log('🚀 Executing file:', command);
                     sendTerminalCommand(command);
                   }
                 }}
@@ -315,12 +336,26 @@ export function FileExplorer(): JSX.Element {
           <h2 className="text-sm font-semibold text-gray-200">Explorer</h2>
           <div className="flex gap-1">
             <button
-              onClick={() => loadFiles(currentDirectory, true)} // Show errors for user-initiated refresh
-              disabled={loading}
-              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 disabled:opacity-50 rounded transition-colors"
-              title="Refresh"
+              onClick={() => {
+                console.log('🔄 Refresh button clicked');
+                hasLoadedInitialFiles.current = false; // Reset the flag to force reload
+                loadFiles(currentDirectory, true); // Show errors for user-initiated refresh
+              }}
+              disabled={loading || !state.isConnected}
+              className={`p-1.5 rounded transition-colors ${
+                loading || !state.isConnected
+                  ? 'text-gray-600 cursor-not-allowed opacity-50'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+              title={
+                !state.isConnected 
+                  ? 'Cannot refresh - WebSocket disconnected' 
+                  : loading 
+                    ? 'Loading...' 
+                    : 'Refresh files'
+              }
             >
-              🔄
+              {loading ? '⟳' : '🔄'}
             </button>
             <button
               onClick={() => setShowCreateDialog('file')}

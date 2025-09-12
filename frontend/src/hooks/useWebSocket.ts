@@ -40,6 +40,85 @@ export function useWebSocket() {
   const maxReconnectAttempts = globalConnectionState.maxReconnectAttempts;
   const isConnectingRef = useRef(globalConnectionState.isConnecting);
 
+  const handleMessage = useCallback((message: WebSocketMessage) => {
+    console.log('Received WebSocket message:', message);
+
+    switch (message.type) {
+      case 'connection_established':
+        console.log('WebSocket connection confirmed:', message.message);
+        // Don't add connection messages to terminal - show in status header only
+        break;
+
+      case 'terminal_output':
+        console.log('🔍 [WS] Processing terminal_output:', message.output);
+        if (message.output) {
+          console.log('🔍 [WS] Calling addTerminalLine with:', message.output);
+          addTerminalLine(message.output, 'output', message.command);
+        } else {
+          console.log('🔍 [WS] No output in terminal_output message');
+        }
+        break;
+
+      case 'terminal_clear':
+        // Clear terminal - this will be handled by the Terminal component
+        addTerminalLine('CLEAR_TERMINAL', 'output');
+        break;
+
+      case 'error':
+        if (message.message) {
+          addTerminalLine(`Error: ${message.message}`, 'error');
+        }
+        break;
+
+      case 'file_list':
+        if (message.files) {
+          setFiles(message.files);
+        }
+        break;
+
+      case 'file_input_prompt':
+        // Handle interactive file input prompt
+        if (message.filename) {
+          console.log('📝 File input prompt received for:', message.filename);
+          // Store the filename and show interactive prompt in terminal
+          addTerminalLine(message.message || `Enter content for ${message.filename}:`, 'output');
+          // The terminal component should handle this by enabling interactive mode
+        }
+        break;
+
+      case 'file_created':
+        // Handle successful file creation
+        if (message.files) {
+          setFiles(message.files);
+        }
+        if (message.message) {
+          addTerminalLine(message.message, 'output');
+        }
+        break;
+
+      case 'file_system':
+        // Handle file system responses
+        if (message.action === 'read' && message.content) {
+          updateCode(message.content);
+        } else if (message.action === 'list' && message.files) {
+          setFiles(message.files);
+        } else if (message.action === 'file_created' && message.files) {
+          setFiles(message.files);
+          addTerminalLine(`File created: ${message.path}`, 'output');
+        } else if (message.action === 'directory_created' && message.files) {
+          setFiles(message.files);
+          addTerminalLine(`Directory created: ${message.path}`, 'output');
+        } else if (message.action === 'deleted' && message.files) {
+          setFiles(message.files);
+          addTerminalLine(`Deleted: ${message.path}`, 'output');
+        }
+        break;
+
+      default:
+        console.log('Unknown message type:', message.type);
+    }
+  }, [addTerminalLine, setFiles, updateCode]);
+
   const connect = useCallback(() => {
     const now = Date.now();
     const timeSinceLastAttempt = now - globalConnectionState.lastConnectionAttempt;
@@ -162,7 +241,7 @@ export function useWebSocket() {
       setError('Failed to connect to server');
       addTerminalLine('Failed to connect to server', 'error');
     }
-  }, [setConnected, addTerminalLine, setError]);
+  }, [setConnected, addTerminalLine, setError, handleMessage]);
 
   const disconnect = useCallback(() => {
     console.log('🔌 [WS] Disconnect called');
@@ -211,81 +290,6 @@ export function useWebSocket() {
       return false;
     }
   }, [connect]);
-
-  const handleMessage = useCallback((message: WebSocketMessage) => {
-    console.log('Received WebSocket message:', message);
-
-    switch (message.type) {
-      case 'connection_established':
-        console.log('WebSocket connection confirmed:', message.message);
-        // Don't add connection messages to terminal - show in status header only
-        break;
-
-      case 'terminal_output':
-        if (message.output) {
-          addTerminalLine(message.output, 'output', message.command);
-        }
-        break;
-
-      case 'terminal_clear':
-        // Clear terminal - this will be handled by the Terminal component
-        addTerminalLine('CLEAR_TERMINAL', 'output');
-        break;
-
-      case 'error':
-        if (message.message) {
-          addTerminalLine(`Error: ${message.message}`, 'error');
-        }
-        break;
-
-      case 'file_list':
-        if (message.files) {
-          setFiles(message.files);
-        }
-        break;
-
-      case 'file_input_prompt':
-        // Handle interactive file input prompt
-        if (message.filename) {
-          console.log('📝 File input prompt received for:', message.filename);
-          // Store the filename and show interactive prompt in terminal
-          addTerminalLine(message.message || `Enter content for ${message.filename}:`, 'output');
-          // The terminal component should handle this by enabling interactive mode
-        }
-        break;
-
-      case 'file_created':
-        // Handle successful file creation
-        if (message.files) {
-          setFiles(message.files);
-        }
-        if (message.message) {
-          addTerminalLine(message.message, 'output');
-        }
-        break;
-
-      case 'file_system':
-        // Handle file system responses
-        if (message.action === 'read' && message.content) {
-          updateCode(message.content);
-        } else if (message.action === 'list' && message.files) {
-          setFiles(message.files);
-        } else if (message.action === 'file_created' && message.files) {
-          setFiles(message.files);
-          addTerminalLine(`File created: ${message.path}`, 'output');
-        } else if (message.action === 'directory_created' && message.files) {
-          setFiles(message.files);
-          addTerminalLine(`Directory created: ${message.path}`, 'output');
-        } else if (message.action === 'deleted' && message.files) {
-          setFiles(message.files);
-          addTerminalLine(`Deleted: ${message.path}`, 'output');
-        }
-        break;
-
-      default:
-        console.log('Unknown message type:', message.type);
-    }
-  }, [addTerminalLine, setFiles, updateCode]);
 
   // WebSocket actions
   const sendTerminalCommand = useCallback((command: string) => {

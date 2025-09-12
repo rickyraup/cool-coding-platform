@@ -112,13 +112,17 @@ export function Terminal(): JSX.Element {
               return;
             }
             lastEnterTimeRef.current = now;
-  
-            setCurrentLine(currentCmd => {
-              console.log('🔥 [Terminal] Enter pressed, currentLine:', JSON.stringify(currentCmd));
-              setTimeout(() => handleCommand(currentCmd), 0);
-              return ''; // Clear the line
-            });
+            
+            // Get current line and handle command
+            const cmdToExecute = currentLine.trim();
+            console.log('🔥 [Terminal] Enter pressed, executing command:', JSON.stringify(cmdToExecute));
+            
+            // Clear the current line immediately
+            setCurrentLine('');
             setCursorX(0);
+            
+            // Execute command
+            setTimeout(() => handleCommand(cmdToExecute), 0);
             return;
           }
   
@@ -293,13 +297,19 @@ export function Terminal(): JSX.Element {
 
   // Handle terminal output from WebSocket
   useEffect(() => {
+    console.log('🔍 [Terminal] useEffect triggered, terminalLines count:', state.terminalLines.length);
     const terminal = xtermRef.current;
-    if (!terminal || !state.terminalLines.length) return;
+    if (!terminal || !state.terminalLines.length) {
+      console.log('🔍 [Terminal] Early return - terminal:', !!terminal, 'terminalLines:', state.terminalLines.length);
+      return;
+    }
 
     // Process only new lines since the last processed index
     const newLines = state.terminalLines.slice(lastProcessedLineRef.current);
+    console.log('🔍 [Terminal] Processing', newLines.length, 'new lines');
     
     newLines.forEach((line, _index) => {
+      console.log('🔍 [Terminal] Processing line:', line);
       if (line.type === 'input') {
         // Don't show input lines in terminal output - they're already shown when typed
         return;

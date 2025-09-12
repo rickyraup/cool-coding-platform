@@ -111,6 +111,27 @@ async def create_session(session_data: SessionCreate):
             name=session_data.name
         )
         
+        # Create default script.py file for the new session
+        try:
+            default_script_content = """# Welcome to your new Python workspace!
+# This is your main script file.
+
+print("Hello, World!")
+
+# You can write your Python code here
+# Use the terminal to run this file with: python script.py
+"""
+            WorkspaceItem.create(
+                session_id=new_session.id,
+                name="script.py",
+                item_type="file",
+                parent_id=None,
+                content=default_script_content
+            )
+        except Exception as workspace_error:
+            # Log the error but don't fail session creation
+            print(f"Warning: Failed to create default script.py: {workspace_error}")
+        
         session_response = convert_session_to_response(new_session)
         
         return SessionDetailResponse(
