@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { UserCreate, UserLogin } from '@/services/api';
+import type { UserCreate, UserLogin } from '@/services/api';
 
 interface AuthProps {
   onClose?: () => void;

@@ -2,7 +2,7 @@
  * API service for communicating with the backend PostgreSQL APIs
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001';
 
 // User types
 interface User {
@@ -130,13 +130,12 @@ class ApiService {
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
         throw new Error(
-          errorData?.message || errorData?.detail || `HTTP ${response.status}: ${response.statusText}`
+          errorData?.message ?? errorData?.detail ?? `HTTP ${response.status}: ${response.statusText}`
         );
       }
 
       return await response.json();
     } catch (error) {
-      console.error('API request failed:', error);
       throw error instanceof Error 
         ? error 
         : new Error('An unexpected error occurred');
@@ -302,7 +301,7 @@ class ApiService {
   async createLegacySession(sessionData?: { user_id?: string; code?: string; language?: string }): Promise<any> {
     return await this.fetchWithErrorHandling('/api/sessions', {
       method: 'POST',
-      body: JSON.stringify(sessionData || {}),
+      body: JSON.stringify(sessionData ?? {}),
     });
   }
 

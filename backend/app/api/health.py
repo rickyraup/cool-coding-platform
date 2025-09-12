@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from typing import Any
 
 import psutil
 from fastapi import APIRouter
@@ -7,9 +8,10 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
+
 @router.get("/")
-async def health_check():
-    """Basic health check endpoint"""
+async def health_check() -> dict[str, Any]:
+    """Basic health check endpoint."""
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
@@ -19,9 +21,10 @@ async def health_check():
         "message": "FastAPI server is running",
     }
 
+
 @router.get("/detailed")
-async def detailed_health_check():
-    """Detailed health check with system information"""
+async def detailed_health_check() -> dict[str, Any]:
+    """Detailed health check with system information."""
     memory = psutil.virtual_memory()
     cpu_percent = psutil.cpu_percent(interval=1)
 
