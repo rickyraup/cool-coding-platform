@@ -73,7 +73,7 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
             const workspaceResponse = await apiService.getSessionWithWorkspace(sessionId);
             const scriptFile = workspaceResponse.workspace_items.find(item => item.name === 'script.py' && item.type === 'file');
             
-            if (scriptFile && scriptFile.content) {
+            if (scriptFile?.content) {
               // Update the code in the context and session
               updateCode(scriptFile.content);
               console.log('Loaded script.py content into editor');
@@ -151,9 +151,11 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
               {/* Editor Section */}
               <Panel defaultSize={60} minSize={30} className="border-r border-gray-700">
                 <div className="h-full flex flex-col">
-                  <div className="bg-gray-800 px-4 py-3 border-b border-gray-600 flex-shrink-0 flex items-center gap-2">
-                    <span className="text-lg">📝</span>
-                    <h2 className="text-sm font-semibold text-gray-200">Code Editor</h2>
+                  <div className="bg-gray-800 px-4 py-3 border-b border-gray-700/50 flex-shrink-0 flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                      <h2 className="text-sm font-medium text-gray-100">Editor</h2>
+                    </div>
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <CodeEditor />
@@ -166,9 +168,11 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
               {/* Terminal Section */}
               <Panel defaultSize={40} minSize={25}>
                 <div className="h-full flex flex-col">
-                  <div className="bg-gray-800 px-4 py-3 border-b border-gray-600 flex-shrink-0 flex items-center gap-2">
-                    <span className="text-lg">💻</span>
-                    <h2 className="text-sm font-semibold text-gray-200">Terminal</h2>
+                  <div className="bg-gray-800 px-4 py-3 border-b border-gray-700/50 flex-shrink-0 flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                      <h2 className="text-sm font-medium text-gray-100">Terminal</h2>
+                    </div>
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <Terminal />

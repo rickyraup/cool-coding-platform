@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState, useRef } from 'react';
-import { useApp, FileItem } from '../context/AppContext';
+import type { FileItem } from '../context/AppContext';
+import { useApp } from '../context/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 export function FileExplorer(): JSX.Element {
@@ -172,34 +173,41 @@ export function FileExplorer(): JSX.Element {
     }
   }, [state.isConnected, state.currentSession]);
 
-  const getFileIcon = useCallback((file: FileItem): string => {
+  const getFileIconComponent = useCallback((file: FileItem): JSX.Element => {
     if (file.type === 'directory') {
-      return expandedDirs.has(file.path) ? '📂' : '📁';
+      const isExpanded = expandedDirs.has(file.path);
+      return (
+        <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+          {isExpanded ? (
+            <path d="M19 7h-3V6a2 2 0 00-2-2H4a2 2 0 00-2 2v11a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z" />
+          ) : (
+            <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
+          )}
+        </svg>
+      );
     }
     
     // File icons based on extension
     const ext = file.name.split('.').pop()?.toLowerCase();
     switch (ext) {
       case 'py':
-        return '🐍';
+        return <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M14.25 2.1l-.1-.1-.1-.1c-.1-.1-.2-.1-.3-.1H7.85C7.38 1.9 7 2.28 7 2.75v18.5c0 .47.38.85.85.85h8.3c.47 0 .85-.38.85-.85V6.75c0-.12-.05-.23-.15-.33l-2.6-2.6z"/>
+        </svg>;
       case 'js':
       case 'jsx':
-        return '📜';
+        return <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M3 3h18v18H3V3zm16.525 13.707c-.131-.821-.666-1.511-2.252-2.155-.552-.259-1.165-.438-1.349-.854-.068-.248-.078-.382-.034-.529.113-.484.687-.629 1.137-.495.293.09.563.315.732.676.775-.507.775-.507 1.316-.844-.203-.314-.304-.451-.439-.586-.473-.528-1.103-.798-2.126-.77l-.528.067c-.507.124-.991.395-1.283.754-.855.968-.608 2.655.427 3.354 1.023.765 2.521.933 2.712 1.653.18.878-.652 1.159-1.475 1.058-.607-.136-.945-.439-1.316-.1l1.386-.9c.5.706 1.232.706 1.232.706s1.07.123 1.07-.706v-.051z"/>
+        </svg>;
       case 'ts':
       case 'tsx':
-        return '📘';
-      case 'html':
-        return '🌐';
-      case 'css':
-        return '🎨';
-      case 'json':
-        return '📋';
-      case 'md':
-        return '📝';
-      case 'txt':
-        return '📄';
+        return <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M1.125 0C.502 0 0 .502 0 1.125v21.75C0 23.498.502 24 1.125 24h21.75c.623 0 1.125-.502 1.125-1.125V1.125C24 .502 23.498 0 22.875 0zm17.363 9.75c.612 0 1.154.037 1.627.111a6.38 6.38 0 0 1 1.306.34v2.458a3.95 3.95 0 0 0-.643-.361 5.093 5.093 0 0 0-.717-.26 5.453 5.453 0 0 0-1.426-.2c-.3 0-.573.028-.819.086a2.1 2.1 0 0 0-.623.242c-.17.104-.3.229-.393.374a.888.888 0 0 0-.14.49c0 .196.053.373.156.529.104.156.252.304.443.444s.423.276.696.41c.273.135.582.274.926.416.47.197.892.407 1.266.628.374.222.695.473.963.753.268.279.472.598.614.957.142.359.214.776.214 1.253 0 .657-.125 1.21-.373 1.656a3.033 3.033 0 0 1-1.012 1.085 4.38 4.38 0 0 1-1.487.596c-.566.12-1.163.18-1.79.18a9.916 9.916 0 0 1-1.84-.164 5.544 5.544 0 0 1-1.512-.493v-2.63a5.033 5.033 0 0 0 3.237 1.2c.333 0 .624-.03.872-.09.249-.06.456-.144.623-.25.166-.108.29-.234.373-.38a1.023 1.023 0 0 0-.074-1.089 2.12 2.12 0 0 0-.537-.5 5.597 5.597 0 0 0-.807-.444 27.72 27.72 0 0 0-1.007-.436c-.918-.383-1.602-.852-2.053-1.405-.45-.553-.676-1.222-.676-2.005 0-.614.123-1.141.369-1.582.246-.441.58-.804 1.004-1.089a4.494 4.494 0 0 1 1.47-.629 7.536 7.536 0 0 1 1.77-.201zm-15.113.188h9.563v2.166H9.506v9.646H6.789v-9.646H3.375z"/>
+        </svg>;
       default:
-        return '📄';
+        return <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>;
     }
   }, [expandedDirs]);
 
@@ -274,7 +282,7 @@ export function FileExplorer(): JSX.Element {
             </span>
           )}
           
-          <span className="text-base flex-shrink-0">{file.type === 'directory' ? (expandedDirs.has(file.path) ? '📂' : '📁') : '🐍'}</span>
+          <span className="flex-shrink-0">{getFileIconComponent(file)}</span>
           <span className="truncate flex-1 font-medium">
             {file.name}
           </span>
@@ -295,7 +303,9 @@ export function FileExplorer(): JSX.Element {
                 className="p-1 text-green-400 hover:text-green-300 hover:bg-green-400/20 rounded transition-colors"
                 title="Run Python file"
               >
-                ▶
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
               </button>
             )}
             <button
@@ -311,7 +321,9 @@ export function FileExplorer(): JSX.Element {
               className="p-1 text-red-400 hover:text-red-300 hover:bg-red-400/20 rounded transition-colors"
               title="Delete"
             >
-              🗑
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
             </button>
           </div>
         </div>
@@ -331,9 +343,12 @@ export function FileExplorer(): JSX.Element {
   return (
     <div className="h-full flex flex-col bg-gray-900 text-white">
       {/* Header */}
-      <div className="bg-gray-800 px-4 py-3 border-b border-gray-600">
+      <div className="bg-gray-800 px-4 py-3 border-b border-gray-700/50">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-sm font-semibold text-gray-200">Explorer</h2>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+            <h2 className="text-sm font-medium text-gray-100">Explorer</h2>
+          </div>
           <div className="flex gap-1">
             <button
               onClick={() => {
@@ -342,10 +357,10 @@ export function FileExplorer(): JSX.Element {
                 loadFiles(currentDirectory, true); // Show errors for user-initiated refresh
               }}
               disabled={loading || !state.isConnected}
-              className={`p-1.5 rounded transition-colors ${
+              className={`p-1.5 rounded-md transition-all duration-200 ${
                 loading || !state.isConnected
                   ? 'text-gray-600 cursor-not-allowed opacity-50'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  : 'text-gray-400 hover:text-gray-100 hover:bg-gray-700/60'
               }`}
               title={
                 !state.isConnected 
@@ -355,21 +370,27 @@ export function FileExplorer(): JSX.Element {
                     : 'Refresh files'
               }
             >
-              {loading ? '⟳' : '🔄'}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
             </button>
             <button
               onClick={() => setShowCreateDialog('file')}
-              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              className="p-1.5 text-gray-400 hover:text-gray-100 hover:bg-gray-700/60 rounded-md transition-all duration-200"
               title="New File"
             >
-              📄
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
             </button>
             <button
               onClick={() => setShowCreateDialog('folder')}
-              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              className="p-1.5 text-gray-400 hover:text-gray-100 hover:bg-gray-700/60 rounded-md transition-all duration-200"
               title="New Folder"
             >
-              📁
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
             </button>
           </div>
         </div>
@@ -380,7 +401,10 @@ export function FileExplorer(): JSX.Element {
             onClick={handleNavigateToRoot}
             className="hover:text-white transition-colors px-1 py-0.5 rounded"
           >
-            📁 Root
+            <svg className="w-3 h-3 inline mr-1" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            Root
           </button>
           {currentDirectory && (
             <>
@@ -423,12 +447,16 @@ export function FileExplorer(): JSX.Element {
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="p-4 text-sm text-gray-400 flex items-center gap-2">
-            <div className="animate-spin">🔄</div>
+            <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
             Loading files...
           </div>
         ) : state.files.length === 0 ? (
           <div className="p-4 text-sm text-gray-400 text-center">
-            <div className="text-2xl mb-2">📂</div>
+            <svg className="w-8 h-8 mx-auto mb-2 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
             No files found
           </div>
         ) : (

@@ -4,7 +4,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { apiService, CodeSession } from '../../services/api';
+import type { CodeSession } from '../../services/api';
+import { apiService } from '../../services/api';
 
 export default function DashboardPage() {
   const { user, logout, isAuthenticated, isLoading } = useAuth();
@@ -238,7 +239,7 @@ export default function DashboardPage() {
                         <span className="text-white font-bold">📁</span>
                       </div>
                       <div>
-                        <h3 className="text-lg font-semibold text-white">{workspace.name || `Workspace ${workspace.id}`}</h3>
+                        <h3 className="text-lg font-semibold text-white">{workspace.name ?? `Workspace ${workspace.id}`}</h3>
                         <p className="text-sm text-gray-400">Python workspace</p>
                       </div>
                     </div>

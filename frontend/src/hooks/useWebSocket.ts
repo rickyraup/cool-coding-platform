@@ -3,21 +3,157 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 
-// Global WebSocket singleton to prevent multiple instances
-let globalWebSocket: WebSocket | null = null;
-let globalReconnectTimeout: NodeJS.Timeout | null = null;
-let globalConnectionState = {
-  isConnecting: false,
-  connectionCount: 0,
-  lastConnectionAttempt: 0,
-  cooldownPeriod: 1000, // 1 second cooldown between connection attempts
-  reconnectAttempts: 0,
-  maxReconnectAttempts: 5,
-  hasEverConnected: false // Track if we've ever successfully connected
-};
+// Global WebSocket singleton with proper cleanup
+class WebSocketManager {
+  private ws: WebSocket | null = null;
+  private isConnecting: boolean = false;
+  private reconnectAttempts: number = 0;
+  private readonly maxReconnectAttempts: number = 5;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private readonly messageHandlers: Set<(message: WebSocketMessage) => void> = new Set();
+  private readonly connectionStateHandlers: Set<(connected: boolean) => void> = new Set();
+  private readonly handlerIds: Map<Function, string> = new Map(); // Track unique handlers
+
+  constructor() {
+    // Ensure cleanup on page unload
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', () => this.disconnect());
+    }
+  }
+
+  addMessageHandler(handler: (message: WebSocketMessage) => void, id?: string) {
+    // Clear all existing handlers first to prevent duplicates from React Strict Mode
+    if (id === 'main-handler') {
+      this.messageHandlers.clear();
+      this.handlerIds.clear();
+    }
+    
+    const handlerId = id || `handler_${Date.now()}_${Math.random()}`;
+    this.handlerIds.set(handler, handlerId);
+    this.messageHandlers.add(handler);
+  }
+
+  removeMessageHandler(handler: (message: WebSocketMessage) => void) {
+    this.handlerIds.delete(handler);
+    this.messageHandlers.delete(handler);
+  }
+
+  addConnectionStateHandler(handler: (connected: boolean) => void, id?: string) {
+    // Clear all existing connection handlers for main registration
+    if (id === 'main-connection') {
+      this.connectionStateHandlers.clear();
+    }
+    
+    this.connectionStateHandlers.add(handler);
+  }
+
+  removeConnectionStateHandler(handler: (connected: boolean) => void) {
+    this.connectionStateHandlers.delete(handler);
+  }
+
+  private notifyConnectionState(connected: boolean) {
+    this.connectionStateHandlers.forEach(handler => handler(connected));
+  }
+
+  private notifyMessage(message: WebSocketMessage) {
+    this.messageHandlers.forEach(handler => handler(message));
+  }
+
+  connect() {
+    if (this.ws?.readyState === WebSocket.OPEN || this.isConnecting) {
+      return;
+    }
+
+    this.isConnecting = true;
+
+    try {
+      this.ws = new WebSocket('ws://localhost:8001/ws');
+
+      this.ws.onopen = () => {
+        this.isConnecting = false;
+        this.reconnectAttempts = 0;
+        this.notifyConnectionState(true);
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const message: WebSocketMessage = JSON.parse(event.data);
+          this.notifyMessage(message);
+        } catch {
+          // Ignore parse errors
+        }
+      };
+
+      this.ws.onclose = (event) => {
+        this.isConnecting = false;
+        this.notifyConnectionState(false);
+
+        // Reconnect if unexpected close
+        if (!event.wasClean && this.reconnectAttempts < this.maxReconnectAttempts) {
+          this.reconnectAttempts++;
+          const delay = Math.min(1000 * this.reconnectAttempts, 5000);
+          this.reconnectTimeout = setTimeout(() => this.connect(), delay);
+        }
+      };
+
+      this.ws.onerror = () => {
+        this.isConnecting = false;
+      };
+    } catch {
+      this.isConnecting = false;
+    }
+  }
+
+  sendMessage(message: WebSocketMessage): boolean {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify(message));
+        return true;
+      } catch {
+        return false;
+      }
+    } else {
+      if (!this.isConnecting) {
+        this.connect();
+      }
+      return false;
+    }
+  }
+
+  disconnect() {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    
+    if (this.ws) {
+      this.ws.close(1000, 'Client disconnect');
+      this.ws = null;
+    }
+    
+    this.isConnecting = false;
+    this.reconnectAttempts = 0;
+    this.notifyConnectionState(false);
+  }
+
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN || false;
+  }
+}
+
+// Global singleton instance with forced reset capability
+let wsManager: WebSocketManager;
+
+// Function to ensure we have a clean singleton
+function getWebSocketManager(): WebSocketManager {
+  if (!wsManager) {
+    wsManager = new WebSocketManager();
+  }
+  return wsManager;
+}
 
 interface WebSocketMessage {
-  type: 'terminal_input' | 'terminal_output' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created';
+  type: 'terminal_input' | 'terminal_output' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'ping' | 'pong';
   sessionId?: string;
   command?: string;
   output?: string;
@@ -33,400 +169,181 @@ interface WebSocketMessage {
 
 export function useWebSocket() {
   const { state, setConnected, addTerminalLine, setError, setFiles, updateCode } = useApp();
-  // Use global WebSocket instead of local refs to prevent multiple instances
-  const wsRef = useRef<WebSocket | null>(globalWebSocket);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(globalReconnectTimeout);
-  const reconnectAttempts = useRef(globalConnectionState.reconnectAttempts);
-  const maxReconnectAttempts = globalConnectionState.maxReconnectAttempts;
-  const isConnectingRef = useRef(globalConnectionState.isConnecting);
 
-  const handleMessage = useCallback((message: WebSocketMessage) => {
-    console.log('Received WebSocket message:', message);
+  // Create stable handler refs to prevent duplicate registrations
+  const handlersRegisteredRef = useRef(false);
 
-    switch (message.type) {
-      case 'connection_established':
-        console.log('WebSocket connection confirmed:', message.message);
-        // Don't add connection messages to terminal - show in status header only
-        break;
-
-      case 'terminal_output':
-        console.log('🔍 [WS] Processing terminal_output:', message.output);
-        if (message.output) {
-          console.log('🔍 [WS] Calling addTerminalLine with:', message.output);
-          addTerminalLine(message.output, 'output', message.command);
-        } else {
-          console.log('🔍 [WS] No output in terminal_output message');
-        }
-        break;
-
-      case 'terminal_clear':
-        // Clear terminal - this will be handled by the Terminal component
-        addTerminalLine('CLEAR_TERMINAL', 'output');
-        break;
-
-      case 'error':
-        if (message.message) {
-          addTerminalLine(`Error: ${message.message}`, 'error');
-        }
-        break;
-
-      case 'file_list':
-        if (message.files) {
-          setFiles(message.files);
-        }
-        break;
-
-      case 'file_input_prompt':
-        // Handle interactive file input prompt
-        if (message.filename) {
-          console.log('📝 File input prompt received for:', message.filename);
-          // Store the filename and show interactive prompt in terminal
-          addTerminalLine(message.message || `Enter content for ${message.filename}:`, 'output');
-          // The terminal component should handle this by enabling interactive mode
-        }
-        break;
-
-      case 'file_created':
-        // Handle successful file creation
-        if (message.files) {
-          setFiles(message.files);
-        }
-        if (message.message) {
-          addTerminalLine(message.message, 'output');
-        }
-        break;
-
-      case 'file_system':
-        // Handle file system responses
-        if (message.action === 'read' && message.content) {
-          updateCode(message.content);
-        } else if (message.action === 'list' && message.files) {
-          setFiles(message.files);
-        } else if (message.action === 'file_created' && message.files) {
-          setFiles(message.files);
-          addTerminalLine(`File created: ${message.path}`, 'output');
-        } else if (message.action === 'directory_created' && message.files) {
-          setFiles(message.files);
-          addTerminalLine(`Directory created: ${message.path}`, 'output');
-        } else if (message.action === 'deleted' && message.files) {
-          setFiles(message.files);
-          addTerminalLine(`Deleted: ${message.path}`, 'output');
-        }
-        break;
-
-      default:
-        console.log('Unknown message type:', message.type);
-    }
-  }, [addTerminalLine, setFiles, updateCode]);
-
-  const connect = useCallback(() => {
-    const now = Date.now();
-    const timeSinceLastAttempt = now - globalConnectionState.lastConnectionAttempt;
+  // Register handlers only once using refs
+  useEffect(() => {
+    if (handlersRegisteredRef.current) return;
     
-    console.log('🔌 [WS] Connect called - checking current state');
-    console.log('🔌 [WS] Global WebSocket state:', globalWebSocket?.readyState);
-    console.log('🔌 [WS] Local ref state:', wsRef.current?.readyState);
-    console.log('🔌 [WS] Global isConnecting:', globalConnectionState.isConnecting);
-    
-    // Reset stale global state if WebSocket is closed but global state says connecting
-    if (globalWebSocket && globalWebSocket.readyState === WebSocket.CLOSED && globalConnectionState.isConnecting) {
-      console.log('🔄 [WS] Resetting stale global state');
-      globalWebSocket = null;
-      globalConnectionState.isConnecting = false;
-      isConnectingRef.current = false;
-    }
-    
-    // Check if we already have a working connection
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log('🔒 [WS] Connection already open, updating global reference');
-      globalWebSocket = wsRef.current;
-      setConnected(true);
-      return;
-    }
+    const handleMessage = (message: WebSocketMessage) => {
+      switch (message.type) {
+        case 'connection_established':
+          break;
 
-    // Check if we're already connecting
-    if (wsRef.current?.readyState === WebSocket.CONNECTING) {
-      console.log('🔒 [WS] Connection already in progress');
-      return;
-    }
+        case 'terminal_output':
+          if (message.output) {
+            addTerminalLine(message.output, 'output', message.command);
+          }
+          break;
 
-    // Prevent rapid connection attempts with cooldown
-    if (timeSinceLastAttempt < globalConnectionState.cooldownPeriod) {
-      console.log('🔒 [WS] Cooldown period active, waiting');
-      return;
-    }
+        case 'terminal_clear':
+          addTerminalLine('CLEAR_TERMINAL', 'output');
+          break;
 
-    // Clean up any existing connection
-    if (wsRef.current) {
-      console.log('🧹 [WS] Cleaning up existing connection');
-      wsRef.current.close();
-      wsRef.current = null;
-    }
+        case 'error':
+          if (message.message) {
+            addTerminalLine(`Error: ${message.message}`, 'error');
+          }
+          break;
 
-    try {
-      isConnectingRef.current = true;
-      globalConnectionState.isConnecting = true;
-      globalConnectionState.lastConnectionAttempt = now;
-      const wsUrl = 'ws://localhost:8001/ws'; // Force correct URL to bypass browser cache
-      console.log('🔌 [WS] Connecting to:', wsUrl);
-      wsRef.current = new WebSocket(wsUrl);
+        case 'file_list':
+          if (message.files) {
+            setFiles(message.files);
+          }
+          break;
 
-      wsRef.current.onopen = () => {
-        console.log('✅ [WS] WebSocket connected successfully');
-        isConnectingRef.current = false;
-        globalConnectionState.isConnecting = false;
-        globalConnectionState.hasEverConnected = true; // Mark that we've connected at least once
-        globalWebSocket = wsRef.current; // Update global reference
-        setConnected(true);
-        setError(null);
-        reconnectAttempts.current = 0;
-        // Don't add connection messages to terminal - show in status header only
-      };
+        case 'file_input_prompt':
+          if (message.filename) {
+            addTerminalLine(message.message || `Enter content for ${message.filename}:`, 'output');
+          }
+          break;
 
-      wsRef.current.onmessage = (event) => {
-        console.log('📥 [WS] Received message:', event.data);
-        try {
-          const message: WebSocketMessage = JSON.parse(event.data);
-          console.log('📋 [WS] Parsed message:', message);
-          handleMessage(message);
-        } catch (error) {
-          console.error('❌ [WS] Failed to parse WebSocket message:', error);
-          addTerminalLine('Error: Invalid message from server', 'error');
-        }
-      };
+        case 'ping':
+          getWebSocketManager().sendMessage({ type: 'pong' });
+          break;
 
-      wsRef.current.onclose = (event) => {
-        console.log('❌ [WS] WebSocket closed - Code:', event.code, 'WasClean:', event.wasClean);
-        isConnectingRef.current = false;
-        globalConnectionState.isConnecting = false;
-        setConnected(false);
-        
-        // Only attempt reconnection for non-clean disconnects and if under max attempts
-        const shouldReconnect = !event.wasClean && reconnectAttempts.current < maxReconnectAttempts && globalConnectionState.hasEverConnected;
-        
-        if (shouldReconnect) {
-          reconnectAttempts.current++;
-          const delay = Math.min(2000 * reconnectAttempts.current, 10000);
-          console.log(`⏰ [WS] Reconnecting in ${delay}ms (attempt ${reconnectAttempts.current}/${maxReconnectAttempts})`);
-          
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
-          }, delay);
-        } else if (event.wasClean) {
-          // Clean disconnect, don't show error
-          console.log('🚫 [WS] Clean disconnect');
-        } else if (reconnectAttempts.current >= maxReconnectAttempts) {
-          console.log('🚫 [WS] Max reconnection attempts reached');
-          setError('Connection lost - please refresh page');
-        } else if (!globalConnectionState.hasEverConnected) {
-          // Never connected, likely server is down
-          console.log('🚫 [WS] Unable to establish initial connection');
-        }
-      };
+        case 'file_created':
+          if (message.files) {
+            setFiles(message.files);
+          }
+          if (message.message) {
+            addTerminalLine(message.message, 'output');
+          }
+          break;
 
-      wsRef.current.onerror = (error) => {
-        console.error('💥 [WS] WebSocket error:', error);
-        console.log('🔧 [WS] Setting state: isConnecting=false');
-        isConnectingRef.current = false;
-        globalConnectionState.isConnecting = false;
-        setError('WebSocket connection error');
-        addTerminalLine('Connection error occurred', 'error');
-      };
+        case 'file_system':
+          if (message.action === 'read' && message.content) {
+            updateCode(message.content);
+          } else if (message.action === 'list' && message.files) {
+            setFiles(message.files);
+          } else if (message.action === 'file_created' && message.files) {
+            setFiles(message.files);
+            addTerminalLine(`File created: ${message.path}`, 'output');
+          } else if (message.action === 'directory_created' && message.files) {
+            setFiles(message.files);
+            addTerminalLine(`Directory created: ${message.path}`, 'output');
+          } else if (message.action === 'deleted' && message.files) {
+            setFiles(message.files);
+            addTerminalLine(`Deleted: ${message.path}`, 'output');
+          }
+          break;
 
-    } catch (error) {
-      console.error('💥 [WS] Failed to create WebSocket connection:', error);
-      console.log('🔧 [WS] Setting state: isConnecting=false');
-      isConnectingRef.current = false;
-      globalConnectionState.isConnecting = false;
-      setError('Failed to connect to server');
-      addTerminalLine('Failed to connect to server', 'error');
-    }
-  }, [setConnected, addTerminalLine, setError, handleMessage]);
-
-  const disconnect = useCallback(() => {
-    console.log('🔌 [WS] Disconnect called');
-    if (reconnectTimeoutRef.current) {
-      console.log('⏰ [WS] Clearing reconnect timeout');
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    
-    console.log('🔧 [WS] Setting state: isConnecting=false, reconnectAttempts=0');
-    isConnectingRef.current = false;
-    globalConnectionState.isConnecting = false;
-    reconnectAttempts.current = 0;
-    lastSessionIdRef.current = null; // Reset session tracking on disconnect
-    
-    if (wsRef.current) {
-      console.log('🔌 [WS] Closing WebSocket with code 1000');
-      wsRef.current.close(1000, 'Client disconnect');
-      wsRef.current = null;
-      globalWebSocket = null; // Clear global reference
-    }
-    
-    setConnected(false);
-  }, [setConnected]);
-
-  const sendMessage = useCallback((message: WebSocketMessage) => {
-    console.log('🚀 [WS] Attempting to send message:', message);
-    console.log('🔌 [WS] WebSocket ref:', wsRef.current);
-    console.log('🔌 [WS] WebSocket state:', wsRef.current?.readyState, 'OPEN=', WebSocket.OPEN);
-    console.log('🔌 [WS] Connected state:', state.isConnected);
-    
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log('✅ [WS] Sending message via WebSocket');
-      wsRef.current.send(JSON.stringify(message));
-      return true;
-    } else {
-      console.log('❌ [WS] WebSocket not ready - ref:', !!wsRef.current, 'state:', wsRef.current?.readyState, 'connected:', state.isConnected);
-      
-      // Try to reconnect if WebSocket ref is null or closed
-      if (!wsRef.current && !isConnectingRef.current) {
-        console.log('🔄 [WS] WebSocket ref is null, attempting to reconnect...');
-        connect();
+        default:
+          break;
       }
-      
-      // Don't add error messages to terminal - connection status shown in header
-      return false;
-    }
-  }, [connect]);
+    };
 
-  // WebSocket actions
-  const sendTerminalCommand = useCallback((command: string) => {
-    console.log('🎯 [WS] sendTerminalCommand called with:', command);
-    console.log('🎯 [WS] Current session ID:', state.currentSession?.id);
+    const handleConnectionState = (connected: boolean) => {
+      setConnected(connected);
+      if (!connected) {
+        setError('Connection lost');
+      } else {
+        setError(null);
+      }
+    };
+
+    const manager = getWebSocketManager();
+    manager.addMessageHandler(handleMessage, 'main-handler');
+    manager.addConnectionStateHandler(handleConnectionState, 'main-connection');
+    handlersRegisteredRef.current = true;
     
-    const success = sendMessage({
+    return () => {
+      manager.removeMessageHandler(handleMessage);
+      manager.removeConnectionStateHandler(handleConnectionState);
+      handlersRegisteredRef.current = false;
+    };
+  }, []); // Empty dependency array - register only once
+
+  // Connect when session is available
+  useEffect(() => {
+    if (state.currentSession) {
+      getWebSocketManager().connect();
+    }
+  }, [state.currentSession?.id]);
+
+  // Session change handling
+  const handledSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      getWebSocketManager().isConnected() && 
+      state.currentSession && 
+      state.currentSession.id !== handledSessionIdRef.current
+    ) {
+      handledSessionIdRef.current = state.currentSession.id;
+      
+      const refreshTimeout = setTimeout(() => {
+        performFileOperation('list', '');
+        addTerminalLine(`🔄 Switched to session: ${state.currentSession?.id.substring(0, 8)}...`, 'output');
+      }, 200);
+      
+      return () => clearTimeout(refreshTimeout);
+    }
+  }, [state.currentSession?.id, addTerminalLine]);
+
+  // WebSocket actions using the manager
+  const sendTerminalCommand = useCallback((command: string) => {
+    return getWebSocketManager().sendMessage({
       type: 'terminal_input',
       sessionId: state.currentSession?.id || 'default',
       command
     });
-
-    console.log('🎯 [WS] sendMessage returned:', success);
-
-    // Don't add the command to terminal lines here - let the terminal component handle display
-    // The actual output will come back via WebSocket message
-
-    return success;
-  }, [sendMessage, state.currentSession?.id]);
+  }, [state.currentSession?.id]);
 
   const executeCode = useCallback((code: string, filename?: string) => {
-    return sendMessage({
+    return getWebSocketManager().sendMessage({
       type: 'code_execution',
       sessionId: state.currentSession?.id || 'default',
       code,
       filename
     });
-  }, [sendMessage, state.currentSession?.id]);
+  }, [state.currentSession?.id]);
 
   const performFileOperation = useCallback((action: string, path: string, content?: string) => {
-    return sendMessage({
+    return getWebSocketManager().sendMessage({
       type: 'file_system',
       sessionId: state.currentSession?.id || 'default',
       action,
       path,
       content
     });
-  }, [sendMessage, state.currentSession?.id]);
+  }, [state.currentSession?.id]);
 
-  // Auto-save functionality
   const saveCurrentFile = useCallback((content: string, filename?: string) => {
     const currentFile = filename || state.currentFile || 'main.py';
-    console.log('💾 [WS] Auto-saving file:', currentFile);
     return performFileOperation('write', currentFile, content);
   }, [performFileOperation, state.currentFile]);
 
-  // Send file input response for interactive file creation
   const sendFileInputResponse = useCallback((filename: string, content: string) => {
-    return sendMessage({
+    return getWebSocketManager().sendMessage({
       type: 'file_input_response',
       sessionId: state.currentSession?.id || 'default',
       filename,
       content
     });
-  }, [sendMessage, state.currentSession?.id]);
+  }, [state.currentSession?.id]);
 
-  // Track the last session ID to prevent duplicate messages
-  const lastSessionIdRef = useRef<string | null>(null);
-
-  const handledSessionIdRef = useRef<string | null>(null);
-
-useEffect(() => {
-  if (
-    state.isConnected && 
-    state.currentSession && 
-    state.currentSession.id !== handledSessionIdRef.current
-  ) {
-    console.log('🔄 [WS] Session changed, refreshing files for session:', state.currentSession.id);
-    handledSessionIdRef.current = state.currentSession.id;
-    
-    const refreshTimeout = setTimeout(() => {
-      performFileOperation('list', '');
-      addTerminalLine(`🔄 Switched to session: ${state.currentSession?.id.substring(0, 8)}...`, 'output');
-    }, 200);
-    
-    return () => clearTimeout(refreshTimeout);
-  }
-}, [state.currentSession?.id, state.isConnected, performFileOperation]);
-
-
-  // Only connect from the first hook instance (prevent multiple connections)
-  useEffect(() => {
-    globalConnectionState.connectionCount++;
-    console.log('🚀 [WS] useWebSocket hook mounted, connection count:', globalConnectionState.connectionCount);
-    
-    // Only the first instance should connect
-    if (globalConnectionState.connectionCount === 1) {
-      console.log('🎯 [WS] First hook instance - initiating connection');
-      const connectTimeout = setTimeout(() => {
-        connect();
-      }, 500); // Increased delay to let session creation complete
-      
-      return () => {
-        console.log('🧹 [WS] First hook instance unmounting - disconnecting');
-        clearTimeout(connectTimeout);
-        globalConnectionState.connectionCount--;
-        disconnect();
-      };
-    } else {
-      console.log('🔗 [WS] Additional hook instance - sharing existing connection');
-      return () => {
-        globalConnectionState.connectionCount--;
-        console.log('🔗 [WS] Additional hook instance unmounting, connection count:', globalConnectionState.connectionCount);
-      };
-    }
-  }, []);
-
-  // Also try to connect when a session becomes available
-  useEffect(() => {
-    if (state.currentSession && !state.isConnected && !isConnectingRef.current) {
-      console.log('🎯 [WS] Session available, attempting connection');
-      const sessionConnectTimeout = setTimeout(() => {
-        connect();
-      }, 100);
-      
-      return () => clearTimeout(sessionConnectTimeout);
-    }
-  }, [state.currentSession, state.isConnected, connect]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-    };
-  }, []);
-
+  const manager = getWebSocketManager();
   return {
-    isConnected: state.isConnected,
-    connect,
-    disconnect,
+    isConnected: manager.isConnected(),
+    connect: () => manager.connect(),
+    disconnect: () => manager.disconnect(),
     sendTerminalCommand,
     executeCode,
     performFileOperation,
     saveCurrentFile,
     sendFileInputResponse,
-    sendMessage
+    sendMessage: manager.sendMessage.bind(manager)
   };
 }

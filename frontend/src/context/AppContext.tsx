@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useReducer, ReactNode, useEffect, useCallback } from 'react';
+import type { ReactNode} from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
 
 // Import shared types
@@ -67,7 +68,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return {
         ...state,
         currentSession: action.payload,
-        code: action.payload.code,
+        code: action.payload?.code ?? '',
       };
     
     case 'UPDATE_CODE':
