@@ -116,3 +116,98 @@ Copy `backend/.env.example` to `backend/.env` and configure:
 ## License
 
 This project is licensed under the MIT License.
+
+
+High-Risk Security Concerns
+
+  1. Container Escape
+
+  - Risk: User code could exploit Docker vulnerabilities to access host system
+  - Mitigation:
+    - Use latest Docker version with security patches
+    - Run containers with --security-opt=no-new-privileges
+    - Use AppArmor/SELinux profiles
+    - Never run containers in privileged mode
+
+  2. Resource Exhaustion (DoS)
+
+  - Risk: Infinite loops, memory bombs, fork bombs
+  - Mitigation:
+  --memory=512m --memory-swap=512m
+  --cpus=1 --pids-limit=50
+  --ulimit nofile=100 --ulimit nproc=50
+
+  3. Persistent Storage Attacks
+
+  - Risk: Malicious files persisting between sessions
+  - Mitigation:
+    - Use --rm flag for automatic cleanup
+    - Mount temporary directories only: --tmpfs /tmp
+    - Scan uploaded files before execution
+
+  4. Network-Based Attacks
+
+  - Risk: Data exfiltration, external service abuse
+  - Mitigation:
+    - Use --network=none for complete isolation
+    - If network needed: custom bridge with firewall rules
+    - Block all outbound except whitelisted package repos
+
+  Medium-Risk Concerns
+
+  5. Host Information Disclosure
+
+  - Risk: Access to host metadata, Docker socket
+  - Mitigation:
+    - Never mount /var/run/docker.sock
+    - Use read-only filesystem: --read-only
+    - Minimal base image (python:3.11-slim)
+
+  6. Timing/Side-Channel Attacks
+
+  - Risk: Session interference, resource timing attacks
+  - Mitigation:
+    - Randomized session IDs
+    - Container name randomization
+    - Resource quotas per user
+
+  Implementation Security Strategy
+
+  # Container Security Configuration
+  CONTAINER_CONFIG = {
+      'image': 'coding-platform:python311',
+      'command': ['/bin/bash'],
+      'detach': True,
+      'remove': True,  # Auto-cleanup
+      'read_only': True,  # Read-only filesystem
+      'security_opt': ['no-new-privileges'],
+      'mem_limit': '512m',
+      'memswap_limit': '512m',
+      'cpu_count': 1,
+      'pids_limit': 50,
+      'network_mode': 'none',  # No network access
+      'user': '1000:1000',  # Non-root user
+      'working_dir': '/app',
+      'volumes': {
+          '/tmp/session-{session_id}': {'bind': '/app', 'mode': 'rw'}
+      },
+      'environment': {
+          'PYTHONPATH': '/app',
+          'HOME': '/app'
+      }
+  }
+
+  Runtime Security Monitoring
+
+  - Container resource usage tracking
+  - Command execution logging
+  - File system change monitoring
+  - Automatic container termination after 30 minutes
+  - Rate limiting on container creation per user
+
+  Validation & Input Sanitization
+
+  - Filename validation (no ../, special chars)
+  - Code size limits (max 1MB per file)
+  - File type restrictions (Python, text files only)
+  - Command length limits in terminal

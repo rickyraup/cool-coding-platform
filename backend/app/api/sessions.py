@@ -12,6 +12,7 @@ from app.schemas.sessions import (
     SessionResponse,
     SessionUpdate,
 )
+from app.core.session_manager import session_manager
 
 
 router = APIRouter()
@@ -128,4 +129,49 @@ async def delete_session(
     return {
         "success": True,
         "message": "Session deleted successfully",
+    }
+
+@router.get("/terminal/active")
+async def get_active_terminal_sessions():
+    """Get all active terminal sessions (process isolation)"""
+    sessions = session_manager.list_sessions()
+    
+    return {
+        "success": True,
+        "data": sessions,
+        "count": len(sessions),
+        "message": f"Retrieved {len(sessions)} active terminal sessions",
+    }
+
+@router.get("/terminal/{session_id}")
+async def get_terminal_session_info(session_id: str):
+    """Get information about a specific terminal session"""
+    session_info = session_manager.get_session_info(session_id)
+    
+    if not session_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Terminal session with id {session_id} not found",
+        )
+    
+    return {
+        "success": True,
+        "data": session_info,
+        "message": "Terminal session info retrieved successfully",
+    }
+
+@router.delete("/terminal/{session_id}")
+async def cleanup_terminal_session(session_id: str):
+    """Clean up a specific terminal session"""
+    success = await session_manager.cleanup_session(session_id)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Terminal session with id {session_id} not found",
+        )
+    
+    return {
+        "success": True,
+        "message": f"Terminal session {session_id} cleaned up successfully",
     }

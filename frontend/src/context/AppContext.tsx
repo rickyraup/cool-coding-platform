@@ -1,6 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, useEffect, useCallback } from 'react';
+import { apiService } from '../services/api';
 
 // Import shared types
 interface CodeSession {
@@ -18,12 +19,21 @@ interface TerminalLine {
   content: string;
   type: 'input' | 'output' | 'error';
   timestamp: Date;
+  command?: string;
+}
+
+export interface FileItem {
+  name: string;
+  type: 'file' | 'directory';
+  path: string;
 }
 
 interface AppState {
   currentSession: CodeSession | null;
   code: string;
   terminalLines: TerminalLine[];
+  files: FileItem[];
+  currentFile: string | null;
   isConnected: boolean;
   isLoading: boolean;
   error: string | null;
@@ -34,6 +44,8 @@ type AppAction =
   | { type: 'UPDATE_CODE'; payload: string }
   | { type: 'ADD_TERMINAL_LINE'; payload: TerminalLine }
   | { type: 'CLEAR_TERMINAL' }
+  | { type: 'SET_FILES'; payload: FileItem[] }
+  | { type: 'SET_CURRENT_FILE'; payload: string | null }
   | { type: 'SET_CONNECTED'; payload: boolean }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null };
@@ -42,6 +54,8 @@ const initialState: AppState = {
   currentSession: null,
   code: '# Write your Python code here\nprint("Hello, World!")',
   terminalLines: [],
+  files: [],
+  currentFile: null,
   isConnected: false,
   isLoading: false,
   error: null,
@@ -74,6 +88,18 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         terminalLines: [],
       };
     
+    case 'SET_FILES':
+      return {
+        ...state,
+        files: action.payload,
+      };
+    
+    case 'SET_CURRENT_FILE':
+      return {
+        ...state,
+        currentFile: action.payload,
+      };
+    
     case 'SET_CONNECTED':
       return {
         ...state,
@@ -103,8 +129,10 @@ interface AppContextType {
   // Actions
   setSession: (session: CodeSession) => void;
   updateCode: (code: string) => void;
-  addTerminalLine: (content: string, type: 'input' | 'output' | 'error') => void;
+  addTerminalLine: (content: string, type: 'input' | 'output' | 'error', command?: string) => void;
   clearTerminal: () => void;
+  setFiles: (files: FileItem[]) => void;
+  setCurrentFile: (path: string | null) => void;
   setConnected: (connected: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -115,40 +143,56 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
+  // Session management is now handled manually through authentication and workspace selection
+  // No longer auto-create sessions on app startup since we have proper user-based session management
+  useEffect(() => {
+    console.log('AppContext initialized - session management handled by authentication system');
+    // Sessions are now created/loaded explicitly when users navigate to workspaces
+  }, []); // Only run on mount
+
   const actions = {
-    setSession: (session: CodeSession) => {
+    setSession: useCallback((session: CodeSession) => {
       dispatch({ type: 'SET_SESSION', payload: session });
-    },
+    }, []),
     
-    updateCode: (code: string) => {
+    updateCode: useCallback((code: string) => {
       dispatch({ type: 'UPDATE_CODE', payload: code });
-    },
+    }, []),
     
-    addTerminalLine: (content: string, type: 'input' | 'output' | 'error') => {
+    addTerminalLine: useCallback((content: string, type: 'input' | 'output' | 'error', command?: string) => {
       const line: TerminalLine = {
         id: Date.now().toString() + Math.random().toString(36).substring(2),
         content,
         type,
         timestamp: new Date(),
+        command,
       };
       dispatch({ type: 'ADD_TERMINAL_LINE', payload: line });
-    },
+    }, []),
     
-    clearTerminal: () => {
+    clearTerminal: useCallback(() => {
       dispatch({ type: 'CLEAR_TERMINAL' });
-    },
+    }, []),
     
-    setConnected: (connected: boolean) => {
+    setFiles: useCallback((files: FileItem[]) => {
+      dispatch({ type: 'SET_FILES', payload: files });
+    }, []),
+    
+    setCurrentFile: useCallback((path: string | null) => {
+      dispatch({ type: 'SET_CURRENT_FILE', payload: path });
+    }, []),
+    
+    setConnected: useCallback((connected: boolean) => {
       dispatch({ type: 'SET_CONNECTED', payload: connected });
-    },
+    }, []),
     
-    setLoading: (loading: boolean) => {
+    setLoading: useCallback((loading: boolean) => {
       dispatch({ type: 'SET_LOADING', payload: loading });
-    },
+    }, []),
     
-    setError: (error: string | null) => {
+    setError: useCallback((error: string | null) => {
       dispatch({ type: 'SET_ERROR', payload: error });
-    },
+    }, []),
   };
 
   return (

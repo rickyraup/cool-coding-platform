@@ -1,12 +1,17 @@
-# Import all models to ensure they're registered with SQLAlchemy
+# Import SQLAlchemy models
 from .sessions import CodeSession, TerminalCommand
-from .submissions import CodeSubmission
 from .users import User
 
+# Import PostgreSQL models
+from .postgres_models import User as PostgresUser, CodeSession as PostgresCodeSession, WorkspaceItem
 
 __all__ = [
+    # SQLAlchemy models (legacy)
     "CodeSession",
-    "CodeSubmission",
-    "TerminalCommand",
+    "TerminalCommand", 
     "User",
+    # PostgreSQL models (new)
+    "PostgresUser",
+    "PostgresCodeSession",
+    "WorkspaceItem",
 ]
