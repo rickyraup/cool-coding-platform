@@ -121,7 +121,16 @@ export function CodeEditor(): JSX.Element {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-1">
+      <div className="flex-1 relative">
+        {!state.currentFile && (
+          <div className="absolute inset-0 bg-gray-900/95 z-10 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-6xl mb-4">📁</div>
+              <div className="text-xl text-white mb-2">No file selected</div>
+              <div className="text-gray-400">Click a file in the explorer to start editing</div>
+            </div>
+          </div>
+        )}
         <Editor
           height="100%"
           defaultLanguage="python"
@@ -176,6 +185,12 @@ export function CodeEditor(): JSX.Element {
       
       <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-4 text-sm text-gray-400">
+          {state.currentFile && (
+            <>
+              <span className="text-blue-400 font-medium">📄 {state.currentFile}</span>
+              <span>•</span>
+            </>
+          )}
           <span>Python</span>
           <span>•</span>
           <span>UTF-8</span>

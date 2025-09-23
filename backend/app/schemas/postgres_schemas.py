@@ -50,7 +50,7 @@ class SessionUpdate(BaseModel):
 
 
 class SessionResponse(BaseModel):
-    id: int
+    id: str  # Use UUID as public identifier (was internal int ID)
     user_id: int
     name: Optional[str]
     code: str

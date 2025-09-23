@@ -83,8 +83,8 @@ export function Header(): JSX.Element {
   }, [state.code, executeCode]);
 
   const handleSave = useCallback(async (): Promise<void> => {
-    if (!state.currentSession || !isAuthenticated) {
-      console.warn('No session to save or not authenticated');
+    if (!state.currentSession || !isAuthenticated || !state.currentFile) {
+      console.warn('No session, file, or not authenticated');
       return;
     }
 
@@ -92,32 +92,18 @@ export function Header(): JSX.Element {
       setLoading(true);
       setError(null);
       
-      // Use legacy session update (SQLite database stores code)
-      const updatedSession = await apiService.updateLegacySession(state.currentSession.id, {
-        code: state.code,
-        is_active: true,
-      });
+      // Save current file content to workspace
+      const sessionId = parseInt(state.currentSession.id, 10);
+      await apiService.updateWorkspaceFileContent(sessionId, state.currentFile, state.code);
       
-      // Convert API response to internal format
-      const sessionData = {
-        id: updatedSession.id,
-        userId: updatedSession.user_id,
-        code: updatedSession.code,
-        language: 'python' as const,
-        createdAt: new Date(updatedSession.created_at),
-        updatedAt: new Date(updatedSession.updated_at),
-        isActive: updatedSession.is_active,
-      };
-      
-      setSession(sessionData);
-      console.log('Session saved:', sessionData.id);
+      console.log('File saved:', state.currentFile);
     } catch (error) {
-      console.error('Failed to save session:', error);
-      setError(error instanceof Error ? error.message : 'Failed to save session');
+      console.error('Failed to save file:', error);
+      setError(error instanceof Error ? error.message : 'Failed to save file');
     } finally {
       setLoading(false);
     }
-  }, [state.currentSession, state.code, isAuthenticated, setSession, setLoading, setError]);
+  }, [state.currentSession, state.currentFile, state.code, isAuthenticated, setLoading, setError]);
 
   const handleLogout = useCallback(() => {
     logout();

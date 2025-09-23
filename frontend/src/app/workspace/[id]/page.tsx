@@ -17,7 +17,7 @@ interface WorkspacePageProps {
 
 export default function WorkspacePage({ params: paramsPromise }: WorkspacePageProps) {
   const params = use(paramsPromise);
-  const { state, setSession, setLoading, updateCode } = useApp();
+  const { state, setSession, setLoading, updateCode, setCurrentFile } = useApp();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
@@ -62,7 +62,7 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
           isActive: true
         };
         
-        // Load script.py content if available
+        // Load script.py content if available and set as current file
         if (workspaceResponse?.workspace_items) {
           const scriptFile = workspaceResponse.workspace_items.find(item => item.name === 'script.py' && item.type === 'file');
           if (scriptFile?.content) {
@@ -74,6 +74,13 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
         // Set session in context immediately for faster UI rendering
         setSession(session);
         updateCode(session.code);
+        
+        // Auto-select script.py as the current file for clear UX
+        if (workspaceResponse?.workspace_items?.find(item => item.name === 'script.py')) {
+          setCurrentFile('script.py');
+          console.log('Auto-selected script.py as current file');
+        }
+        
         setFastLoading(true); // Enable fast loading to show UI immediately
         
         // Initialize container in background (non-blocking)

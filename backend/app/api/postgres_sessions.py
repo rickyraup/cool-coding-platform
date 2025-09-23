@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.models.postgres_models import CodeSession, User, WorkspaceItem
 from app.schemas.postgres_schemas import (
@@ -24,7 +24,7 @@ router = APIRouter()
 def convert_session_to_response(session: CodeSession) -> SessionResponse:
     """Convert CodeSession model to response schema."""
     return SessionResponse(
-        id=session.id,
+        id=session.uuid,  # Use UUID as public identifier
         user_id=session.user_id,
         name=session.name,
         code=session.code,
@@ -48,6 +48,15 @@ def convert_workspace_item_to_response(item: WorkspaceItem) -> WorkspaceItemResp
         updated_at=item.updated_at,
         full_path=item.get_full_path(),
     )
+
+
+def authorize_session_access(session: CodeSession, user_id: int) -> None:
+    """Verify that the user has access to the session."""
+    if session.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You don't have permission to access this session"
+        )
 
 
 def build_workspace_tree(
@@ -160,15 +169,18 @@ print("Hello, World!")
         )
 
 
-@router.get("/{session_id}")
-async def get_session(session_id: int) -> SessionDetailResponse:
-    """Get a specific session."""
+@router.get("/{session_uuid}")
+async def get_session(session_uuid: str, user_id: int = Query(..., description="User ID for authorization")) -> SessionDetailResponse:
+    """Get a specific session by UUID with authorization."""
     try:
-        session = CodeSession.get_by_id(session_id)
+        session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
             )
+
+        # Authorization check
+        authorize_session_access(session, user_id)
 
         session_response = convert_session_to_response(session)
 
@@ -187,15 +199,18 @@ async def get_session(session_id: int) -> SessionDetailResponse:
         )
 
 
-@router.put("/{session_id}")
-async def update_session(session_id: int, session_update: SessionUpdate) -> SessionDetailResponse:
-    """Update a session."""
+@router.put("/{session_uuid}")
+async def update_session(session_uuid: str, session_update: SessionUpdate, user_id: int = Query(..., description="User ID for authorization")) -> SessionDetailResponse:
+    """Update a session by UUID with authorization."""
     try:
-        session = CodeSession.get_by_id(session_id)
+        session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
             )
+
+        # Authorization check
+        authorize_session_access(session, user_id)
 
         # Update session fields
         success = session.update(
@@ -211,7 +226,7 @@ async def update_session(session_id: int, session_update: SessionUpdate) -> Sess
             )
 
         # Get updated session
-        updated_session = CodeSession.get_by_id(session_id)
+        updated_session = CodeSession.get_by_uuid(session_uuid)
         session_response = convert_session_to_response(updated_session)
 
         return SessionDetailResponse(
@@ -227,15 +242,18 @@ async def update_session(session_id: int, session_update: SessionUpdate) -> Sess
         )
 
 
-@router.delete("/{session_id}")
-async def delete_session(session_id: int) -> BaseResponse:
-    """Delete a session and all its workspace items."""
+@router.delete("/{session_uuid}")
+async def delete_session(session_uuid: str, user_id: int = Query(..., description="User ID for authorization")) -> BaseResponse:
+    """Delete a session and all its workspace items by UUID with authorization."""
     try:
-        session = CodeSession.get_by_id(session_id)
+        session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
             )
+
+        # Authorization check
+        authorize_session_access(session, user_id)
 
         success = session.delete()
         if not success:
@@ -255,19 +273,22 @@ async def delete_session(session_id: int) -> BaseResponse:
         )
 
 
-@router.get("/{session_id}/workspace")
-async def get_session_with_workspace(session_id: int) -> SessionWithWorkspaceResponse:
-    """Get session with all workspace items and tree structure."""
+@router.get("/{session_uuid}/workspace")
+async def get_session_with_workspace(session_uuid: str, user_id: int = Query(..., description="User ID for authorization")) -> SessionWithWorkspaceResponse:
+    """Get session with all workspace items and tree structure by UUID with authorization."""
     try:
-        # Get session
-        session = CodeSession.get_by_id(session_id)
+        # Get session by UUID
+        session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
             )
 
-        # Get all workspace items for this session
-        workspace_items = WorkspaceItem.get_all_by_session(session_id)
+        # Authorization check
+        authorize_session_access(session, user_id)
+
+        # Get all workspace items for this session (using internal ID)
+        workspace_items = WorkspaceItem.get_all_by_session(session.id)
 
         # Convert to response format
         session_response = convert_session_to_response(session)

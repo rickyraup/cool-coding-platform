@@ -98,6 +98,7 @@ class CodeSession:
     """Code session model matching PostgreSQL schema."""
 
     id: Optional[int] = None
+    uuid: Optional[str] = None  # Public-facing UUID
     user_id: int = 0
     name: Optional[str] = None
     code: str = '# Write your Python code here\nprint("Hello, World!")'
@@ -123,7 +124,7 @@ class CodeSession:
         """Get session by ID."""
         db = get_db()
         query = """
-            SELECT id, user_id, name, code, language, is_active, created_at, updated_at
+            SELECT id, uuid, user_id, name, code, language, is_active, created_at, updated_at
             FROM code_editor_project.sessions
             WHERE id = %s
         """
@@ -131,6 +132,31 @@ class CodeSession:
         if result:
             return cls(
                 id=result["id"],
+                uuid=result["uuid"],
+                user_id=result["user_id"],
+                name=result["name"],
+                code=result["code"],
+                language=result["language"],
+                is_active=result["is_active"],
+                created_at=result["created_at"],
+                updated_at=result["updated_at"],
+            )
+        return None
+
+    @classmethod
+    def get_by_uuid(cls, session_uuid: str) -> Optional["CodeSession"]:
+        """Get session by UUID (public-facing identifier)."""
+        db = get_db()
+        query = """
+            SELECT id, uuid, user_id, name, code, language, is_active, created_at, updated_at
+            FROM code_editor_project.sessions
+            WHERE uuid = %s
+        """
+        result = db.execute_one(query, (session_uuid,))
+        if result:
+            return cls(
+                id=result["id"],
+                uuid=result["uuid"],
                 user_id=result["user_id"],
                 name=result["name"],
                 code=result["code"],
@@ -146,7 +172,7 @@ class CodeSession:
         """Get all sessions for a user."""
         db = get_db()
         query = """
-            SELECT id, user_id, name, code, language, is_active, created_at, updated_at
+            SELECT id, uuid, user_id, name, code, language, is_active, created_at, updated_at
             FROM code_editor_project.sessions
             WHERE user_id = %s
             ORDER BY updated_at DESC
@@ -155,6 +181,7 @@ class CodeSession:
         return [
             cls(
                 id=row["id"],
+                uuid=row["uuid"],
                 user_id=row["user_id"],
                 name=row["name"],
                 code=row["code"],
