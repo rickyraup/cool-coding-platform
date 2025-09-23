@@ -4,8 +4,9 @@ import { useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAuth, useUserId } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { apiService } from '../services/api';
+import { apiService, type ReviewRequestCreate } from '../services/api';
 import { Auth } from './Auth';
+import { ReviewSubmissionModal } from './ReviewSubmissionModal';
 import { useRouter, usePathname } from 'next/navigation';
 
 export function Header(): JSX.Element {
@@ -15,10 +16,12 @@ export function Header(): JSX.Element {
   const { isConnected, executeCode } = useWebSocket();
   const [showAuth, setShowAuth] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
-  const handleNewSession = useCallback(async (): Promise<void> => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleNewSession = useCallback(async (): Promise<void> => {
     if (!isAuthenticated || !userId) {
       setShowAuth(true);
       return;
@@ -89,8 +92,7 @@ export function Header(): JSX.Element {
       setLoading(true);
       setError(null);
       
-      // For now, use legacy session update
-      // TODO: Implement PostgreSQL session content updates
+      // Use legacy session update (SQLite database stores code)
       const updatedSession = await apiService.updateLegacySession(state.currentSession.id, {
         code: state.code,
         is_active: true,
@@ -128,6 +130,36 @@ export function Header(): JSX.Element {
     updateCode('# Write your Python code here\nprint("Hello, World!")');
   }, [logout, setSession, clearTerminal, setFiles, setCurrentFile, updateCode]);
 
+  const handleSubmitReview = useCallback(async (reviewData: { title: string; description?: string; priority: string }): Promise<void> => {
+    if (!state.currentSession || !isAuthenticated || !userId) {
+      throw new Error('No active session or not authenticated');
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const reviewRequest: ReviewRequestCreate = {
+        session_id: parseInt(state.currentSession.id, 10),
+        title: reviewData.title,
+        description: reviewData.description,
+        priority: reviewData.priority as 'low' | 'medium' | 'high' | 'urgent',
+      };
+
+      const response = await apiService.createReviewRequest(reviewRequest);
+      console.log('Review request created:', response.data);
+      
+      // Show success message or redirect
+      alert('Review request submitted successfully!');
+      
+    } catch (error) {
+      console.error('Failed to submit review request:', error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [state.currentSession, isAuthenticated, userId, setLoading, setError]);
+
   return (
     <>
       <header className="bg-gradient-to-r from-gray-800 to-gray-750 border-b border-gray-600 px-6 py-4 shadow-lg">
@@ -138,14 +170,18 @@ export function Header(): JSX.Element {
                 Code Execution Platform
               </h1>
               
-              {/* Dashboard Navigation - only show in workspace */}
-              {pathname?.startsWith('/workspace/') && isAuthenticated && (
-                <button
-                  onClick={() => router.push('/dashboard')}
-                  className="px-3 py-1.5 text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-200 hover:text-white rounded-md transition-colors"
-                >
-                  ← Dashboard
-                </button>
+              {/* Navigation Buttons */}
+              {isAuthenticated && (
+                <div className="flex items-center space-x-2">
+                  {(pathname?.startsWith('/workspace/') || pathname?.startsWith('/reviews')) && (
+                    <button
+                      onClick={() => router.push('/dashboard')}
+                      className="px-3 py-1.5 text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-200 hover:text-white rounded-md transition-colors"
+                    >
+                      ← Dashboard
+                    </button>
+                  )}
+                </div>
               )}
             </div>
             
@@ -223,6 +259,17 @@ export function Header(): JSX.Element {
             >
               💾 Save
             </button>
+
+            {/* Review Submission Button - only show in workspace */}
+            {pathname?.startsWith('/workspace/') && state.currentSession && isAuthenticated && (
+              <button 
+                onClick={() => setShowReviewModal(true)}
+                className="px-4 py-2 text-sm font-medium bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                disabled={state.isLoading}
+              >
+                📝 Submit for Review
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -230,6 +277,16 @@ export function Header(): JSX.Element {
       {/* Authentication Modal */}
       {showAuth && (
         <Auth onClose={() => setShowAuth(false)} />
+      )}
+
+      {/* Review Submission Modal */}
+      {showReviewModal && state.currentSession && (
+        <ReviewSubmissionModal
+          sessionId={state.currentSession.id}
+          isOpen={showReviewModal}
+          onClose={() => setShowReviewModal(false)}
+          onSubmit={handleSubmitReview}
+        />
       )}
 
       {/* Click outside to close user menu */}

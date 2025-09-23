@@ -64,32 +64,42 @@ export function CodeEditor(): JSX.Element {
         
         // Configure Python intellisense
         monaco.languages.registerCompletionItemProvider('python', {
-          provideCompletionItems: (model, position) => {
-            const suggestions: monaco.languages.CompletionItem[] = [
+          provideCompletionItems: (_model, position) => {
+            const range = {
+              startLineNumber: position.lineNumber,
+              endLineNumber: position.lineNumber,
+              startColumn: position.column,
+              endColumn: position.column
+            };
+            const suggestions: import('monaco-editor').languages.CompletionItem[] = [
               {
                 label: 'print',
                 kind: monaco.languages.CompletionItemKind.Function,
                 insertText: 'print(${1:})',
                 insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                documentation: 'Print function'
+                documentation: 'Print function',
+                range
               },
               {
                 label: 'import pandas as pd',
                 kind: monaco.languages.CompletionItemKind.Module,
                 insertText: 'import pandas as pd',
-                documentation: 'Import pandas library'
+                documentation: 'Import pandas library',
+                range
               },
               {
                 label: 'import numpy as np',
                 kind: monaco.languages.CompletionItemKind.Module,
                 insertText: 'import numpy as np',
-                documentation: 'Import numpy library'
+                documentation: 'Import numpy library',
+                range
               },
               {
                 label: 'import matplotlib.pyplot as plt',
                 kind: monaco.languages.CompletionItemKind.Module,
                 insertText: 'import matplotlib.pyplot as plt',
-                documentation: 'Import matplotlib pyplot'
+                documentation: 'Import matplotlib pyplot',
+                range
               }
             ];
             return { suggestions };
@@ -146,7 +156,6 @@ export function CodeEditor(): JSX.Element {
               highlightActiveIndentation: true,
             },
             suggest: {
-              enabled: true,
               showWords: true,
               showSnippets: true,
             },

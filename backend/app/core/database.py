@@ -11,14 +11,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 load_dotenv()
 
-# Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./coding_platform.db")
+# Database configuration - PostgreSQL only
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise Exception("DATABASE_URL environment variable is required")
 
 # Create SQLAlchemy engine
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
-)
+engine = create_engine(DATABASE_URL)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

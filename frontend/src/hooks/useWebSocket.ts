@@ -153,7 +153,7 @@ function getWebSocketManager(): WebSocketManager {
 }
 
 interface WebSocketMessage {
-  type: 'terminal_input' | 'terminal_output' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'ping' | 'pong';
+  type: 'terminal_input' | 'terminal_output' | 'terminal_clear' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'ping' | 'pong';
   sessionId?: string;
   command?: string;
   output?: string;
@@ -286,10 +286,12 @@ export function useWebSocket() {
       const refreshTimeout = setTimeout(() => {
         performFileOperation('list', '');
         addTerminalLine(`🔄 Switched to session: ${state.currentSession?.id.substring(0, 8)}...`, 'output');
-      }, 200);
+      }, 50); // Reduced from 200ms to 50ms for faster loading
       
       return () => clearTimeout(refreshTimeout);
     }
+    // Return undefined cleanup function for the else case
+    return undefined;
   }, [state.currentSession?.id, addTerminalLine]);
 
   // WebSocket actions using the manager
@@ -306,7 +308,7 @@ export function useWebSocket() {
       type: 'code_execution',
       sessionId: state.currentSession?.id || 'default',
       code,
-      filename
+      ...(filename !== undefined && { filename })
     });
   }, [state.currentSession?.id]);
 
@@ -316,7 +318,7 @@ export function useWebSocket() {
       sessionId: state.currentSession?.id || 'default',
       action,
       path,
-      content
+      ...(content !== undefined && { content })
     });
   }, [state.currentSession?.id]);
 

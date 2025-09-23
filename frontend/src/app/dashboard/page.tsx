@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { CodeSession } from '../../services/api';
+import type { CodeSession, ReviewRequest } from '../../services/api';
 import { apiService } from '../../services/api';
 
 export default function DashboardPage() {
@@ -19,6 +19,7 @@ export default function DashboardPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalWorkspaces, setTotalWorkspaces] = useState(0);
   const [workspacesPerPage] = useState(16); // 4 columns * 4 rows on xl screens
+  const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>([]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -26,7 +27,7 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, isLoading, router]);
 
-  // Fetch user's workspaces with pagination
+  // Fetch user's workspaces with pagination and review requests
   useEffect(() => {
     const fetchWorkspaces = async () => {
       if (!isAuthenticated || !user) return;
@@ -36,9 +37,16 @@ export default function DashboardPage() {
         setWorkspacesError(null);
         
         const skip = (currentPage - 1) * workspacesPerPage;
-        const response = await apiService.getSessions(user.id, skip, workspacesPerPage);
-        setWorkspaces(response.data);
-        setTotalWorkspaces(response.count);
+        
+        // Fetch workspaces and review requests in parallel
+        const [workspacesResponse, reviewsResponse] = await Promise.all([
+          apiService.getSessions(user.id, skip, workspacesPerPage),
+          apiService.getMyReviewRequests().catch(() => ({ data: [] })) // Don't fail if reviews API fails
+        ]);
+        
+        setWorkspaces(workspacesResponse.data);
+        setTotalWorkspaces(workspacesResponse.count);
+        setReviewRequests(reviewsResponse.data);
       } catch (error) {
         console.error('Failed to fetch workspaces:', error);
         setWorkspacesError(error instanceof Error ? error.message : 'Failed to load workspaces');
@@ -49,6 +57,37 @@ export default function DashboardPage() {
 
     fetchWorkspaces();
   }, [isAuthenticated, user, currentPage, workspacesPerPage]);
+
+  // Helper function to get review status for a workspace
+  const getWorkspaceReviewStatus = (sessionId: number) => {
+    const sessionReviews = reviewRequests.filter(review => review.session_id === sessionId);
+    if (sessionReviews.length === 0) return null;
+    
+    // Get the most recent review request
+    const latestReview = sessionReviews.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )[0];
+    
+    return latestReview;
+  };
+
+  // Helper function to get status display info
+  const getStatusDisplay = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return { color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', text: 'Pending Review', icon: '⏳' };
+      case 'in_review':
+        return { color: 'bg-blue-500/20 text-blue-300 border-blue-500/30', text: 'In Review', icon: '👀' };
+      case 'approved':
+        return { color: 'bg-green-500/20 text-green-300 border-green-500/30', text: 'Approved', icon: '✅' };
+      case 'rejected':
+        return { color: 'bg-red-500/20 text-red-300 border-red-500/30', text: 'Rejected', icon: '❌' };
+      case 'requires_changes':
+        return { color: 'bg-orange-500/20 text-orange-300 border-orange-500/30', text: 'Changes Requested', icon: '🔄' };
+      default:
+        return { color: 'bg-gray-500/20 text-gray-300 border-gray-500/30', text: status, icon: '📝' };
+    }
+  };
 
   const handleShowCreateModal = () => {
     setNewProjectName('');
@@ -175,6 +214,68 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Code Reviews Section */}
+        <div className="mb-8 bg-gradient-to-r from-purple-900/20 to-blue-900/20 border border-purple-500/20 rounded-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-semibold text-white mb-1">Code Reviews</h3>
+              <p className="text-gray-400 text-sm">Manage your review requests and assignments</p>
+            </div>
+            <button
+              onClick={() => router.push('/reviews')}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors text-sm font-medium"
+            >
+              View All Reviews →
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-yellow-400">{reviewRequests.filter(r => r.status === 'pending').length}</div>
+              <div className="text-sm text-gray-400">Pending Reviews</div>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-blue-400">{reviewRequests.filter(r => r.status === 'in_review').length}</div>
+              <div className="text-sm text-gray-400">In Review</div>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-green-400">{reviewRequests.filter(r => r.status === 'approved').length}</div>
+              <div className="text-sm text-gray-400">Approved</div>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-purple-400">{reviewRequests.length}</div>
+              <div className="text-sm text-gray-400">Total Requests</div>
+            </div>
+          </div>
+
+          {reviewRequests.length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium text-gray-300 mb-2">Recent Activity</h4>
+              <div className="space-y-2">
+                {reviewRequests.slice(0, 2).map((review) => {
+                  const statusColor = getStatusDisplay(review.status).color;
+                  return (
+                    <div key={review.id} className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3">
+                      <div className="flex items-center space-x-3">
+                        <div className={`px-2 py-1 rounded text-xs font-medium ${statusColor}`}>
+                          {review.status.toUpperCase()}
+                        </div>
+                        <span className="text-sm text-white">{review.title}</span>
+                      </div>
+                      <button
+                        onClick={() => router.push(`/workspace/${review.session_id}`)}
+                        className="text-xs text-blue-400 hover:text-blue-300"
+                      >
+                        View →
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Create New Workspace Button */}
         <div className="mb-8">
           <button
@@ -227,31 +328,54 @@ export default function DashboardPage() {
             </div>
           ) : workspaces.length > 0 ? (
             // Workspaces data
-            workspaces.map((workspace) => (
-              <div
-                key={workspace.id}
-                className="bg-gray-800 rounded-lg border border-gray-700 hover:border-gray-600 transition-all duration-200 hover:shadow-lg cursor-pointer"
-              >
-                <Link href={`/workspace/${workspace.id}`} className="block p-6">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg flex items-center justify-center">
-                        <span className="text-white font-bold">📁</span>
+            workspaces.map((workspace) => {
+              const reviewStatus = getWorkspaceReviewStatus(workspace.id);
+              const statusDisplay = reviewStatus ? getStatusDisplay(reviewStatus.status) : null;
+              
+              return (
+                <div
+                  key={workspace.id}
+                  className="bg-gray-800 rounded-lg border border-gray-700 hover:border-gray-600 transition-all duration-200 hover:shadow-lg cursor-pointer"
+                >
+                  <Link href={`/workspace/${workspace.id}`} className="block p-6">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg flex items-center justify-center">
+                          <span className="text-white font-bold">📁</span>
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-white">{workspace.name ?? `Workspace ${workspace.id}`}</h3>
+                          <p className="text-sm text-gray-400">Python workspace</p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-white">{workspace.name ?? `Workspace ${workspace.id}`}</h3>
-                        <p className="text-sm text-gray-400">Python workspace</p>
-                      </div>
+                      
+                      {/* Review Status Indicator */}
+                      {statusDisplay && (
+                        <div className={`px-2 py-1 rounded-md text-xs font-medium border flex items-center space-x-1 ${statusDisplay.color}`}>
+                          <span>{statusDisplay.icon}</span>
+                          <span>{statusDisplay.text}</span>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between text-sm text-gray-400">
-                    <span>Created</span>
-                    <span>{new Date(workspace.created_at).toLocaleDateString()}</span>
-                  </div>
-                </Link>
-              </div>
-            ))
+                    
+                    {/* Review Details */}
+                    {reviewStatus && (
+                      <div className="mb-3 p-2 bg-gray-700/50 rounded-md">
+                        <p className="text-xs text-gray-300 font-medium">{reviewStatus.title}</p>
+                        {reviewStatus.description && (
+                          <p className="text-xs text-gray-400 mt-1">{reviewStatus.description}</p>
+                        )}
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center justify-between text-sm text-gray-400">
+                      <span>Created</span>
+                      <span>{new Date(workspace.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </Link>
+                </div>
+              );
+            })
           ) : null}
 
           {/* Empty State */}

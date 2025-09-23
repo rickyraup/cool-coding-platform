@@ -2,7 +2,7 @@
  * API service for communicating with the backend PostgreSQL APIs
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001';
+const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8001';
 
 // User types
 interface User {
@@ -83,6 +83,38 @@ interface WorkspaceTreeItem {
   children?: WorkspaceTreeItem[];
 }
 
+// Review types
+interface ReviewRequest {
+  id: number;
+  session_id: number;
+  submitted_by: number;
+  assigned_to?: number;
+  title: string;
+  description?: string;
+  status: 'pending' | 'in_review' | 'approved' | 'rejected' | 'requires_changes';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  submitted_at?: string;
+  reviewed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ReviewRequestCreate {
+  session_id: number;
+  title: string;
+  description?: string;
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  assigned_to?: number;
+}
+
+interface ReviewRequestUpdate {
+  title?: string;
+  description?: string;
+  status?: 'pending' | 'in_review' | 'approved' | 'rejected' | 'requires_changes';
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  assigned_to?: number;
+}
+
 // API Response types
 interface BaseResponse {
   success: boolean;
@@ -106,6 +138,11 @@ interface SessionWithWorkspaceResponse extends BaseResponse {
 
 interface WorkspaceItemListResponse extends BaseResponse {
   data: WorkspaceItem[];
+  count: number;
+}
+
+interface ReviewRequestListResponse extends BaseResponse {
+  data: ReviewRequest[];
   count: number;
 }
 
@@ -329,6 +366,49 @@ class ApiService {
     return response.data;
   }
 
+  // Review Management
+  async createReviewRequest(reviewData: ReviewRequestCreate): Promise<ApiResponse<ReviewRequest>> {
+    return await this.fetchWithErrorHandling<ApiResponse<ReviewRequest>>('/api/reviews/', {
+      method: 'POST',
+      body: JSON.stringify(reviewData),
+    });
+  }
+
+  async getReviewRequest(reviewId: number): Promise<ApiResponse<ReviewRequest>> {
+    return await this.fetchWithErrorHandling<ApiResponse<ReviewRequest>>(`/api/reviews/${reviewId}`);
+  }
+
+  async updateReviewRequest(reviewId: number, updateData: ReviewRequestUpdate): Promise<ApiResponse<ReviewRequest>> {
+    return await this.fetchWithErrorHandling<ApiResponse<ReviewRequest>>(`/api/reviews/${reviewId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData),
+    });
+  }
+
+  async getMyReviewRequests(status?: string): Promise<ReviewRequestListResponse> {
+    const params = new URLSearchParams();
+    params.append('my_requests', 'true');
+    if (status) {
+      params.append('status', status);
+    }
+    const data = await this.fetchWithErrorHandling<ReviewRequest[]>(`/api/reviews/?${params}`);
+    return { success: true, message: 'Success', data, count: data.length };
+  }
+
+  async getAssignedReviews(status?: string): Promise<ReviewRequestListResponse> {
+    const params = new URLSearchParams();
+    params.append('assigned_to_me', 'true');
+    if (status) {
+      params.append('status', status);
+    }
+    const data = await this.fetchWithErrorHandling<ReviewRequest[]>(`/api/reviews/?${params}`);
+    return { success: true, message: 'Success', data, count: data.length };
+  }
+
+  async getReviewOverview(): Promise<{ total_pending: number; total_in_review: number; total_approved: number; total_rejected: number; my_pending_reviews: number; my_assigned_reviews: number }> {
+    return await this.fetchWithErrorHandling('/api/reviews/stats/overview');
+  }
+
   // Health Check
   async healthCheck(): Promise<{ status: string; timestamp: string }> {
     return await this.fetchWithErrorHandling('/api/health/');
@@ -359,6 +439,12 @@ export type {
   WorkspaceTreeItem,
   WorkspaceItemListResponse,
   WorkspaceTreeResponse,
+  
+  // Review types
+  ReviewRequest,
+  ReviewRequestCreate,
+  ReviewRequestUpdate,
+  ReviewRequestListResponse,
   
   // Response types
   BaseResponse,

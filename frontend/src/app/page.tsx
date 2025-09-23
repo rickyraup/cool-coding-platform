@@ -45,7 +45,7 @@ export default function HomePage() {
       } else {
         // Register
         await register({
-          username: formData.username || formData.email.split('@')[0], // Use email prefix as username if no username provided
+          username: formData.username || formData.email?.split('@')[0] || 'user', // Use email prefix as username if no username provided
           email: formData.email,
           password: formData.password
         });

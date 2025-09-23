@@ -2,7 +2,6 @@
 
 import type { ReactNode} from 'react';
 import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
-import { apiService } from '../services/api';
 
 // Import shared types
 interface CodeSession {
@@ -41,7 +40,7 @@ interface AppState {
 }
 
 type AppAction = 
-  | { type: 'SET_SESSION'; payload: CodeSession }
+  | { type: 'SET_SESSION'; payload: CodeSession | null }
   | { type: 'UPDATE_CODE'; payload: string }
   | { type: 'ADD_TERMINAL_LINE'; payload: TerminalLine }
   | { type: 'CLEAR_TERMINAL' }
@@ -132,7 +131,7 @@ interface AppContextType {
   state: AppState;
   dispatch: React.Dispatch<AppAction>;
   // Actions
-  setSession: (session: CodeSession) => void;
+  setSession: (session: CodeSession | null) => void;
   updateCode: (code: string) => void;
   addTerminalLine: (content: string, type: 'input' | 'output' | 'error', command?: string) => void;
   clearTerminal: () => void;
@@ -156,7 +155,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []); // Only run on mount
 
   const actions = {
-    setSession: useCallback((session: CodeSession) => {
+    setSession: useCallback((session: CodeSession | null) => {
       dispatch({ type: 'SET_SESSION', payload: session });
     }, []),
     
@@ -171,7 +170,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         content,
         type,
         timestamp: new Date(),
-        command,
+        ...(command !== undefined && { command }),
       };
       console.log('🔍 [AppContext] Created terminal line:', line);
       dispatch({ type: 'ADD_TERMINAL_LINE', payload: line });

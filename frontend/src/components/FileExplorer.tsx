@@ -6,7 +6,7 @@ import { useApp } from '../context/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 export function FileExplorer(): JSX.Element {
-  const { state, setFiles, setCurrentFile } = useApp();
+  const { state, setCurrentFile } = useApp();
   const { performFileOperation, sendTerminalCommand } = useWebSocket();
   const [loading, setLoading] = useState(false);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
@@ -78,7 +78,8 @@ export function FileExplorer(): JSX.Element {
     }
   }, [state.files, currentDirectory]);
 
-  const handleFileClick = useCallback((file: FileItem) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleFileClick = useCallback((file: FileItem) => {
     if (file.type === 'directory') {
       // Toggle directory expansion
       setExpandedDirs(prev => {
@@ -99,7 +100,8 @@ export function FileExplorer(): JSX.Element {
     }
   }, [loadDirectoryContents, performFileOperation, setCurrentFile]);
 
-  const handleDirectoryDoubleClick = useCallback((file: FileItem) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleDirectoryDoubleClick = useCallback((file: FileItem) => {
     if (file.type === 'directory') {
       // Navigate into directory on double-click
       setCurrentDirectory(file.path);
@@ -140,7 +142,8 @@ export function FileExplorer(): JSX.Element {
     setNewItemName('');
   }, [newItemName, showCreateDialog, currentDirectory, performFileOperation]);
 
-  const handleDeleteItem = useCallback((file: FileItem, event: React.MouseEvent) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleDeleteItem = useCallback((file: FileItem, event: React.MouseEvent) => {
     event.stopPropagation();
     
     if (confirm(`Are you sure you want to delete "${file.name}"?`)) {
@@ -153,7 +156,8 @@ export function FileExplorer(): JSX.Element {
     }
   }, [performFileOperation, state.currentFile, setCurrentFile]);
 
-  const handleExecuteFile = useCallback((file: FileItem, event: React.MouseEvent) => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleExecuteFile = useCallback((file: FileItem, event: React.MouseEvent) => {
     event.stopPropagation();
     
     if (file.type === 'file' && file.name.endsWith('.py')) {

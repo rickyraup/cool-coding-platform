@@ -17,10 +17,11 @@ interface WorkspacePageProps {
 
 export default function WorkspacePage({ params: paramsPromise }: WorkspacePageProps) {
   const params = use(paramsPromise);
-  const { state, setSession, setLoading, setError, updateCode } = useApp();
+  const { state, setSession, setLoading, updateCode } = useApp();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
+  const [fastLoading, setFastLoading] = useState(false); // Show content as soon as session loads
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -44,46 +45,41 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
           throw new Error(`Invalid session ID: ${params.id}`);
         }
         
-        // Load session from API
-        const response = await apiService.getSession(sessionId);
+        // Load session and workspace data in parallel for faster loading
+        const [sessionResponse, workspaceResponse] = await Promise.all([
+          apiService.getSession(sessionId),
+          apiService.getSessionWithWorkspace(sessionId).catch(() => null) // Don't fail if workspace doesn't exist yet
+        ]);
         
         // Convert API session to AppContext session format
         const session = {
-          id: response.data.id.toString(),
-          userId: response.data.user_id.toString(),
-          code: '', // Will be loaded from workspace files
+          id: sessionResponse.data.id.toString(),
+          userId: sessionResponse.data.user_id.toString(),
+          code: '', // Will be set from workspace files below
           language: 'python' as const,
-          createdAt: new Date(response.data.created_at),
-          updatedAt: new Date(response.data.updated_at),
+          createdAt: new Date(sessionResponse.data.created_at),
+          updatedAt: new Date(sessionResponse.data.updated_at),
           isActive: true
         };
         
-        // Set session in context
-        setSession(session);
-        
-        // Try to load workspace files and start container
-        Promise.all([
-          apiService.loadSessionWorkspace(sessionId),
-          apiService.startContainerSession(sessionId)
-        ]).then(async () => {
-          console.log('Workspace initialized successfully');
-          
-          // Load the workspace files to get script.py content
-          try {
-            const workspaceResponse = await apiService.getSessionWithWorkspace(sessionId);
-            const scriptFile = workspaceResponse.workspace_items.find(item => item.name === 'script.py' && item.type === 'file');
-            
-            if (scriptFile?.content) {
-              // Update the code in the context and session
-              updateCode(scriptFile.content);
-              console.log('Loaded script.py content into editor');
-            }
-          } catch (workspaceLoadError) {
-            console.warn('Could not load workspace files:', workspaceLoadError);
+        // Load script.py content if available
+        if (workspaceResponse?.workspace_items) {
+          const scriptFile = workspaceResponse.workspace_items.find(item => item.name === 'script.py' && item.type === 'file');
+          if (scriptFile?.content) {
+            session.code = scriptFile.content;
+            console.log('Loaded script.py content into session');
           }
-        }).catch(workspaceError => {
-          console.warn('Could not initialize workspace:', workspaceError);
-          // Continue anyway - workspace might not exist yet or container might be starting
+        }
+        
+        // Set session in context immediately for faster UI rendering
+        setSession(session);
+        updateCode(session.code);
+        setFastLoading(true); // Enable fast loading to show UI immediately
+        
+        // Initialize container in background (non-blocking)
+        apiService.startContainerSession(sessionId).catch(error => {
+          console.warn('Container startup delayed:', error);
+          // Don't block UI - container will start eventually
         });
         
       } catch (error) {
@@ -97,8 +93,8 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
     loadSession();
   }, [params.id, isAuthenticated, authLoading]); // Remove function dependencies to prevent infinite loops
 
-  // Loading state
-  if (authLoading || state.isLoading) {
+  // Loading state - only show spinner if we don't have basic session data
+  if (authLoading || (state.isLoading && !fastLoading && !state.currentSession)) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-gray-900 text-white">
         <div className="text-center">

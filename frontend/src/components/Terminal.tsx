@@ -8,12 +8,12 @@ import 'xterm/css/xterm.css';
 
 export function Terminal(): JSX.Element {
   const { state } = useApp();
-  const { sendTerminalCommand, isConnected } = useWebSocket();
+  const { sendTerminalCommand } = useWebSocket();
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<any>(null);
   const fitAddonRef = useRef<any>(null);
-  const [currentLine, setCurrentLine] = useState('');
+  const [, setCurrentLine] = useState('');
   const currentLineRef = useRef('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -201,6 +201,7 @@ export function Terminal(): JSX.Element {
 
       } catch (error) {
         console.error('Failed to initialize terminal:', error);
+        return;
       }
     };
 
@@ -244,9 +245,8 @@ export function Terminal(): JSX.Element {
   // Handle resize
   useEffect(() => {
     const resizeObserver = new ResizeObserver(() => {
-      setTimeout(() => {
-        fitAddonRef.current?.fit();
-      }, 0);
+      // Immediate fitting for faster loading
+      fitAddonRef.current?.fit();
     });
 
     if (terminalRef.current) {

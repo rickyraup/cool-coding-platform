@@ -4,6 +4,7 @@ import os
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any, Optional
+from urllib.parse import unquote
 
 import psycopg2
 import psycopg2.extras
@@ -13,10 +14,10 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Database configuration
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:password@localhost:5432/postgres",
-)
+# Database configuration - Supabase only
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise Exception("DATABASE_URL environment variable is required")
 
 
 class PostgreSQLDatabase:
@@ -69,7 +70,7 @@ class PostgreSQLDatabase:
                 "port": port,
                 "database": database,
                 "user": user,
-                "password": password,
+                "password": unquote(password) if password else None,
             }
         msg = f"Unsupported DATABASE_URL format: {DATABASE_URL}"
         raise ValueError(msg)
@@ -139,6 +140,14 @@ class PostgreSQLDatabase:
             affected_rows = cursor.rowcount
             conn.commit()
             return affected_rows
+
+    def execute_raw(self, query: str, params: Optional[tuple] = None) -> None:
+        """Execute a raw SQL statement (for migrations, DDL, etc.)."""
+        with self.get_connection() as conn:
+            # Use regular cursor for DDL operations (not DictCursor)
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                conn.commit()
 
     def test_connection(self) -> bool:
         """Test database connection."""

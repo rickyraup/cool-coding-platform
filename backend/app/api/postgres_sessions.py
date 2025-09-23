@@ -27,6 +27,9 @@ def convert_session_to_response(session: CodeSession) -> SessionResponse:
         id=session.id,
         user_id=session.user_id,
         name=session.name,
+        code=session.code,
+        language=session.language,
+        is_active=session.is_active,
         created_at=session.created_at,
         updated_at=session.updated_at,
     )
@@ -194,14 +197,18 @@ async def update_session(session_id: int, session_update: SessionUpdate) -> Sess
                 status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
             )
 
-        # Update name if provided
-        if session_update.name is not None:
-            success = session.update_name(session_update.name)
-            if not success:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to update session",
-                )
+        # Update session fields
+        success = session.update(
+            name=session_update.name,
+            code=session_update.code,
+            language=session_update.language,
+            is_active=session_update.is_active,
+        )
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update session",
+            )
 
         # Get updated session
         updated_session = CodeSession.get_by_id(session_id)

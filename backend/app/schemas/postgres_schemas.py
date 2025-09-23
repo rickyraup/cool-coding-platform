@@ -44,12 +44,18 @@ class SessionCreate(BaseModel):
 
 class SessionUpdate(BaseModel):
     name: Optional[str] = None
+    code: Optional[str] = None
+    language: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class SessionResponse(BaseModel):
     id: int
     user_id: int
     name: Optional[str]
+    code: str
+    language: str
+    is_active: bool
     created_at: datetime
     updated_at: datetime
 

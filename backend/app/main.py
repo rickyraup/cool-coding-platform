@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     health,
     postgres_sessions,
+    reviews,
     session_workspace,
     sessions,
     users,
@@ -67,6 +68,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
         "http://localhost:3002",
         "http://127.0.0.1:3002",
     ],
@@ -92,6 +95,7 @@ app.include_router(
     prefix="/api/session_workspace",
     tags=["session_workspace"],
 )
+app.include_router(reviews.router, tags=["reviews"])
 
 
 @app.websocket("/ws")
