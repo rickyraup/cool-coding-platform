@@ -34,6 +34,7 @@ class ContainerSessionManager:
 
     def __init__(self) -> None:
         self.active_sessions: dict[str, ContainerSession] = {}
+        self.user_sessions: dict[str, set[str]] = {}  # user_id -> set of session_ids
         self.sessions_dir = "/tmp/coding_platform_sessions"
         self.idle_timeout_minutes = 30
         self.max_session_hours = 2
@@ -42,6 +43,85 @@ class ContainerSessionManager:
 
         # Ensure sessions directory exists
         os.makedirs(self.sessions_dir, exist_ok=True)
+
+    def _extract_user_id(self, session_id: str) -> Optional[str]:
+        """Extract user_id from session_id if available."""
+        try:
+            if session_id.startswith("user_") and "_ws_" in session_id:
+                # Format: user_{user_id}_ws_{workspace_id}_{timestamp}_{uuid}
+                parts = session_id.split("_ws_", 1)
+                if len(parts) >= 2:
+                    user_part = parts[0]  # "user_{user_id}"
+                    if user_part.startswith("user_"):
+                        return user_part[5:]  # Remove "user_" prefix
+        except Exception:
+            pass
+        return None
+
+    def _extract_workspace_id(self, session_id: str) -> Optional[str]:
+        """Extract workspace_id from session_id if available."""
+        try:
+            if "_ws_" in session_id:
+                # Format: user_{user_id}_ws_{workspace_id}_{timestamp}_{uuid} OR {workspace_id}_{timestamp}_{uuid}
+                parts = session_id.split("_ws_", 1)
+                if len(parts) >= 2:
+                    # Extract workspace_id from "ws_{workspace_id}_{timestamp}_{uuid}"
+                    ws_part = parts[1]  # "{workspace_id}_{timestamp}_{uuid}"
+                    ws_parts = ws_part.split("_")
+                    if len(ws_parts) >= 1:
+                        return ws_parts[0]  # workspace_id
+            elif session_id.isdigit():
+                # Legacy format: pure numeric session_id
+                return session_id
+            else:
+                # Try to extract workspace UUID from other formats
+                # Look for UUID patterns in session_id
+                import re
+                uuid_pattern = r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'
+                match = re.search(uuid_pattern, session_id)
+                if match:
+                    return match.group(1)
+        except Exception:
+            pass
+        return None
+
+    def find_session_by_workspace_id(self, workspace_id: str) -> Optional[str]:
+        """Find active session ID by workspace ID."""
+        for session_id in self.active_sessions.keys():
+            extracted_workspace_id = self._extract_workspace_id(session_id)
+            if extracted_workspace_id == workspace_id:
+                return session_id
+        return None
+
+    def _enforce_user_limits(self, session_id: str) -> None:
+        """Enforce per-user container limits."""
+        user_id = self._extract_user_id(session_id)
+        if not user_id:
+            logger.warning(f"Cannot enforce user limits for session {session_id}: no user_id")
+            return
+
+        # Get current user sessions
+        user_session_count = len(self.user_sessions.get(user_id, set()))
+        
+        if user_session_count >= self.max_containers_per_user:
+            # Clean up oldest user sessions
+            user_sessions = list(self.user_sessions.get(user_id, set()))
+            oldest_sessions = []
+            
+            for user_session_id in user_sessions:
+                if user_session_id in self.active_sessions:
+                    oldest_sessions.append((user_session_id, self.active_sessions[user_session_id].created_at))
+            
+            # Sort by creation time and remove oldest
+            oldest_sessions.sort(key=lambda x: x[1])
+            sessions_to_remove = len(oldest_sessions) - self.max_containers_per_user + 1
+            
+            for i in range(sessions_to_remove):
+                old_session_id = oldest_sessions[i][0]
+                logger.info(f"Cleaning up old session {old_session_id} for user {user_id} due to limit")
+                # Use asyncio to run cleanup (will be handled by event loop)
+                import asyncio
+                asyncio.create_task(self.cleanup_session(old_session_id))
 
     async def get_or_create_session(self, session_id: str) -> ContainerSession:
         """Get existing container session or create a new one."""
@@ -53,11 +133,24 @@ class ContainerSessionManager:
             return session
 
         return await self.create_session(session_id)
+    
+    async def create_fresh_session(self, session_id: str) -> ContainerSession:
+        """Create a new container session, cleaning up existing one if it exists."""
+        # If session already exists, clean it up first
+        if session_id in self.active_sessions:
+            logger.info(f"Cleaning up existing session {session_id} to create fresh container")
+            await self.cleanup_session(session_id)
+        
+        # Create completely fresh session
+        return await self.create_session(session_id)
 
     async def create_session(self, session_id: str) -> ContainerSession:
         """Create a new container session."""
         # Check resource limits
         await self._enforce_resource_limits()
+        
+        # Enforce per-user limits
+        self._enforce_user_limits(session_id)
 
         # Create session working directory
         working_dir = os.path.join(self.sessions_dir, session_id)
@@ -86,19 +179,37 @@ class ContainerSessionManager:
             )
 
             self.active_sessions[session_id] = session
+            
+            # Track user session for limit enforcement
+            user_id = self._extract_user_id(session_id)
+            if user_id:
+                if user_id not in self.user_sessions:
+                    self.user_sessions[user_id] = set()
+                self.user_sessions[user_id].add(session_id)
+                logger.info(f"Added session {session_id} for user {user_id}")
+            
             logger.info(
                 f"Created container session {session_id} with container {container.short_id}",
             )
 
-            # Load workspace from database (if session_id is numeric)
+            # Load workspace from database (extract workspace_id from session_id)
             try:
-                if session_id.isdigit():
+                workspace_id = self._extract_workspace_id(session_id)
+                if workspace_id:
                     from app.services.workspace_loader import workspace_loader
 
-                    await workspace_loader.load_workspace_into_container(
-                        int(session_id),
-                    )
-                    logger.info(f"Loaded workspace for session {session_id}")
+                    # Try to convert workspace_id to int (for database lookup)
+                    try:
+                        workspace_int_id = int(workspace_id)
+                        await workspace_loader.load_workspace_into_container(
+                            workspace_int_id,
+                        )
+                        logger.info(f"Loaded workspace {workspace_id} for session {session_id}")
+                    except ValueError:
+                        # workspace_id is not numeric (UUID-based), try to look up by UUID
+                        logger.debug(f"Workspace ID {workspace_id} is not numeric, trying UUID-based lookup")
+                        # For now, we'll skip UUID-based workspace loading and just log
+                        logger.info(f"Skipping workspace load for UUID-based workspace {workspace_id}")
             except Exception as workspace_error:
                 logger.warning(
                     f"Failed to load workspace for session {session_id}: {workspace_error}",
@@ -244,17 +355,33 @@ class ContainerSessionManager:
         if not session:
             logger.warning(f"Session {session_id} not found for cleanup")
             return False
+        
+        # Remove from user session tracking
+        user_id = self._extract_user_id(session_id)
+        if user_id and user_id in self.user_sessions:
+            self.user_sessions[user_id].discard(session_id)
+            # Clean up empty user entries
+            if not self.user_sessions[user_id]:
+                del self.user_sessions[user_id]
+            logger.info(f"Removed session {session_id} from user {user_id} tracking")
 
         try:
-            # Save workspace to database before cleanup (if session_id is numeric)
+            # Save workspace to database before cleanup (extract workspace_id from session_id)
             try:
-                if session_id.isdigit():
+                workspace_id = self._extract_workspace_id(session_id)
+                if workspace_id:
                     from app.services.workspace_loader import workspace_loader
 
-                    await workspace_loader.save_workspace_from_container(
-                        int(session_id),
-                    )
-                    logger.info(f"Saved workspace for session {session_id}")
+                    # Try to convert workspace_id to int (for database save)
+                    try:
+                        workspace_int_id = int(workspace_id)
+                        await workspace_loader.save_workspace_from_container(
+                            workspace_int_id,
+                        )
+                        logger.info(f"Saved workspace {workspace_id} for session {session_id}")
+                    except ValueError:
+                        # workspace_id is not numeric (UUID-based), skip for now
+                        logger.debug(f"Skipping workspace save for UUID-based workspace {workspace_id}")
             except Exception as workspace_error:
                 logger.warning(
                     f"Failed to save workspace for session {session_id}: {workspace_error}",
@@ -336,6 +463,50 @@ class ContainerSessionManager:
             "active_sessions": sessions_info,
             "total_sessions": len(sessions_info),
             "max_containers": self.max_total_containers,
+        }
+
+    async def get_user_sessions_info(self) -> dict[str, Any]:
+        """Get per-user session statistics."""
+        user_stats = {}
+        
+        # Calculate per-user stats
+        for user_id, session_ids in self.user_sessions.items():
+            active_session_count = 0
+            total_memory_mb = 0
+            total_cpu_percent = 0
+            sessions_info = []
+            
+            for session_id in session_ids:
+                if session_id in self.active_sessions:
+                    active_session_count += 1
+                    session_info = await self.get_session_info(session_id)
+                    if session_info:
+                        sessions_info.append(session_info)
+                        resource_usage = session_info.get("resource_usage", {})
+                        total_memory_mb += resource_usage.get("memory_mb", 0)
+                        total_cpu_percent += resource_usage.get("cpu_percent", 0)
+            
+            if active_session_count > 0:
+                user_stats[user_id] = {
+                    "active_sessions": active_session_count,
+                    "session_limit": self.max_containers_per_user,
+                    "usage_percent": round((active_session_count / self.max_containers_per_user) * 100, 1),
+                    "total_memory_mb": round(total_memory_mb, 1),
+                    "total_cpu_percent": round(total_cpu_percent, 1),
+                    "avg_memory_mb": round(total_memory_mb / active_session_count, 1),
+                    "avg_cpu_percent": round(total_cpu_percent / active_session_count, 1),
+                    "sessions": sessions_info
+                }
+        
+        return {
+            "user_stats": user_stats,
+            "total_users": len(user_stats),
+            "global_limits": {
+                "max_containers_per_user": self.max_containers_per_user,
+                "max_total_containers": self.max_total_containers,
+                "idle_timeout_minutes": self.idle_timeout_minutes,
+                "max_session_hours": self.max_session_hours
+            }
         }
 
     async def cleanup_all_sessions(self) -> int:

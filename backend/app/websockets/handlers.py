@@ -369,9 +369,10 @@ async def handle_file_system(
     path = data.get("path", "")
     content = data.get("content", "")
     session_id = data.get("sessionId", "default")
+    is_manual_save = data.get("isManualSave", False)
 
     print(
-        f"📁 [FileSystem] Handling file operation: {action}, path: {path}, session: {session_id}",
+        f"📁 [FileSystem] Handling file operation: {action}, path: {path}, session: {session_id}, manual: {is_manual_save}",
     )
 
     try:
@@ -390,14 +391,29 @@ async def handle_file_system(
 
         if action == "write":
             await file_manager.write_file(path, content)
-            return {
-                "type": "terminal_output",
+            response = {
+                "type": "file_system",
+                "action": "write",
                 "sessionId": session_id,
-                "output": f"File {path} saved successfully\\n",
+                "path": path,
+                "content": content,
                 "timestamp": datetime.utcnow().isoformat(),
             }
+            
+            # Only add terminal message for manual saves
+            if is_manual_save:
+                response["message"] = f"File {path} saved successfully"
+                
+            return response
 
         if action == "list":
+            # Ensure container session exists before listing files
+            if container_manager.is_docker_available():
+                try:
+                    await container_manager.get_or_create_session(session_id)
+                except Exception as e:
+                    print(f"Warning: Could not ensure container session for {session_id}: {e}")
+            
             files = await file_manager.list_files_structured(path)
             return {
                 "type": "file_system",

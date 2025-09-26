@@ -37,6 +37,9 @@ interface AppState {
   isConnected: boolean;
   isLoading: boolean;
   error: string | null;
+  isAutosaveEnabled: boolean;
+  hasUnsavedChanges: boolean;
+  lastSavedCode: string;
 }
 
 type AppAction = 
@@ -48,17 +51,23 @@ type AppAction =
   | { type: 'SET_CURRENT_FILE'; payload: string | null }
   | { type: 'SET_CONNECTED'; payload: boolean }
   | { type: 'SET_LOADING'; payload: boolean }
-  | { type: 'SET_ERROR'; payload: string | null };
+  | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'SET_AUTOSAVE_ENABLED'; payload: boolean }
+  | { type: 'MARK_SAVED'; payload: string }
+  | { type: 'CLEAR_UNSAVED_CHANGES' };
 
 const initialState: AppState = {
   currentSession: null,
-  code: '# Write your Python code here\nprint("Hello, World!")',
+  code: '',
   terminalLines: [],
   files: [],
   currentFile: null,
   isConnected: false,
   isLoading: false,
   error: null,
+  isAutosaveEnabled: true,
+  hasUnsavedChanges: false,
+  lastSavedCode: '',
 };
 
 const appReducer = (state: AppState, action: AppAction): AppState => {
@@ -74,6 +83,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return {
         ...state,
         code: action.payload,
+        hasUnsavedChanges: action.payload !== state.lastSavedCode,
       };
     
     case 'ADD_TERMINAL_LINE':
@@ -122,6 +132,25 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         error: action.payload,
       };
     
+    case 'SET_AUTOSAVE_ENABLED':
+      return {
+        ...state,
+        isAutosaveEnabled: action.payload,
+      };
+    
+    case 'MARK_SAVED':
+      return {
+        ...state,
+        lastSavedCode: action.payload,
+        hasUnsavedChanges: false,
+      };
+    
+    case 'CLEAR_UNSAVED_CHANGES':
+      return {
+        ...state,
+        hasUnsavedChanges: false,
+      };
+    
     default:
       return state;
   }
@@ -140,6 +169,9 @@ interface AppContextType {
   setConnected: (connected: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  setAutosaveEnabled: (enabled: boolean) => void;
+  markSaved: (code: string) => void;
+  clearUnsavedChanges: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -198,6 +230,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     
     setError: useCallback((error: string | null) => {
       dispatch({ type: 'SET_ERROR', payload: error });
+    }, []),
+    
+    setAutosaveEnabled: useCallback((enabled: boolean) => {
+      dispatch({ type: 'SET_AUTOSAVE_ENABLED', payload: enabled });
+    }, []),
+    
+    markSaved: useCallback((code: string) => {
+      dispatch({ type: 'MARK_SAVED', payload: code });
+    }, []),
+    
+    clearUnsavedChanges: useCallback(() => {
+      dispatch({ type: 'CLEAR_UNSAVED_CHANGES' });
     }, []),
   };
 

@@ -8,7 +8,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useEffect, useState, use } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { apiService } from '../../../services/api';
-import { useAuth } from '../../../contexts/AuthContext';
+import { useAuth, useUserId } from '../../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
 interface WorkspacePageProps {
@@ -17,8 +17,9 @@ interface WorkspacePageProps {
 
 export default function WorkspacePage({ params: paramsPromise }: WorkspacePageProps) {
   const params = use(paramsPromise);
-  const { state, setSession, setLoading, updateCode, setCurrentFile } = useApp();
+  const { state, setSession, setLoading, updateCode, setCurrentFile, setFiles, clearTerminal } = useApp();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const userId = useUserId();
   const router = useRouter();
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
   const [fastLoading, setFastLoading] = useState(false); // Show content as soon as session loads
@@ -33,61 +34,51 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
   // Load session data
   useEffect(() => {
     const loadSession = async () => {
-      if (!isAuthenticated || authLoading) return;
+      if (!isAuthenticated || authLoading || !userId) return;
       
       try {
         setLoading(true);
         setSessionLoadError(null);
         
-        // Parse session ID
-        const sessionId = parseInt(params.id, 10);
-        if (isNaN(sessionId) || sessionId <= 0) {
-          throw new Error(`Invalid session ID: ${params.id}`);
+        // Clear terminal state when loading a new workspace
+        // This ensures each workspace starts with a fresh terminal
+        clearTerminal();
+        
+        // Use session UUID directly (no parsing needed)
+        const sessionUuid = params.id;
+        if (!sessionUuid || sessionUuid.trim() === '') {
+          throw new Error(`Invalid session UUID: ${params.id}`);
         }
         
-        // Load session and workspace data in parallel for faster loading
-        const [sessionResponse, workspaceResponse] = await Promise.all([
-          apiService.getSession(sessionId),
-          apiService.getSessionWithWorkspace(sessionId).catch(() => null) // Don't fail if workspace doesn't exist yet
-        ]);
+        // Only load session metadata from API - let WebSocket system handle files
+        const sessionResponse = await apiService.getSession(sessionUuid, userId);
         
         // Convert API session to AppContext session format
         const session = {
           id: sessionResponse.data.id.toString(),
           userId: sessionResponse.data.user_id.toString(),
-          code: '', // Will be set from workspace files below
+          code: '', // Will be populated by WebSocket system
           language: 'python' as const,
           createdAt: new Date(sessionResponse.data.created_at),
           updatedAt: new Date(sessionResponse.data.updated_at),
           isActive: true
         };
         
-        // Load script.py content if available and set as current file
-        if (workspaceResponse?.workspace_items) {
-          const scriptFile = workspaceResponse.workspace_items.find(item => item.name === 'script.py' && item.type === 'file');
-          if (scriptFile?.content) {
-            session.code = scriptFile.content;
-            console.log('Loaded script.py content into session');
-          }
-        }
-        
-        // Set session in context immediately for faster UI rendering
+        // Set session in context - this will trigger WebSocket connection
         setSession(session);
-        updateCode(session.code);
         
-        // Auto-select script.py as the current file for clear UX
-        if (workspaceResponse?.workspace_items?.find(item => item.name === 'script.py')) {
-          setCurrentFile('script.py');
-          console.log('Auto-selected script.py as current file');
+        // Start container session and load workspace files from database
+        try {
+          await apiService.startContainerSession(sessionResponse.data.id);
+          console.log('Container session started and workspace loaded');
+        } catch (containerError) {
+          console.warn('Failed to start container session:', containerError);
+          // Continue anyway - container integration is optional
         }
         
         setFastLoading(true); // Enable fast loading to show UI immediately
         
-        // Initialize container in background (non-blocking)
-        apiService.startContainerSession(sessionId).catch(error => {
-          console.warn('Container startup delayed:', error);
-          // Don't block UI - container will start eventually
-        });
+        console.log('Session loaded, WebSocket will handle file loading');
         
       } catch (error) {
         console.error('Failed to load session:', error);
@@ -98,7 +89,7 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
     };
 
     loadSession();
-  }, [params.id, isAuthenticated, authLoading]); // Remove function dependencies to prevent infinite loops
+  }, [params.id, isAuthenticated, authLoading, userId, clearTerminal]); // clearTerminal is stable from useCallback
 
   // Loading state - only show spinner if we don't have basic session data
   if (authLoading || (state.isLoading && !fastLoading && !state.currentSession)) {

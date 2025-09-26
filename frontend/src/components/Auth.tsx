@@ -23,8 +23,6 @@ export function Auth({ onClose }: AuthProps) {
       ...prev,
       [name]: value
     }));
-    // Clear error when user starts typing
-    if (error) clearError();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,7 +64,7 @@ export function Auth({ onClose }: AuthProps) {
       <div className="bg-gray-800 p-8 rounded-lg shadow-xl w-96 max-w-full mx-4">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-white">
-            {isLogin ? 'Login' : 'Register'}
+            {isLogin ? 'Log In' : 'Register'}
           </h2>
           {onClose && (
             <button
@@ -78,11 +76,6 @@ export function Auth({ onClose }: AuthProps) {
           )}
         </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-600 bg-opacity-20 border border-red-600 rounded text-red-200 text-sm">
-            {error}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -149,7 +142,7 @@ export function Auth({ onClose }: AuthProps) {
             disabled={isLoading}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-medium py-2 px-4 rounded transition-colors"
           >
-            {isLoading ? 'Loading...' : (isLogin ? 'Login' : 'Register')}
+            {isLoading ? 'Loading...' : (isLogin ? 'Log In' : 'Register')}
           </button>
         </form>
 
@@ -161,7 +154,7 @@ export function Auth({ onClose }: AuthProps) {
           >
             {isLogin 
               ? "Don't have an account? Register here" 
-              : "Already have an account? Login here"
+              : "Already have an account? Log In here"
             }
           </button>
         </div>

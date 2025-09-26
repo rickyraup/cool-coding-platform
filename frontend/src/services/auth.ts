@@ -26,7 +26,7 @@ interface RegisterRequest {
 }
 
 class AuthService {
-  private readonly baseUrl = 'http://localhost:8001/api/users';
+  private readonly baseUrl = 'http://localhost:8002/api/users';
 
   async login(data: LoginRequest): Promise<AuthResponse> {
     const response = await fetch(`${this.baseUrl}/login`, {

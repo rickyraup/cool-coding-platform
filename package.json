@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "claude": "^0.1.1",
     "xterm": "^5.3.0"
   }
 }

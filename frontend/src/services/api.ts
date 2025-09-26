@@ -2,7 +2,7 @@
  * API service for communicating with the backend PostgreSQL APIs
  */
 
-const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8001';
+const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8002';
 
 // User types
 interface User {
@@ -33,7 +33,7 @@ interface AuthResponse {
 
 // Session types (PostgreSQL schema)
 interface CodeSession {
-  id: number;
+  id: string;  // UUID string - changed from number to string for security
   user_id: number;
   name?: string;
   created_at: string;
@@ -210,8 +210,13 @@ class ApiService {
     });
   }
 
-  async getSession(sessionId: number): Promise<ApiResponse<CodeSession>> {
-    return await this.fetchWithErrorHandling<ApiResponse<CodeSession>>(`/api/postgres_sessions/${sessionId}`);
+  async getSession(sessionUuid: string, userId?: number): Promise<ApiResponse<CodeSession>> {
+    const params = new URLSearchParams();
+    if (userId) {
+      params.append('user_id', userId.toString());
+    }
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return await this.fetchWithErrorHandling<ApiResponse<CodeSession>>(`/api/postgres_sessions/${sessionUuid}${queryString}`);
   }
 
   async updateSession(sessionId: number, sessionData: SessionUpdate): Promise<ApiResponse<CodeSession>> {
@@ -240,9 +245,14 @@ class ApiService {
     );
   }
 
-  async getSessionWithWorkspace(sessionId: number): Promise<SessionWithWorkspaceResponse> {
+  async getSessionWithWorkspace(sessionUuid: string, userId?: number): Promise<SessionWithWorkspaceResponse> {
+    const params = new URLSearchParams();
+    if (userId) {
+      params.append('user_id', userId.toString());
+    }
+    const queryString = params.toString() ? `?${params.toString()}` : '';
     return await this.fetchWithErrorHandling<SessionWithWorkspaceResponse>(
-      `/api/postgres_sessions/${sessionId}/workspace`
+      `/api/postgres_sessions/${sessionUuid}/workspace${queryString}`
     );
   }
 
@@ -289,34 +299,35 @@ class ApiService {
   }
 
   // Session-Container Workspace Integration
-  async loadSessionWorkspace(sessionId: number): Promise<BaseResponse> {
-    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionId}/load`, {
+  async loadSessionWorkspace(sessionUuid: string): Promise<BaseResponse> {
+    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionUuid}/load`, {
       method: 'POST',
     });
   }
 
-  async saveSessionWorkspace(sessionId: number): Promise<BaseResponse> {
-    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionId}/save`, {
+  async saveSessionWorkspace(sessionUuid: string): Promise<BaseResponse> {
+    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionUuid}/save`, {
       method: 'POST',
     });
   }
 
-  async getWorkspaceFileContent(sessionId: number, filePath: string): Promise<{ success: boolean; message: string; data: { file_path: string; content: string } }> {
-    return await this.fetchWithErrorHandling(`/api/session_workspace/${sessionId}/file/${filePath}`);
+  async getWorkspaceFileContent(sessionUuid: string, filePath: string): Promise<{ success: boolean; message: string; data: { file_path: string; content: string } }> {
+    return await this.fetchWithErrorHandling(`/api/session_workspace/${sessionUuid}/file/${filePath}`);
   }
 
-  async updateWorkspaceFileContent(sessionId: number, filePath: string, content: string): Promise<BaseResponse> {
-    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionId}/file/${filePath}`, {
+  async updateWorkspaceFileContent(sessionUuid: string, filePath: string, content: string): Promise<BaseResponse> {
+    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionUuid}/file/${filePath}`, {
       method: 'PUT',
       body: JSON.stringify({ content }),
     });
   }
 
-  async getContainerSessionStatus(sessionId: number): Promise<{ 
+  async getContainerSessionStatus(sessionUuid: string): Promise<{ 
     success: boolean; 
     message: string; 
     data: {
       session_id: number;
+      session_uuid: string;
       container_active: boolean;
       container_id?: string;
       working_dir?: string;
@@ -325,13 +336,17 @@ class ApiService {
       last_activity?: string;
     }
   }> {
-    return await this.fetchWithErrorHandling(`/api/session_workspace/${sessionId}/container/status`);
+    return await this.fetchWithErrorHandling(`/api/session_workspace/${sessionUuid}/container/status`);
   }
 
-  async startContainerSession(sessionId: number): Promise<BaseResponse> {
-    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionId}/container/start`, {
+  async startContainerSession(sessionUuid: string): Promise<BaseResponse> {
+    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionUuid}/container/start`, {
       method: 'POST',
     });
+  }
+
+  async getSessionWorkspaceTree(sessionUuid: string): Promise<WorkspaceTreeResponse> {
+    return await this.fetchWithErrorHandling<WorkspaceTreeResponse>(`/api/session_workspace/${sessionUuid}/workspace/tree`);
   }
 
   // Legacy Session Management (keep for backwards compatibility)

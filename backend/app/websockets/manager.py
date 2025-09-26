@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import WebSocket
 
@@ -58,3 +58,18 @@ class WebSocketManager:
 
     def get_active_connections_count(self) -> int:
         return len(self.active_connections)
+    
+    def has_other_connections_to_session(self, session_id: str, exclude_websocket: Optional[WebSocket] = None) -> bool:
+        """Check if there are other WebSocket connections to the same session."""
+        for websocket, ws_session_id in self.connection_sessions.items():
+            if ws_session_id == session_id and websocket != exclude_websocket:
+                return True
+        return False
+    
+    def get_session_connection_count(self, session_id: str) -> int:
+        """Get the number of active connections for a specific session."""
+        count = 0
+        for ws_session_id in self.connection_sessions.values():
+            if ws_session_id == session_id:
+                count += 1
+        return count

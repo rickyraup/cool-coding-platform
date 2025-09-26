@@ -20,6 +20,14 @@ export function Terminal(): JSX.Element {
   const lastProcessedLineRef = useRef(0);
   const isInitializedRef = useRef(false);
 
+  const displayWelcomeMessage = useCallback((terminal: any) => {
+    terminal.writeln('\x1b[36m╭────────────────────────────────────╮\x1b[0m');
+    terminal.writeln('\x1b[36m│     Welcome to the Terminal       │\x1b[0m');
+    terminal.writeln('\x1b[36m│ Type commands or "help" to begin  │\x1b[0m');
+    terminal.writeln('\x1b[36m╰────────────────────────────────────╯\x1b[0m');
+    terminal.write('\x1b[32m$ \x1b[0m');
+  }, []);
+
   const replaceCurrentLine = useCallback((newLine: string): void => {
     const terminal = xtermRef.current;
     if (!terminal) return;
@@ -123,12 +131,7 @@ export function Terminal(): JSX.Element {
         fitAddonRef.current = fitAddon;
         isInitializedRef.current = true;
 
-
-        terminal.writeln('\x1b[36m╭────────────────────────────────────╮\x1b[0m');
-        terminal.writeln('\x1b[36m│     Welcome to the Terminal       │\x1b[0m');
-        terminal.writeln('\x1b[36m│ Type commands or "help" to begin  │\x1b[0m');
-        terminal.writeln('\x1b[36m╰────────────────────────────────────╯\x1b[0m');
-        terminal.write('\x1b[32m$ \x1b[0m');
+        displayWelcomeMessage(terminal);
 
         terminal.onData((data: string) => {
           if (data === '\r') {
@@ -225,7 +228,7 @@ export function Terminal(): JSX.Element {
       if (line.type === 'output' || line.type === 'error') {
         if (line.content === 'CLEAR_TERMINAL') {
           terminal.clear();
-          terminal.write('\x1b[32m$ \x1b[0m');
+          displayWelcomeMessage(terminal);
           return;
         }
 

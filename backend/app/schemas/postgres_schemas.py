@@ -1,9 +1,10 @@
 """Pydantic schemas for PostgreSQL models."""
 
+import re
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr, validator
 
 
 # Base response models
@@ -18,9 +19,29 @@ class BaseDataResponse(BaseResponse):
 
 # User schemas
 class UserCreate(BaseModel):
-    username: str = Field(..., min_length=1, max_length=255)
-    email: str = Field(..., min_length=1, max_length=255)
-    password: str = Field(..., min_length=8)
+    username: str = Field(..., min_length=3, max_length=20, pattern=r'^[a-zA-Z0-9_-]+$')
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+    
+    @validator('username')
+    def validate_username(cls, v):
+        if not re.match(r'^[a-zA-Z0-9_-]+$', v):
+            raise ValueError('Username can only contain letters, numbers, hyphens, and underscores')
+        return v.lower()  # Store username in lowercase for consistency
+    
+    @validator('password')
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not re.search(r'\d', v):
+            raise ValueError('Password must contain at least one number')
+        if not re.search(r'[!@#$%^&*()_+\-=\[\]{};\':"\\|,.<>?]', v):
+            raise ValueError('Password must contain at least one special character')
+        return v
 
 
 class UserResponse(BaseModel):

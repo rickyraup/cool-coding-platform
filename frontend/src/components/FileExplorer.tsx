@@ -15,6 +15,9 @@ export function FileExplorer(): JSX.Element {
   const [currentDirectory, setCurrentDirectory] = useState('');
   const [allFiles, setAllFiles] = useState<{[key: string]: FileItem[]}>({});
   const hasLoadedInitialFiles = useRef(false);
+  const fileContentCache = useRef<{[key: string]: string}>({});
+  const lastFileReadTime = useRef<{[key: string]: number}>({});
+  const lastDirectoryListTime = useRef<{[key: string]: number}>({});
 
   const loadFiles = useCallback(async (path: string = '', showErrors: boolean = false) => {
     if (!state.currentSession) {
@@ -31,6 +34,18 @@ export function FileExplorer(): JSX.Element {
       return;
     }
     
+    // Debounce directory listing requests (1 second)
+    const now = Date.now();
+    const lastList = lastDirectoryListTime.current[path] || 0;
+    const timeSinceLastList = now - lastList;
+    const DEBOUNCE_DELAY = 1000; // 1 second
+    
+    if (timeSinceLastList < DEBOUNCE_DELAY) {
+      console.log('🚫 [FileExplorer] Debouncing directory list request for:', path);
+      return;
+    }
+    
+    lastDirectoryListTime.current[path] = now;
     setLoading(true);
     try {
       console.log('🔄 [FileExplorer] Loading files for path:', path);
@@ -96,6 +111,21 @@ export function FileExplorer(): JSX.Element {
     } else {
       // Load file content into editor and mark as current
       setCurrentFile(file.path);
+      
+      // Check if we have cached content and it's recent (within 5 seconds)
+      const now = Date.now();
+      const lastRead = lastFileReadTime.current[file.path] || 0;
+      const cacheAge = now - lastRead;
+      const CACHE_DURATION = 5000; // 5 seconds
+      
+      if (fileContentCache.current[file.path] && cacheAge < CACHE_DURATION) {
+        console.log('🚀 [FileExplorer] Using cached content for:', file.path);
+        // Use cached content without making WebSocket request
+        return;
+      }
+      
+      console.log('🔄 [FileExplorer] Reading file content for:', file.path);
+      lastFileReadTime.current[file.path] = now;
       performFileOperation('read', file.path);
     }
   }, [loadDirectoryContents, performFileOperation, setCurrentFile]);
@@ -169,13 +199,19 @@ export function FileExplorer(): JSX.Element {
   }, [sendTerminalCommand]);
 
 
+  // Reset file loading flag when session changes
+  useEffect(() => {
+    hasLoadedInitialFiles.current = false;
+  }, [state.currentSession?.id]);
+
   // Load real files from backend when connected
   useEffect(() => {
     if (state.isConnected && state.currentSession && !hasLoadedInitialFiles.current) {
       hasLoadedInitialFiles.current = true;
+      console.log('🔄 [FileExplorer] Loading initial files for session:', state.currentSession.id);
       loadFiles('');
     }
-  }, [state.isConnected, state.currentSession]);
+  }, [state.isConnected, state.currentSession, loadFiles]);
 
   const getFileIconComponent = useCallback((file: FileItem): JSX.Element => {
     if (file.type === 'directory') {

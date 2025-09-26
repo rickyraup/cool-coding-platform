@@ -277,13 +277,15 @@ class WorkspaceItem:
     """Workspace item model matching PostgreSQL schema."""
 
     id: Optional[int] = None
-    session_id: int = 0
+    session_id: Optional[int] = None
     parent_id: Optional[int] = None
     name: str = ""
     type: str = ""  # 'file' or 'folder'
     content: Optional[str] = None
+    full_path: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    session_uuid: Optional[str] = None
 
     @classmethod
     def create(
@@ -299,13 +301,25 @@ class WorkspaceItem:
             msg = "Type must be 'file' or 'folder'"
             raise ValueError(msg)
 
+        # Get the session to retrieve its UUID
+        session = CodeSession.get_by_id(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+        
+        # Calculate full_path
+        full_path = name
+        if parent_id:
+            parent = cls.get_by_id(parent_id)
+            if parent and parent.full_path:
+                full_path = f"{parent.full_path}/{name}"
+
         db = get_db()
         query = """
-            INSERT INTO code_editor_project.workspace_items (session_id, parent_id, name, type, content)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO code_editor_project.workspace_items (session_id, parent_id, name, type, content, full_path, session_uuid)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         item_id = db.execute_insert(
-            query, (session_id, parent_id, name, item_type, content),
+            query, (session_id, parent_id, name, item_type, content, full_path, session.uuid),
         )
         return cls.get_by_id(item_id)
 
@@ -314,7 +328,7 @@ class WorkspaceItem:
         """Get workspace item by ID."""
         db = get_db()
         query = """
-            SELECT id, session_id, parent_id, name, type, content, created_at, updated_at
+            SELECT id, session_id, parent_id, name, type, content, full_path, created_at, updated_at, session_uuid
             FROM code_editor_project.workspace_items
             WHERE id = %s
         """
@@ -327,8 +341,10 @@ class WorkspaceItem:
                 name=result["name"],
                 type=result["type"],
                 content=result["content"],
+                full_path=result["full_path"],
                 created_at=result["created_at"],
                 updated_at=result["updated_at"],
+                session_uuid=result["session_uuid"],
             )
         return None
 
@@ -372,7 +388,7 @@ class WorkspaceItem:
         """Get all workspace items for a session."""
         db = get_db()
         query = """
-            SELECT id, session_id, parent_id, name, type, content, created_at, updated_at
+            SELECT id, session_id, parent_id, name, type, content, full_path, created_at, updated_at, session_uuid
             FROM code_editor_project.workspace_items
             WHERE session_id = %s
             ORDER BY parent_id NULLS FIRST, type DESC, name ASC
@@ -386,8 +402,10 @@ class WorkspaceItem:
                 name=row["name"],
                 type=row["type"],
                 content=row["content"],
+                full_path=row["full_path"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
+                session_uuid=row["session_uuid"],
             )
             for row in results
         ]
@@ -438,6 +456,11 @@ class WorkspaceItem:
 
     def get_full_path(self) -> str:
         """Get the full path of this item from root."""
+        # Use the stored full_path if available
+        if self.full_path:
+            return self.full_path
+        
+        # Fallback to calculated path for backwards compatibility
         if not self.parent_id:
             return self.name
 

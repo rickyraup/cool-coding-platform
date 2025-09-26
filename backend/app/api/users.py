@@ -1,8 +1,9 @@
 """User management API endpoints."""
 
-import hashlib
+import bcrypt
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import ValidationError
 
 from app.models.postgres_models import User
 from app.schemas.postgres_schemas import (
@@ -17,23 +18,26 @@ router = APIRouter()
 
 
 def hash_password(password: str) -> str:
-    """Hash password using SHA256 (simple implementation)."""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Hash password using bcrypt with salt."""
+    # Generate a salt and hash the password
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    """Verify password against hash."""
-    return hash_password(password) == hashed
+    """Verify password against bcrypt hash."""
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 
 @router.post(
     "/register", status_code=status.HTTP_201_CREATED,
 )
 async def register_user(user_data: UserCreate) -> AuthResponse:
-    """Register a new user."""
+    """Register a new user with comprehensive validation."""
     try:
-        # Check if username already exists
-        existing_user = User.get_by_username(user_data.username)
+        # Check if username already exists (case-insensitive)
+        existing_user = User.get_by_username(user_data.username.lower())
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -41,17 +45,18 @@ async def register_user(user_data: UserCreate) -> AuthResponse:
             )
 
         # Check if email already exists
-        existing_email = User.get_by_email(user_data.email)
+        existing_email = User.get_by_email(str(user_data.email))
         if existing_email:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists",
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail="Email already exists",
             )
 
         # Hash password and create user
         hashed_password = hash_password(user_data.password)
         new_user = User.create(
-            username=user_data.username,
-            email=user_data.email,
+            username=user_data.username.lower(),  # Store username in lowercase
+            email=str(user_data.email),
             password_hash=hashed_password,
         )
 
@@ -71,6 +76,17 @@ async def register_user(user_data: UserCreate) -> AuthResponse:
             data={"user_id": new_user.id},
         )
 
+    except ValidationError as e:
+        # Handle Pydantic validation errors
+        error_messages = []
+        for error in e.errors():
+            field = error['loc'][-1] if error['loc'] else 'field'
+            message = error['msg']
+            error_messages.append(f"{field}: {message}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="; ".join(error_messages),
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -82,21 +98,37 @@ async def register_user(user_data: UserCreate) -> AuthResponse:
 
 @router.post("/login")
 async def login_user(login_data: UserLogin) -> AuthResponse:
-    """Login user and return user info."""
+    """Login user and return user info. Supports both username and email login."""
     try:
-        # Find user by username
-        user = User.get_by_username(login_data.username)
+        # Try to find user by username first, then by email
+        user = None
+        identifier = login_data.username
+        
+        # Check if the identifier looks like an email
+        if '@' in identifier:
+            user = User.get_by_email(identifier)
+        else:
+            user = User.get_by_username(identifier)
+        
+        # If not found by email, try username (in case user typed username with @)
+        if not user and '@' in identifier:
+            user = User.get_by_username(identifier)
+        
+        # If not found by username, try email (in case user typed email without @)
+        if not user and '@' not in identifier:
+            user = User.get_by_email(identifier)
+        
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password",
+                detail="Invalid username/email or password",
             )
 
         # Verify password
         if not verify_password(login_data.password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password",
+                detail="Invalid username/email or password",
             )
 
         # Convert to response format

@@ -223,10 +223,25 @@ class BackgroundTaskManager:
                 avg_memory = total_memory_mb / session_count if session_count > 0 else 0
                 avg_cpu = total_cpu_percent / session_count if session_count > 0 else 0
 
+                # Get user-level statistics
+                user_sessions_info = await container_manager.get_user_sessions_info()
+                user_stats = user_sessions_info.get("user_stats", {})
+                total_users = user_sessions_info.get("total_users", 0)
+
                 logger.info(
-                    f"Resource monitor: {session_count} sessions, "
+                    f"Resource monitor: {session_count} sessions across {total_users} users, "
                     f"avg memory: {avg_memory:.1f}MB, avg CPU: {avg_cpu:.1f}%",
                 )
+
+                # Log per-user resource usage for users with high usage or near limits
+                for user_id, stats in user_stats.items():
+                    usage_percent = stats.get("usage_percent", 0)
+                    if usage_percent >= 80 or stats.get("avg_memory_mb", 0) > 300:  # 80% of limit or high memory
+                        logger.info(
+                            f"User {user_id}: {stats['active_sessions']}/{stats['session_limit']} sessions "
+                            f"({usage_percent}%), avg memory: {stats['avg_memory_mb']:.1f}MB, "
+                            f"avg CPU: {stats['avg_cpu_percent']:.1f}%"
+                        )
 
                 # Warn about high usage sessions
                 for session_id, usage_value, resource_type in high_usage_sessions:

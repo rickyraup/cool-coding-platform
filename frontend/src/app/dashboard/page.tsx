@@ -58,9 +58,16 @@ export default function DashboardPage() {
     fetchWorkspaces();
   }, [isAuthenticated, user, currentPage, workspacesPerPage]);
 
+  // Helper function to generate a human-readable ID from UUID
+  const getHumanReadableId = (uuid: string) => {
+    // Take the first 8 characters of the UUID for a shorter, human-readable format
+    return uuid.substring(0, 8).toUpperCase();
+  };
+
   // Helper function to get review status for a workspace
-  const getWorkspaceReviewStatus = (sessionId: number) => {
-    const sessionReviews = reviewRequests.filter(review => review.session_id === sessionId);
+  const getWorkspaceReviewStatus = (sessionId: string) => {
+    // Note: This will need to be updated when review API supports UUID lookup
+    const sessionReviews = reviewRequests.filter(review => review.session_id.toString() === sessionId);
     if (sessionReviews.length === 0) return null;
     
     // Get the most recent review request
@@ -172,7 +179,7 @@ export default function DashboardPage() {
                 <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-purple-500 rounded-lg flex items-center justify-center">
                   <span className="text-white font-bold text-lg">⚡</span>
                 </div>
-                <h1 className="text-white text-xl font-bold">CodeForge</h1>
+                <h1 className="text-white text-xl font-bold">Coding Workspaces Project</h1>
               </div>
             </div>
             
@@ -344,7 +351,7 @@ export default function DashboardPage() {
                           <span className="text-white font-bold">📁</span>
                         </div>
                         <div>
-                          <h3 className="text-lg font-semibold text-white">{workspace.name ?? `Workspace ${workspace.id}`}</h3>
+                          <h3 className="text-lg font-semibold text-white">{workspace.name ?? `Workspace ${getHumanReadableId(workspace.id)}`}</h3>
                           <p className="text-sm text-gray-400">Python workspace</p>
                         </div>
                       </div>

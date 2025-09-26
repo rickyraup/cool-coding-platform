@@ -32,11 +32,17 @@ class WorkspaceLoaderService:
                 logger.info(f"No workspace items found for session {session_id}")
                 return True  # Empty workspace is valid
 
-            # Create or get container session
-            container_session = await container_manager.get_or_create_session(
-                str(session_id),
-            )
-            working_dir = container_session.working_dir
+            # Find container session by workspace ID (new user-aware session system)
+            active_session_id = container_manager.find_session_by_workspace_id(str(session_id))
+            if not active_session_id:
+                # Fallback: create new session (should not normally happen)
+                container_session = await container_manager.get_or_create_session(
+                    str(session_id),
+                )
+                working_dir = container_session.working_dir
+            else:
+                container_session = container_manager.active_sessions[active_session_id]
+                working_dir = container_session.working_dir
 
             # Create workspace structure
             await self._create_workspace_structure(workspace_items, working_dir)
@@ -105,12 +111,13 @@ class WorkspaceLoaderService:
                 logger.error(f"Session {session_id} not found in database")
                 return False
 
-            # Get container session
-            if str(session_id) not in container_manager.active_sessions:
-                logger.error(f"No active container session for {session_id}")
+            # Find container session by workspace ID (new user-aware session system)
+            active_session_id = container_manager.find_session_by_workspace_id(str(session_id))
+            if not active_session_id:
+                logger.error(f"No active container session for workspace {session_id}")
                 return False
 
-            container_session = container_manager.active_sessions[str(session_id)]
+            container_session = container_manager.active_sessions[active_session_id]
             working_dir = container_session.working_dir
 
             # Clear existing workspace items for this session
@@ -157,7 +164,7 @@ class WorkspaceLoaderService:
                         session_id=session_id,
                         parent_id=parent_id,
                         name=item_name,
-                        type="folder",
+                        item_type="folder",
                         content=None,
                     )
                     items.append(folder_item)
@@ -188,7 +195,7 @@ class WorkspaceLoaderService:
                         session_id=session_id,
                         parent_id=parent_id,
                         name=item_name,
-                        type="file",
+                        item_type="file",
                         content=content,
                     )
                     items.append(file_item)
@@ -204,11 +211,13 @@ class WorkspaceLoaderService:
     ) -> Optional[str]:
         """Get content of a specific file from the container workspace."""
         try:
-            if str(session_id) not in container_manager.active_sessions:
-                logger.error(f"No active container session for {session_id}")
+            # Find container session by workspace ID (new user-aware session system)
+            active_session_id = container_manager.find_session_by_workspace_id(str(session_id))
+            if not active_session_id:
+                logger.error(f"No active container session for workspace {session_id}")
                 return None
 
-            container_session = container_manager.active_sessions[str(session_id)]
+            container_session = container_manager.active_sessions[active_session_id]
             working_dir = container_session.working_dir
             full_path = os.path.join(working_dir, file_path.lstrip("/"))
 
@@ -230,11 +239,13 @@ class WorkspaceLoaderService:
     ) -> bool:
         """Update content of a specific file in the container workspace."""
         try:
-            if str(session_id) not in container_manager.active_sessions:
-                logger.error(f"No active container session for {session_id}")
+            # Find container session by workspace ID (new user-aware session system)
+            active_session_id = container_manager.find_session_by_workspace_id(str(session_id))
+            if not active_session_id:
+                logger.error(f"No active container session for workspace {session_id}")
                 return False
 
-            container_session = container_manager.active_sessions[str(session_id)]
+            container_session = container_manager.active_sessions[active_session_id]
             working_dir = container_session.working_dir
             full_path = os.path.join(working_dir, file_path.lstrip("/"))
 
@@ -253,6 +264,72 @@ class WorkspaceLoaderService:
             logger.exception(
                 f"Failed to update file {file_path} in session {session_id}: {e}",
             )
+            return False
+
+
+    async def create_workspace_file(self, session_id: int, file_path: str, content: str = "") -> bool:
+        """Create a new file in the container workspace."""
+        try:
+            # Get session from database
+            session = CodeSession.get_by_id(session_id)
+            if not session:
+                logger.error(f"Session {session_id} not found")
+                return False
+
+            # Get container session
+            session_str = str(session_id)
+            if session_str not in container_manager.active_sessions:
+                logger.error(f"No active container session for workspace {session_id}")
+                return False
+
+            container_session = container_manager.active_sessions[session_str]
+            working_dir = container_session.working_dir
+
+            # Create the file in container filesystem
+            full_path = os.path.join(working_dir, file_path)
+            await self._create_file(full_path, content)
+
+            logger.info(f"Created file {file_path} in session {session_id}")
+            return True
+
+        except Exception as e:
+            logger.exception(f"Failed to create file {file_path} in session {session_id}: {e}")
+            return False
+
+    async def delete_workspace_file(self, session_id: int, file_path: str) -> bool:
+        """Delete a file from the container workspace."""
+        try:
+            # Get session from database
+            session = CodeSession.get_by_id(session_id)
+            if not session:
+                logger.error(f"Session {session_id} not found")
+                return False
+
+            # Get container session
+            session_str = str(session_id)
+            if session_str not in container_manager.active_sessions:
+                logger.error(f"No active container session for workspace {session_id}")
+                return False
+
+            container_session = container_manager.active_sessions[session_str]
+            working_dir = container_session.working_dir
+
+            # Delete the file from container filesystem
+            full_path = os.path.join(working_dir, file_path)
+            if os.path.exists(full_path):
+                if os.path.isfile(full_path):
+                    os.remove(full_path)
+                    logger.info(f"Deleted file {file_path} from session {session_id}")
+                    return True
+                else:
+                    logger.error(f"Path {file_path} is not a file")
+                    return False
+            else:
+                logger.error(f"File {file_path} not found in session {session_id}")
+                return False
+
+        except Exception as e:
+            logger.exception(f"Failed to delete file {file_path} from session {session_id}: {e}")
             return False
 
 

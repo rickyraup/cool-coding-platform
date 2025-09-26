@@ -7,8 +7,8 @@ import { useApp } from '../context/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 export function CodeEditor(): JSX.Element {
-  const { state, updateCode } = useApp();
-  const { saveCurrentFile } = useWebSocket();
+  const { state, updateCode, setAutosaveEnabled, markSaved } = useApp();
+  const { saveCurrentFile, manualSave } = useWebSocket();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -22,8 +22,10 @@ export function CodeEditor(): JSX.Element {
     });
     
     editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      // Save code (prevent browser default)
-      console.log('Save code shortcut triggered');
+      // Save code manually with Ctrl+S/Cmd+S
+      if (state.currentFile) {
+        manualSave();
+      }
     });
   }, []);
 
@@ -31,17 +33,21 @@ export function CodeEditor(): JSX.Element {
     const newCode = value ?? '';
     updateCode(newCode);
     
-    // Auto-save with debounce (save 2 seconds after user stops typing)
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-    
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      if (newCode.trim() && state.currentSession) {
-        saveCurrentFile(newCode);
+    // Only auto-save if autosave is enabled
+    if (state.isAutosaveEnabled) {
+      // Auto-save with debounce (save 2 seconds after user stops typing)
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
       }
-    }, 2000);
-  }, [updateCode, saveCurrentFile, state.currentSession]);
+      
+      autoSaveTimeoutRef.current = setTimeout(() => {
+        if (newCode.trim() && state.currentSession) {
+          saveCurrentFile(newCode);
+          markSaved(newCode);
+        }
+      }, 2000);
+    }
+  }, [updateCode, saveCurrentFile, state.currentSession, state.isAutosaveEnabled, markSaved]);
 
   // Cleanup auto-save timeout on unmount
   useEffect(() => {
@@ -183,14 +189,36 @@ export function CodeEditor(): JSX.Element {
         />
       </div>
       
+      {/* Editor Toolbar */}
       <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-4 text-sm text-gray-400">
           {state.currentFile && (
             <>
-              <span className="text-blue-400 font-medium">📄 {state.currentFile}</span>
+              <span className="text-blue-400 font-medium flex items-center">
+                📄 {state.currentFile}
+                {state.hasUnsavedChanges && (
+                  <span className="ml-1 w-2 h-2 bg-white rounded-full" title="Unsaved changes"></span>
+                )}
+              </span>
               <span>•</span>
             </>
           )}
+          
+          {/* Autosave Toggle - moved to left side with file info */}
+          <div className="flex items-center space-x-1">
+            <input
+              type="checkbox"
+              checked={state.isAutosaveEnabled}
+              onChange={(e) => setAutosaveEnabled(e.target.checked)}
+              className="w-3 h-3 rounded"
+              id="autosave-toggle"
+            />
+            <label htmlFor="autosave-toggle" className="text-gray-400 text-xs cursor-pointer">
+              Autosave
+            </label>
+          </div>
+          
+          <span>•</span>
           <span>Python</span>
           <span>•</span>
           <span>UTF-8</span>
@@ -204,12 +232,12 @@ export function CodeEditor(): JSX.Element {
           )}
         </div>
         
-        <div className="flex items-center space-x-4 text-sm text-gray-400">
+        <div className="flex items-center space-x-4 text-sm">
           {state.error && (
             <span className="text-red-400">Error: {state.error}</span>
           )}
-          <span>{state.code.length} characters</span>
-          <span>Monaco Editor</span>
+          <span className="text-gray-400">{state.code.length} chars</span>
+          <span className="text-gray-400">Monaco Editor</span>
         </div>
       </div>
     </div>

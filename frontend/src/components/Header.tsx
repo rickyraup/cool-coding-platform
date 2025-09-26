@@ -13,7 +13,7 @@ export function Header(): JSX.Element {
   const { state, setSession, setLoading, setError, clearTerminal, setFiles, setCurrentFile, updateCode } = useApp();
   const { user, isAuthenticated, logout } = useAuth();
   const userId = useUserId();
-  const { isConnected, executeCode } = useWebSocket();
+  const { isConnected, executeCode, manualSave } = useWebSocket();
   const [showAuth, setShowAuth] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -82,28 +82,15 @@ export function Header(): JSX.Element {
     }
   }, [state.code, executeCode]);
 
-  const handleSave = useCallback(async (): Promise<void> => {
-    if (!state.currentSession || !isAuthenticated || !state.currentFile) {
-      console.warn('No session, file, or not authenticated');
+  const handleSave = useCallback((): void => {
+    if (!state.currentSession || !state.currentFile) {
+      console.warn('No session or file selected');
       return;
     }
-
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Save current file content to workspace
-      const sessionId = parseInt(state.currentSession.id, 10);
-      await apiService.updateWorkspaceFileContent(sessionId, state.currentFile, state.code);
-      
-      console.log('File saved:', state.currentFile);
-    } catch (error) {
-      console.error('Failed to save file:', error);
-      setError(error instanceof Error ? error.message : 'Failed to save file');
-    } finally {
-      setLoading(false);
-    }
-  }, [state.currentSession, state.currentFile, state.code, isAuthenticated, setLoading, setError]);
+    
+    // Use WebSocket-based manual save for consistency with autosave
+    manualSave();
+  }, [state.currentSession, state.currentFile, manualSave]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -240,8 +227,13 @@ export function Header(): JSX.Element {
 
             <button 
               onClick={handleSave}
-              className="px-4 py-2 text-sm font-medium bg-gray-600 hover:bg-gray-500 active:bg-gray-700 text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-              disabled={state.isLoading || !isAuthenticated}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm ${
+                state.isAutosaveEnabled || !state.hasUnsavedChanges || !state.currentFile
+                  ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                  : 'bg-gray-600 hover:bg-gray-500 active:bg-gray-700 text-white'
+              }`}
+              disabled={state.isAutosaveEnabled || !state.hasUnsavedChanges || !state.currentFile || state.isLoading}
+              title={state.isAutosaveEnabled ? 'Autosave is enabled' : 'Save file (Ctrl+S)'}
             >
               💾 Save
             </button>
