@@ -1,15 +1,22 @@
 """Container session management service."""
 
+from __future__ import annotations
+
 import logging
 import os
 import shutil
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Any, Optional
-
-from docker.models.containers import Container
+from datetime import timedelta
+from typing import TYPE_CHECKING, Any
 
 from app.services.docker_client import docker_client_service
+from app.utils.datetime_utils import utc_now
+
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from docker.models.containers import Container
 
 
 logger = logging.getLogger(__name__)
@@ -77,7 +84,7 @@ class ContainerSessionManager:
                 # Try to extract workspace UUID from other formats
                 # Look for UUID patterns in session_id
                 import re
-                uuid_pattern = r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'
+                uuid_pattern = r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
                 match = re.search(uuid_pattern, session_id)
                 if match:
                     return match.group(1)
@@ -87,7 +94,7 @@ class ContainerSessionManager:
 
     def find_session_by_workspace_id(self, workspace_id: str) -> Optional[str]:
         """Find active session ID by workspace ID."""
-        for session_id in self.active_sessions.keys():
+        for session_id in self.active_sessions:
             extracted_workspace_id = self._extract_workspace_id(session_id)
             if extracted_workspace_id == workspace_id:
                 return session_id
@@ -102,20 +109,20 @@ class ContainerSessionManager:
 
         # Get current user sessions
         user_session_count = len(self.user_sessions.get(user_id, set()))
-        
+
         if user_session_count >= self.max_containers_per_user:
             # Clean up oldest user sessions
             user_sessions = list(self.user_sessions.get(user_id, set()))
             oldest_sessions = []
-            
+
             for user_session_id in user_sessions:
                 if user_session_id in self.active_sessions:
                     oldest_sessions.append((user_session_id, self.active_sessions[user_session_id].created_at))
-            
+
             # Sort by creation time and remove oldest
             oldest_sessions.sort(key=lambda x: x[1])
             sessions_to_remove = len(oldest_sessions) - self.max_containers_per_user + 1
-            
+
             for i in range(sessions_to_remove):
                 old_session_id = oldest_sessions[i][0]
                 logger.info(f"Cleaning up old session {old_session_id} for user {user_id} due to limit")
@@ -128,19 +135,19 @@ class ContainerSessionManager:
         if session_id in self.active_sessions:
             session = self.active_sessions[session_id]
             # Update last activity
-            session.last_activity = datetime.utcnow()
+            session.last_activity = utc_now()
             logger.info(f"Reusing existing container for session {session_id}")
             return session
 
         return await self.create_session(session_id)
-    
+
     async def create_fresh_session(self, session_id: str) -> ContainerSession:
         """Create a new container session, cleaning up existing one if it exists."""
         # If session already exists, clean it up first
         if session_id in self.active_sessions:
             logger.info(f"Cleaning up existing session {session_id} to create fresh container")
             await self.cleanup_session(session_id)
-        
+
         # Create completely fresh session
         return await self.create_session(session_id)
 
@@ -148,7 +155,7 @@ class ContainerSessionManager:
         """Create a new container session."""
         # Check resource limits
         await self._enforce_resource_limits()
-        
+
         # Enforce per-user limits
         self._enforce_user_limits(session_id)
 
@@ -174,12 +181,12 @@ class ContainerSessionManager:
                 container=container,
                 container_id=container.short_id,
                 working_dir=working_dir,
-                created_at=datetime.utcnow(),
-                last_activity=datetime.utcnow(),
+                created_at=utc_now(),
+                last_activity=utc_now(),
             )
 
             self.active_sessions[session_id] = session
-            
+
             # Track user session for limit enforcement
             user_id = self._extract_user_id(session_id)
             if user_id:
@@ -187,7 +194,7 @@ class ContainerSessionManager:
                     self.user_sessions[user_id] = set()
                 self.user_sessions[user_id].add(session_id)
                 logger.info(f"Added session {session_id} for user {user_id}")
-            
+
             logger.info(
                 f"Created container session {session_id} with container {container.short_id}",
             )
@@ -231,7 +238,7 @@ class ContainerSessionManager:
             session = await self.get_or_create_session(session_id)
 
             # Update last activity
-            session.last_activity = datetime.utcnow()
+            session.last_activity = utc_now()
 
             # Check if container is still running
             try:
@@ -335,7 +342,7 @@ class ContainerSessionManager:
                 "created_at": session.created_at.isoformat(),
                 "last_activity": session.last_activity.isoformat(),
                 "uptime_minutes": (
-                    datetime.utcnow() - session.created_at
+                    utc_now() - session.created_at
                 ).total_seconds()
                 / 60,
                 "resource_usage": stats,
@@ -355,7 +362,7 @@ class ContainerSessionManager:
         if not session:
             logger.warning(f"Session {session_id} not found for cleanup")
             return False
-        
+
         # Remove from user session tracking
         user_id = self._extract_user_id(session_id)
         if user_id and user_id in self.user_sessions:
@@ -403,7 +410,7 @@ class ContainerSessionManager:
 
     async def cleanup_idle_sessions(self) -> int:
         """Clean up sessions that have been idle too long."""
-        current_time = datetime.utcnow()
+        current_time = utc_now()
         idle_threshold = timedelta(minutes=self.idle_timeout_minutes)
         max_lifetime = timedelta(hours=self.max_session_hours)
 
@@ -468,14 +475,14 @@ class ContainerSessionManager:
     async def get_user_sessions_info(self) -> dict[str, Any]:
         """Get per-user session statistics."""
         user_stats = {}
-        
+
         # Calculate per-user stats
         for user_id, session_ids in self.user_sessions.items():
             active_session_count = 0
             total_memory_mb = 0
             total_cpu_percent = 0
             sessions_info = []
-            
+
             for session_id in session_ids:
                 if session_id in self.active_sessions:
                     active_session_count += 1
@@ -485,7 +492,7 @@ class ContainerSessionManager:
                         resource_usage = session_info.get("resource_usage", {})
                         total_memory_mb += resource_usage.get("memory_mb", 0)
                         total_cpu_percent += resource_usage.get("cpu_percent", 0)
-            
+
             if active_session_count > 0:
                 user_stats[user_id] = {
                     "active_sessions": active_session_count,
@@ -495,9 +502,9 @@ class ContainerSessionManager:
                     "total_cpu_percent": round(total_cpu_percent, 1),
                     "avg_memory_mb": round(total_memory_mb / active_session_count, 1),
                     "avg_cpu_percent": round(total_cpu_percent / active_session_count, 1),
-                    "sessions": sessions_info
+                    "sessions": sessions_info,
                 }
-        
+
         return {
             "user_stats": user_stats,
             "total_users": len(user_stats),
@@ -505,8 +512,8 @@ class ContainerSessionManager:
                 "max_containers_per_user": self.max_containers_per_user,
                 "max_total_containers": self.max_total_containers,
                 "idle_timeout_minutes": self.idle_timeout_minutes,
-                "max_session_hours": self.max_session_hours
-            }
+                "max_session_hours": self.max_session_hours,
+            },
         }
 
     async def cleanup_all_sessions(self) -> int:
@@ -545,7 +552,7 @@ class ContainerSessionManager:
             # Update session info
             session.container = new_container
             session.container_id = new_container.short_id
-            session.last_activity = datetime.utcnow()
+            session.last_activity = utc_now()
 
             logger.info(f"Restarted container for session {session_id}")
             return True

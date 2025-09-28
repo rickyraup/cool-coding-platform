@@ -240,7 +240,7 @@ class BackgroundTaskManager:
                         logger.info(
                             f"User {user_id}: {stats['active_sessions']}/{stats['session_limit']} sessions "
                             f"({usage_percent}%), avg memory: {stats['avg_memory_mb']:.1f}MB, "
-                            f"avg CPU: {stats['avg_cpu_percent']:.1f}%"
+                            f"avg CPU: {stats['avg_cpu_percent']:.1f}%",
                         )
 
                 # Warn about high usage sessions

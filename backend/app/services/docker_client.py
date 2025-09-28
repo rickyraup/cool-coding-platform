@@ -1,12 +1,24 @@
 """Docker client service for managing containers."""
 
+from __future__ import annotations
+
 import logging
 import os
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-import docker
+
+if TYPE_CHECKING:
+    import docker
+    from docker.models.containers import Container
+else:
+    try:
+        import docker
+        from docker.models.containers import Container
+    except ImportError:
+        docker = None  # type: ignore[assignment]
+        Container = None  # type: ignore[assignment,misc]
+
 from docker.errors import DockerException, ImageNotFound
-from docker.models.containers import Container
 
 
 logger = logging.getLogger(__name__)

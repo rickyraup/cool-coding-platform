@@ -9,6 +9,8 @@ interface User {
   id: number;
   username: string;
   email: string;
+  is_reviewer?: boolean;
+  reviewer_level?: number;
   created_at: string;
   updated_at: string;
 }
@@ -29,6 +31,17 @@ interface AuthResponse {
   message: string;
   user?: User;
   data: { user_id: number };
+}
+
+// Legacy Session type for backwards compatibility
+interface LegacySession {
+  id: string;
+  user_id?: string;
+  code?: string;
+  language?: string;
+  is_active?: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Session types (PostgreSQL schema)
@@ -100,7 +113,7 @@ interface ReviewRequest {
 }
 
 interface ReviewRequestCreate {
-  session_id: number;
+  session_id: string; // Fixed: UUID string instead of number
   title: string;
   description?: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
@@ -350,18 +363,18 @@ class ApiService {
   }
 
   // Legacy Session Management (keep for backwards compatibility)
-  async createLegacySession(sessionData?: { user_id?: string; code?: string; language?: string }): Promise<any> {
+  async createLegacySession(sessionData?: { user_id?: string; code?: string; language?: string }): Promise<LegacySession> {
     return await this.fetchWithErrorHandling('/api/sessions', {
       method: 'POST',
       body: JSON.stringify(sessionData ?? {}),
     });
   }
 
-  async getLegacySession(sessionId: string): Promise<any> {
+  async getLegacySession(sessionId: string): Promise<LegacySession> {
     return await this.fetchWithErrorHandling(`/api/sessions/${sessionId}`);
   }
 
-  async updateLegacySession(sessionId: string, sessionData: { code?: string; language?: string; is_active?: boolean }): Promise<any> {
+  async updateLegacySession(sessionId: string, sessionData: { code?: string; language?: string; is_active?: boolean }): Promise<LegacySession> {
     return await this.fetchWithErrorHandling(`/api/sessions/${sessionId}`, {
       method: 'PUT',
       body: JSON.stringify(sessionData),
@@ -374,8 +387,8 @@ class ApiService {
     });
   }
 
-  async getLegacySessions(skip = 0, limit = 100): Promise<any[]> {
-    const response = await this.fetchWithErrorHandling<{ success: boolean; data: any[] }>(
+  async getLegacySessions(skip = 0, limit = 100): Promise<LegacySession[]> {
+    const response = await this.fetchWithErrorHandling<{ success: boolean; data: LegacySession[] }>(
       `/api/sessions?skip=${skip}&limit=${limit}`
     );
     return response.data;
@@ -427,6 +440,25 @@ class ApiService {
   // Health Check
   async healthCheck(): Promise<{ status: string; timestamp: string }> {
     return await this.fetchWithErrorHandling('/api/health/');
+  }
+
+  // Reviewer Management
+  async getReviewers(): Promise<{ success: boolean; data: User[]; total: number }> {
+    return await this.fetchWithErrorHandling<{ success: boolean; data: User[]; total: number }>('/api/users/reviewers');
+  }
+
+  async getCurrentUser(): Promise<User> {
+    return await this.fetchWithErrorHandling<User>('/api/users/me');
+  }
+
+  async toggleReviewerStatus(isReviewer: boolean, reviewerLevel: number = 1): Promise<{ success: boolean; message: string; user: User }> {
+    return await this.fetchWithErrorHandling<{ success: boolean; message: string; user: User }>('/api/users/me/reviewer-status', {
+      method: 'PUT',
+      body: JSON.stringify({
+        is_reviewer: isReviewer,
+        reviewer_level: reviewerLevel
+      }),
+    });
   }
 }
 

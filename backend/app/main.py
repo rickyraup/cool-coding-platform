@@ -1,8 +1,8 @@
 """Main FastAPI application for the Code Execution Platform."""
 
 import os
-import uuid
 import time
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, Optional
@@ -39,12 +39,11 @@ def create_unique_session_id(base_session_id: str, user_id: Optional[str] = None
     """Create a unique session ID that includes user ID and timestamp to prevent reuse."""
     timestamp = int(time.time() * 1000)  # milliseconds
     unique_id = str(uuid.uuid4())[:8]  # short UUID
-    
+
     # Include user_id in session ID for better isolation
     if user_id:
         return f"user_{user_id}_ws_{base_session_id}_{timestamp}_{unique_id}"
-    else:
-        return f"{base_session_id}_{timestamp}_{unique_id}"
+    return f"{base_session_id}_{timestamp}_{unique_id}"
 
 
 @asynccontextmanager
@@ -118,12 +117,12 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
     # Store user_id as a custom attribute on the websocket connection
     if user_id:
         # Use setattr to store user_id since path_params is read-only
-        setattr(websocket, 'user_id', user_id)
+        websocket.user_id = user_id
         print(f"🔐 WebSocket connected for user: {user_id}")
     else:
-        setattr(websocket, 'user_id', None)
+        websocket.user_id = None
         print("⚠️ WebSocket connected without user authentication")
-    
+
     await websocket_manager.connect(websocket)
 
     # Send initial connection confirmation
@@ -143,33 +142,33 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
             print(f"🔍 WebSocket received data: {data}")
 
             # Create unique session ID for each workspace connection to ensure isolation
-            if 'sessionId' in data and data['sessionId'] != 'default':
+            if "sessionId" in data and data["sessionId"] != "default":
                 # Get user_id from WebSocket connection
-                user_id = getattr(websocket, 'user_id', None)
-                
+                user_id = getattr(websocket, "user_id", None)
+
                 # Check if we already have a unique session ID for this connection
                 current_session = websocket_manager.get_session(websocket)
-                
+
                 # Look for an existing session for this workspace across all containers
-                existing_session = container_manager.find_session_by_workspace_id(data['sessionId'])
-                
+                existing_session = container_manager.find_session_by_workspace_id(data["sessionId"])
+
                 if existing_session:
                     # Use existing session for this workspace
                     websocket_manager.set_session(websocket, existing_session)
-                    data['sessionId'] = existing_session
+                    data["sessionId"] = existing_session
                     print(f"🔄 Reusing existing container session for user {user_id}: {data['sessionId']}")
-                elif current_session and current_session != 'default':
+                elif current_session and current_session != "default":
                     # Use current WebSocket session if it exists and is not default
-                    data['sessionId'] = current_session
+                    data["sessionId"] = current_session
                     print(f"🔄 Using current WebSocket session for user {user_id}: {data['sessionId']}")
                 else:
                     # Create new unique session ID and associate it with this WebSocket
-                    unique_session_id = create_unique_session_id(data['sessionId'], user_id)
+                    unique_session_id = create_unique_session_id(data["sessionId"], user_id)
                     websocket_manager.set_session(websocket, unique_session_id)
                     print(f"🔄 Created unique session ID for user {user_id}: {data['sessionId']} → {unique_session_id}")
-                    
+
                     # Update the message data with the unique session ID
-                    data['sessionId'] = unique_session_id
+                    data["sessionId"] = unique_session_id
 
             # Handle the message
             response = await handle_websocket_message(data, websocket)
@@ -183,7 +182,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
         # Get session ID before disconnecting
         session_id = websocket_manager.get_session(websocket)
         websocket_manager.disconnect(websocket)
-        
+
         # Clean up container if no other connections to this session
         if session_id != "default" and not websocket_manager.has_other_connections_to_session(session_id):
             print(f"🧹 No other connections to session {session_id}, cleaning up container...")
@@ -192,15 +191,15 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
                 print(f"✅ Container cleanup completed for session {session_id}")
             except Exception as cleanup_error:
                 print(f"❌ Error during container cleanup for session {session_id}: {cleanup_error}")
-        
+
         print("WebSocket client disconnected")
-        
+
     except Exception as e:
         print(f"WebSocket error: {e}")
         # Get session ID before disconnecting
         session_id = websocket_manager.get_session(websocket)
         websocket_manager.disconnect(websocket)
-        
+
         # Clean up container if no other connections to this session
         if session_id != "default" and not websocket_manager.has_other_connections_to_session(session_id):
             print(f"🧹 WebSocket error cleanup - removing container for session {session_id}")
@@ -226,22 +225,22 @@ if __name__ == "__main__":
     # Use ENABLE_RELOAD=true env var to enable during development
     enable_reload = os.getenv("ENABLE_RELOAD", "false").lower() == "true"
 
-    uvicorn_config = {
-        "host": "0.0.0.0",
-        "port": port,
-        "log_level": "info",
-    }
-
     if enable_reload:
-        uvicorn_config.update(
-            {
-                "reload": True,
-                "reload_dirs": ["app/"],
-                "reload_excludes": ["venv/", "*.db", "__pycache__/", ".git/", "*.pyc"],
-            },
-        )
         print("🔄 Running in development mode with auto-reload")
+        uvicorn.run(
+            "app.main:app",
+            host="0.0.0.0",
+            port=port,
+            log_level="info",
+            reload=True,
+            reload_dirs=["app/"],
+            reload_excludes=["venv/", "*.db", "__pycache__/", ".git/", "*.pyc"],
+        )
     else:
         print("🚀 Running in production mode (stable WebSocket connections)")
-
-    uvicorn.run("app.main:app", **uvicorn_config)
+        uvicorn.run(
+            "app.main:app",
+            host="0.0.0.0",
+            port=port,
+            log_level="info",
+        )

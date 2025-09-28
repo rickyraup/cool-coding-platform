@@ -325,15 +325,15 @@ async def get_workspace_tree(session_uuid: str) -> dict[str, Any]:
             )
 
         # Get all workspace items for this session using numeric ID
-        from app.models.postgres_models import WorkspaceItem
         from app.api.postgres_sessions import build_workspace_tree
-        
+        from app.models.postgres_models import WorkspaceItem
+
         workspace_items = WorkspaceItem.get_all_by_session(session.id)
         workspace_tree = build_workspace_tree(workspace_items)
 
         return {
             "success": True,
-            "message": "Workspace tree retrieved successfully", 
+            "message": "Workspace tree retrieved successfully",
             "data": workspace_tree,
         }
 
@@ -360,7 +360,7 @@ async def cleanup_container_session(session_uuid: str) -> BaseResponse:
         # Find active container session
         session_str = str(session.id)
         active_session_id = container_manager.find_session_by_workspace_id(session_str)
-        
+
         if not active_session_id:
             return BaseResponse(
                 success=True,

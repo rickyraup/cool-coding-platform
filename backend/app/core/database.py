@@ -14,7 +14,8 @@ load_dotenv()
 # Database configuration - PostgreSQL only
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    raise Exception("DATABASE_URL environment variable is required")
+    msg = "DATABASE_URL environment variable is required"
+    raise Exception(msg)
 
 # Create SQLAlchemy engine
 engine = create_engine(DATABASE_URL)

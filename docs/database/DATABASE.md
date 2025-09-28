@@ -15,10 +15,15 @@ This database schema is designed to support a multi-user **Code Execution Platfo
   - `id`: Primary key, uniquely identifies a user.
   - `username`, `email`: Unique identifiers for user login and contact.
   - `password_hash`: Secured hashed password.
+  - `is_reviewer`: Boolean flag indicating if the user can review code submissions.
+  - `reviewer_level`: Integer (0-2) representing reviewer capability level:
+    - 0: Regular user (not a reviewer)
+    - 1: Junior reviewer (can review code submissions)
+    - 2: Senior reviewer (can review code and mentor junior reviewers)
   - Timestamps: `created_at` and `updated_at` track user record lifecycle.
 
-- **Notes:**  
-  User data is foundational. All sessions and workspace content relate back to a user through sessions.
+- **Notes:**
+  User data is foundational. All sessions and workspace content relate back to a user through sessions. The reviewer system allows any user to self-promote to reviewer status for code review functionality.
 
 ---
 
@@ -65,11 +70,32 @@ This database schema is designed to support a multi-user **Code Execution Platfo
 
 ---
 
+### 4. Review System (User-Based)
+
+- **Role:** Enables code review functionality through user reviewer status.
+- **Implementation:**
+  - Uses existing `users` table with `is_reviewer` and `reviewer_level` fields.
+  - No separate review tables - review functionality is role-based.
+  - Any user can self-promote to reviewer status through the frontend.
+
+- **Key Features:**
+  - **Self-Service Promotion:** Users can become reviewers without admin approval.
+  - **Reviewer Levels:** Support for junior and senior reviewer distinctions.
+  - **Flexible Assignment:** Users can choose any reviewer for their code submissions.
+
+- **API Endpoints:**
+  - `GET /api/users/reviewers` - Get all available reviewers
+  - `GET /api/users/me` - Get current user info including reviewer status
+  - `PUT /api/users/me/reviewer-status` - Toggle reviewer status and level
+
+---
+
 ## How This Fits Into The Whole System
 
 1. **User Management:**
    - Users register and login to the platform.
-   - Each user’s identity and authentication data are stored in the `users` table.
+   - Each user's identity and authentication data are stored in the `users` table.
+   - Users can self-promote to reviewer status to participate in code reviews.
 
 2. **Sessions:**
    - When a user starts or switches a coding session, a `sessions` record is created or referenced.

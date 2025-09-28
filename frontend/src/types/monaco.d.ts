@@ -1,5 +1,7 @@
+import type { Monaco } from 'monaco-editor';
+
 declare global {
-  const monaco: typeof import('monaco-editor');
+  const monaco: Monaco;
 }
 
 export {};

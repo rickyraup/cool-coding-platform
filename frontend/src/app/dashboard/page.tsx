@@ -7,7 +7,7 @@ import Link from 'next/link';
 import type { CodeSession, ReviewRequest } from '../../services/api';
 import { apiService } from '../../services/api';
 
-export default function DashboardPage() {
+export default function DashboardPage(): JSX.Element {
   const { user, logout, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const [workspaces, setWorkspaces] = useState<CodeSession[]>([]);
@@ -29,7 +29,7 @@ export default function DashboardPage() {
 
   // Fetch user's workspaces with pagination and review requests
   useEffect(() => {
-    const fetchWorkspaces = async () => {
+    const fetchWorkspaces = async (): Promise<void> => {
       if (!isAuthenticated || !user) return;
       
       try {

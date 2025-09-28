@@ -1,6 +1,8 @@
 """PostgreSQL-based session management API endpoints."""
 
-from typing import Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Annotated, Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
@@ -16,6 +18,10 @@ from app.schemas.postgres_schemas import (
     WorkspaceItemResponse,
     WorkspaceTreeItem,
 )
+
+
+if TYPE_CHECKING:
+    pass
 
 
 router = APIRouter()
@@ -55,7 +61,7 @@ def authorize_session_access(session: CodeSession, user_id: int) -> None:
     if session.user_id != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: You don't have permission to access this session"
+            detail="Access denied: You don't have permission to access this session",
         )
 
 
@@ -82,7 +88,9 @@ def build_workspace_tree(
 
 
 @router.get("/")
-async def get_sessions(user_id: Optional[int] = None, skip: int = 0, limit: int = 100) -> SessionListResponse:
+async def get_sessions(
+    user_id: Optional[int] = None, skip: int = 0, limit: int = 100,
+) -> SessionListResponse:
     """Get sessions, optionally filtered by user."""
     try:
         if user_id:
@@ -112,7 +120,7 @@ async def get_sessions(user_id: Optional[int] = None, skip: int = 0, limit: int 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve sessions: {e!s}",
-        )
+        ) from e
 
 
 @router.post(
@@ -166,11 +174,11 @@ print("Hello, World!")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create session: {e!s}",
-        )
+        ) from e
 
 
 @router.get("/{session_uuid}")
-async def get_session(session_uuid: str, user_id: int = Query(..., description="User ID for authorization")) -> SessionDetailResponse:
+async def get_session(session_uuid: str, user_id: Annotated[int, Query(..., description="User ID for authorization")]) -> SessionDetailResponse:
     """Get a specific session by UUID with authorization."""
     try:
         session = CodeSession.get_by_uuid(session_uuid)
@@ -200,7 +208,7 @@ async def get_session(session_uuid: str, user_id: int = Query(..., description="
 
 
 @router.put("/{session_uuid}")
-async def update_session(session_uuid: str, session_update: SessionUpdate, user_id: int = Query(..., description="User ID for authorization")) -> SessionDetailResponse:
+async def update_session(session_uuid: str, session_update: SessionUpdate, user_id: Annotated[int, Query(..., description="User ID for authorization")]) -> SessionDetailResponse:
     """Update a session by UUID with authorization."""
     try:
         session = CodeSession.get_by_uuid(session_uuid)
@@ -243,7 +251,7 @@ async def update_session(session_uuid: str, session_update: SessionUpdate, user_
 
 
 @router.delete("/{session_uuid}")
-async def delete_session(session_uuid: str, user_id: int = Query(..., description="User ID for authorization")) -> BaseResponse:
+async def delete_session(session_uuid: str, user_id: Annotated[int, Query(..., description="User ID for authorization")]) -> BaseResponse:
     """Delete a session and all its workspace items by UUID with authorization."""
     try:
         session = CodeSession.get_by_uuid(session_uuid)
@@ -274,7 +282,7 @@ async def delete_session(session_uuid: str, user_id: int = Query(..., descriptio
 
 
 @router.get("/{session_uuid}/workspace")
-async def get_session_with_workspace(session_uuid: str, user_id: int = Query(..., description="User ID for authorization")) -> SessionWithWorkspaceResponse:
+async def get_session_with_workspace(session_uuid: str, user_id: Annotated[int, Query(..., description="User ID for authorization")]) -> SessionWithWorkspaceResponse:
     """Get session with all workspace items and tree structure by UUID with authorization."""
     try:
         # Get session by UUID

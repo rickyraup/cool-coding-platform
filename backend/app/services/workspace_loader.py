@@ -321,12 +321,10 @@ class WorkspaceLoaderService:
                     os.remove(full_path)
                     logger.info(f"Deleted file {file_path} from session {session_id}")
                     return True
-                else:
-                    logger.error(f"Path {file_path} is not a file")
-                    return False
-            else:
-                logger.error(f"File {file_path} not found in session {session_id}")
+                logger.error(f"Path {file_path} is not a file")
                 return False
+            logger.error(f"File {file_path} not found in session {session_id}")
+            return False
 
         except Exception as e:
             logger.exception(f"Failed to delete file {file_path} from session {session_id}: {e}")

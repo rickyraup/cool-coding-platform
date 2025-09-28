@@ -399,11 +399,11 @@ async def handle_file_system(
                 "content": content,
                 "timestamp": datetime.utcnow().isoformat(),
             }
-            
+
             # Only add terminal message for manual saves
             if is_manual_save:
                 response["message"] = f"File {path} saved successfully"
-                
+
             return response
 
         if action == "list":
@@ -413,7 +413,7 @@ async def handle_file_system(
                     await container_manager.get_or_create_session(session_id)
                 except Exception as e:
                     print(f"Warning: Could not ensure container session for {session_id}: {e}")
-            
+
             files = await file_manager.list_files_structured(path)
             return {
                 "type": "file_system",

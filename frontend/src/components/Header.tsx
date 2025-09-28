@@ -20,7 +20,7 @@ export function Header(): JSX.Element {
   const router = useRouter();
   const pathname = usePathname();
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const _handleNewSession = useCallback(async (): Promise<void> => {
     if (!isAuthenticated || !userId) {
       setShowAuth(true);
@@ -113,7 +113,7 @@ export function Header(): JSX.Element {
       setError(null);
 
       const reviewRequest: ReviewRequestCreate = {
-        session_id: parseInt(state.currentSession.id, 10),
+        session_id: state.currentSession.id, // Fixed: Use UUID string instead of integer
         title: reviewData.title,
         description: reviewData.description,
         priority: reviewData.priority as 'low' | 'medium' | 'high' | 'urgent',
@@ -152,6 +152,14 @@ export function Header(): JSX.Element {
                       className="px-3 py-1.5 text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-200 hover:text-white rounded-md transition-colors"
                     >
                       ← Dashboard
+                    </button>
+                  )}
+                  {!pathname?.startsWith('/reviewers') && (
+                    <button
+                      onClick={() => router.push('/reviewers')}
+                      className="px-3 py-1.5 text-sm font-medium bg-purple-700 hover:bg-purple-600 text-purple-200 hover:text-white rounded-md transition-colors"
+                    >
+                      👥 Reviewers
                     </button>
                   )}
                 </div>

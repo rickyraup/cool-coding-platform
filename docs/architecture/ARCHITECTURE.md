@@ -1,59 +1,102 @@
+# Code Execution Platform Architecture
+
+## Overview
+A full-stack web platform that provides users with an isolated Python development environment featuring a code editor, terminal interface, file management, and code review system.
+
+## System Architecture
+
+```
 ┌────────────────────────────┐
-│        Client (UI)         │
+│        Frontend            │
+│    (Next.js 15 + React)    │
 │                            │
-│  - React + TypeScript      │
-│  - Monaco Editor           │
-│  - xterm.js Terminal       │
-│  - WebSocket client        │
+│  ┌──────────────────────┐  │
+│  │    Monaco Editor      │  │ Code editing with syntax highlighting
+│  └──────────────────────┘  │
+│  ┌──────────────────────┐  │
+│  │   xterm.js Terminal   │  │ Interactive terminal emulation
+│  └──────────────────────┘  │
+│  ┌──────────────────────┐  │
+│  │  File Explorer Tree   │  │ Workspace file management
+│  └──────────────────────┘  │
+│  ┌──────────────────────┐  │
+│  │  Reviewer Management  │  │ Self-service reviewer system
+│  └──────────────────────┘  │
 └────────────┬───────────────┘
-             │ HTTP / WS
+             │ HTTP API / WebSocket
              ▼
 ┌────────────────────────────┐
 │         Backend API        │
-│     (FastAPI)   │
+│      (FastAPI + Python)    │
 │                            │
 │  ┌──────────────────────┐  │
-│  │   Session Manager     │◄─┐
+│  │   Session Manager     │  │ User session lifecycle
 │  └──────────────────────┘  │
 │  ┌──────────────────────┐  │
-│  │  Terminal Proxy       │◄─┐ WebSocket input/output
+│  │  WebSocket Handler    │  │ Real-time terminal I/O
 │  └──────────────────────┘  │
 │  ┌──────────────────────┐  │
-│  │ Docker Manager        │◄─┐ Starts/stops containers
+│  │ Container Manager     │  │ Docker container lifecycle
 │  └──────────────────────┘  │
 │  ┌──────────────────────┐  │
-│  │ File Sync / Storage   │◄─┐ Reads/writes to mounted dir
+│  │ Workspace Loader      │  │ File sync between DB and containers
 │  └──────────────────────┘  │
 │  ┌──────────────────────┐  │
-│  │  Auth & User Service  │  │
+│  │  User & Auth Service  │  │ Authentication + reviewer system
 │  └──────────────────────┘  │
 └────────────┬───────────────┘
-             │
+             │ Database queries
              ▼
 ┌────────────────────────────┐
-│      PostgreSQL / DB       │
+│     PostgreSQL Database    │
 │                            │
-│  - Users                   │
-│  - Sessions                │
-│  - Submissions (reviews)   │
-│  - File metadata (optional)│
+│  - users (with reviewer    │
+│    level fields)           │
+│  - sessions (UUID-based)   │
+│  - workspace_items         │
+│  - review_requests         │
 └────────────────────────────┘
 
-             ▼
-┌────────────────────────────┐
-│     File Storage (host)    │
-│  (/sessions/session-id/)   │
-│                            │
-│  - Mounted into Docker     │
-│  - Shared with editor & fs │
-└────────────────────────────┘
-
+             │ File persistence
              ▼
 ┌────────────────────────────┐
 │     Docker Containers      │
+│   (Per-session isolation)  │
 │                            │
-│  - Python 3.11 base image  │
-│  - Has pandas, scipy, etc. │
-│  - Executes all code       │
-│  - Handles shell commands  │
+│  - Python 3.11 + pandas   │
+│  - Isolated file systems  │
+│  - Real-time command exec │
+│  - Secure sandboxing      │
 └────────────────────────────┘
+```
+
+## Key Components
+
+### Frontend (Next.js 15)
+- **Framework:** Next.js 15 with App Router + React 19
+- **Language:** TypeScript with strict mode
+- **Styling:** TailwindCSS v4
+- **Editor:** Monaco Editor for code editing
+- **Terminal:** xterm.js for terminal emulation
+- **State Management:** React Context + custom hooks
+- **Real-time:** WebSocket connection for terminal I/O
+
+### Backend (FastAPI)
+- **Framework:** FastAPI with async/await support
+- **Language:** Python 3.9+ with type hints
+- **Database:** PostgreSQL with custom connection pooling
+- **Authentication:** Simple username/password (extensible)
+- **Containerization:** Docker for code execution isolation
+- **WebSocket:** Real-time terminal communication
+- **Background Tasks:** Container lifecycle management
+
+### Database (PostgreSQL)
+- **Users:** Authentication + reviewer system
+- **Sessions:** UUID-based session management
+- **Workspace Items:** Hierarchical file storage
+- **Review Requests:** Code review workflow
+
+### Infrastructure
+- **Containers:** Docker for secure Python execution
+- **File Storage:** Database-backed with container sync
+- **Security:** Sandboxed execution environments

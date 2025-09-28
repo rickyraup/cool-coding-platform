@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List
 from enum import Enum
+from typing import Optional
 
 from app.core.postgres import get_db
 
@@ -47,7 +47,7 @@ class ReviewRequest:
     """Review request model."""
 
     id: Optional[int] = None
-    session_id: int = 0
+    session_id: str = ""
     submitted_by: int = 0
     assigned_to: Optional[int] = None
     title: str = ""
@@ -72,12 +72,12 @@ class ReviewRequest:
         """Create a new review request."""
         db = get_db()
         query = """
-            INSERT INTO code_editor_project.review_requests 
+            INSERT INTO code_editor_project.review_requests
             (session_id, submitted_by, assigned_to, title, description, priority, status)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         request_id = db.execute_insert(
-            query, (session_id, submitted_by, assigned_to, title, description, priority.value, ReviewStatus.PENDING.value)
+            query, (session_id, submitted_by, assigned_to, title, description, priority.value, ReviewStatus.PENDING.value),
         )
         return cls.get_by_id(request_id)
 
@@ -86,7 +86,7 @@ class ReviewRequest:
         """Get review request by ID."""
         db = get_db()
         query = """
-            SELECT id, session_id, submitted_by, assigned_to, title, description, 
+            SELECT id, session_id, submitted_by, assigned_to, title, description,
                    status, priority, submitted_at, reviewed_at, created_at, updated_at
             FROM code_editor_project.review_requests
             WHERE id = %s
@@ -110,12 +110,12 @@ class ReviewRequest:
         return None
 
     @classmethod
-    def get_by_user(cls, user_id: int, status: Optional[ReviewStatus] = None) -> List["ReviewRequest"]:
+    def get_by_user(cls, user_id: int, status: Optional[ReviewStatus] = None) -> list["ReviewRequest"]:
         """Get review requests submitted by a user."""
         db = get_db()
         if status:
             query = """
-                SELECT id, session_id, submitted_by, assigned_to, title, description, 
+                SELECT id, session_id, submitted_by, assigned_to, title, description,
                        status, priority, submitted_at, reviewed_at, created_at, updated_at
                 FROM code_editor_project.review_requests
                 WHERE submitted_by = %s AND status = %s
@@ -124,7 +124,7 @@ class ReviewRequest:
             results = db.execute_query(query, (user_id, status.value))
         else:
             query = """
-                SELECT id, session_id, submitted_by, assigned_to, title, description, 
+                SELECT id, session_id, submitted_by, assigned_to, title, description,
                        status, priority, submitted_at, reviewed_at, created_at, updated_at
                 FROM code_editor_project.review_requests
                 WHERE submitted_by = %s
@@ -151,12 +151,12 @@ class ReviewRequest:
         ]
 
     @classmethod
-    def get_assigned_to_reviewer(cls, reviewer_id: int, status: Optional[ReviewStatus] = None) -> List["ReviewRequest"]:
+    def get_assigned_to_reviewer(cls, reviewer_id: int, status: Optional[ReviewStatus] = None) -> list["ReviewRequest"]:
         """Get review requests assigned to a reviewer."""
         db = get_db()
         if status:
             query = """
-                SELECT id, session_id, submitted_by, assigned_to, title, description, 
+                SELECT id, session_id, submitted_by, assigned_to, title, description,
                        status, priority, submitted_at, reviewed_at, created_at, updated_at
                 FROM code_editor_project.review_requests
                 WHERE assigned_to = %s AND status = %s
@@ -165,7 +165,7 @@ class ReviewRequest:
             results = db.execute_query(query, (reviewer_id, status.value))
         else:
             query = """
-                SELECT id, session_id, submitted_by, assigned_to, title, description, 
+                SELECT id, session_id, submitted_by, assigned_to, title, description,
                        status, priority, submitted_at, reviewed_at, created_at, updated_at
                 FROM code_editor_project.review_requests
                 WHERE assigned_to = %s
@@ -192,11 +192,11 @@ class ReviewRequest:
         ]
 
     @classmethod
-    def get_pending_reviews(cls) -> List["ReviewRequest"]:
+    def get_pending_reviews(cls) -> list["ReviewRequest"]:
         """Get all pending review requests."""
         db = get_db()
         query = """
-            SELECT id, session_id, submitted_by, assigned_to, title, description, 
+            SELECT id, session_id, submitted_by, assigned_to, title, description,
                    status, priority, submitted_at, reviewed_at, created_at, updated_at
             FROM code_editor_project.review_requests
             WHERE status = %s
@@ -229,14 +229,14 @@ class ReviewRequest:
 
         db = get_db()
         reviewed_at = datetime.now() if new_status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED] else None
-        
+
         query = """
             UPDATE code_editor_project.review_requests
             SET status = %s, reviewed_at = %s, updated_at = NOW()
             WHERE id = %s
         """
         affected = db.execute_update(query, (new_status.value, reviewed_at, self.id))
-        
+
         if affected > 0:
             self.status = new_status
             self.reviewed_at = reviewed_at
@@ -255,7 +255,7 @@ class ReviewRequest:
             WHERE id = %s
         """
         affected = db.execute_update(query, (reviewer_id, ReviewStatus.IN_REVIEW.value, self.id))
-        
+
         if affected > 0:
             self.assigned_to = reviewer_id
             self.status = ReviewStatus.IN_REVIEW
@@ -266,7 +266,7 @@ class ReviewRequest:
         """Delete review request and all associated comments."""
         if not self.id:
             return False
-            
+
         db = get_db()
         query = """
             DELETE FROM code_editor_project.review_requests
@@ -304,12 +304,12 @@ class ReviewComment:
         """Create a new review comment."""
         db = get_db()
         query = """
-            INSERT INTO code_editor_project.review_comments 
+            INSERT INTO code_editor_project.review_comments
             (review_request_id, commenter_id, workspace_item_id, line_number, comment_text, comment_type)
             VALUES (%s, %s, %s, %s, %s, %s)
         """
         comment_id = db.execute_insert(
-            query, (review_request_id, commenter_id, workspace_item_id, line_number, comment_text, comment_type.value)
+            query, (review_request_id, commenter_id, workspace_item_id, line_number, comment_text, comment_type.value),
         )
         return cls.get_by_id(comment_id)
 
@@ -340,7 +340,7 @@ class ReviewComment:
         return None
 
     @classmethod
-    def get_by_review_request(cls, review_request_id: int) -> List["ReviewComment"]:
+    def get_by_review_request(cls, review_request_id: int) -> list["ReviewComment"]:
         """Get all comments for a review request."""
         db = get_db()
         query = """
@@ -380,7 +380,7 @@ class ReviewComment:
             WHERE id = %s
         """
         affected = db.execute_update(query, (resolved, self.id))
-        
+
         if affected > 0:
             self.is_resolved = resolved
             return True
@@ -390,7 +390,7 @@ class ReviewComment:
         """Delete review comment."""
         if not self.id:
             return False
-            
+
         db = get_db()
         query = """
             DELETE FROM code_editor_project.review_comments
@@ -413,11 +413,11 @@ class ReviewHistory:
     created_at: Optional[datetime] = None
 
     @classmethod
-    def get_by_review_request(cls, review_request_id: int) -> List["ReviewHistory"]:
+    def get_by_review_request(cls, review_request_id: int) -> list["ReviewHistory"]:
         """Get history for a review request."""
         db = get_db()
         query = """
-            SELECT id, review_request_id, changed_by, old_status, new_status, 
+            SELECT id, review_request_id, changed_by, old_status, new_status,
                    change_description, created_at
             FROM code_editor_project.review_history
             WHERE review_request_id = %s

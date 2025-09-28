@@ -18,7 +18,7 @@ export function CodeEditor(): JSX.Element {
     // Add keyboard shortcuts
     editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       // Trigger code execution (we'll implement this later)
-      console.log('Execute code shortcut triggered');
+      // Execute code shortcut triggered
     });
     
     editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {

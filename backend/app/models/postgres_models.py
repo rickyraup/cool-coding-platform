@@ -15,6 +15,8 @@ class User:
     username: str = ""
     email: str = ""
     password_hash: str = ""
+    is_reviewer: bool = False
+    reviewer_level: int = 0  # 0=regular, 1=junior reviewer, 2=senior reviewer
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -34,7 +36,7 @@ class User:
         """Get user by ID."""
         db = get_db()
         query = """
-            SELECT id, username, email, password_hash, created_at, updated_at
+            SELECT id, username, email, password_hash, is_reviewer, reviewer_level, created_at, updated_at
             FROM code_editor_project.users
             WHERE id = %s
         """
@@ -45,6 +47,8 @@ class User:
                 username=result["username"],
                 email=result["email"],
                 password_hash=result["password_hash"],
+                is_reviewer=result.get("is_reviewer", False),
+                reviewer_level=result.get("reviewer_level", 0),
                 created_at=result["created_at"],
                 updated_at=result["updated_at"],
             )
@@ -55,7 +59,7 @@ class User:
         """Get user by username."""
         db = get_db()
         query = """
-            SELECT id, username, email, password_hash, created_at, updated_at
+            SELECT id, username, email, password_hash, is_reviewer, reviewer_level, created_at, updated_at
             FROM code_editor_project.users
             WHERE username = %s
         """
@@ -66,6 +70,8 @@ class User:
                 username=result["username"],
                 email=result["email"],
                 password_hash=result["password_hash"],
+                is_reviewer=result.get("is_reviewer", False),
+                reviewer_level=result.get("reviewer_level", 0),
                 created_at=result["created_at"],
                 updated_at=result["updated_at"],
             )
@@ -76,7 +82,7 @@ class User:
         """Get user by email."""
         db = get_db()
         query = """
-            SELECT id, username, email, password_hash, created_at, updated_at
+            SELECT id, username, email, password_hash, is_reviewer, reviewer_level, created_at, updated_at
             FROM code_editor_project.users
             WHERE email = %s
         """
@@ -87,10 +93,80 @@ class User:
                 username=result["username"],
                 email=result["email"],
                 password_hash=result["password_hash"],
+                is_reviewer=result.get("is_reviewer", False),
+                reviewer_level=result.get("reviewer_level", 0),
                 created_at=result["created_at"],
                 updated_at=result["updated_at"],
             )
         return None
+
+    @classmethod
+    def get_all_users(cls) -> list["User"]:
+        """Get all users."""
+        db = get_db()
+        query = """
+            SELECT id, username, email, password_hash, is_reviewer, reviewer_level, created_at, updated_at
+            FROM code_editor_project.users
+            ORDER BY created_at DESC
+        """
+        results = db.execute_query(query)
+        return [
+            cls(
+                id=row["id"],
+                username=row["username"],
+                email=row["email"],
+                password_hash=row["password_hash"],
+                is_reviewer=row.get("is_reviewer", False),
+                reviewer_level=row.get("reviewer_level", 0),
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+            for row in results
+        ]
+
+    @classmethod
+    def get_reviewers(cls) -> list["User"]:
+        """Get all users who are reviewers."""
+        db = get_db()
+        query = """
+            SELECT id, username, email, password_hash, is_reviewer, reviewer_level, created_at, updated_at
+            FROM code_editor_project.users
+            WHERE is_reviewer = TRUE
+            ORDER BY reviewer_level DESC, username
+        """
+        results = db.execute_query(query)
+        return [
+            cls(
+                id=row["id"],
+                username=row["username"],
+                email=row["email"],
+                password_hash=row["password_hash"],
+                is_reviewer=row["is_reviewer"],
+                reviewer_level=row["reviewer_level"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+            for row in results
+        ]
+
+    def update_reviewer_status(self, is_reviewer: bool, reviewer_level: int = 1) -> bool:
+        """Update user's reviewer status."""
+        if not self.id:
+            return False
+
+        db = get_db()
+        query = """
+            UPDATE code_editor_project.users
+            SET is_reviewer = %s, reviewer_level = %s, updated_at = NOW()
+            WHERE id = %s
+        """
+        affected = db.execute_update(query, (is_reviewer, reviewer_level, self.id))
+
+        if affected > 0:
+            self.is_reviewer = is_reviewer
+            self.reviewer_level = reviewer_level
+            return True
+        return False
 
 
 @dataclass
@@ -209,16 +285,16 @@ class CodeSession:
             return True
         return False
 
-    def update(self, name: Optional[str] = None, code: Optional[str] = None, 
+    def update(self, name: Optional[str] = None, code: Optional[str] = None,
                language: Optional[str] = None, is_active: Optional[bool] = None) -> bool:
         """Update session fields."""
         if not self.id:
             return False
-        
+
         # Build dynamic update query
         updates = []
         params = []
-        
+
         if name is not None:
             updates.append("name = %s")
             params.append(name)
@@ -231,13 +307,13 @@ class CodeSession:
         if is_active is not None:
             updates.append("is_active = %s")
             params.append(is_active)
-        
+
         if not updates:
             return True  # Nothing to update
-        
+
         updates.append("updated_at = NOW()")
         params.append(self.id)
-        
+
         db = get_db()
         query = f"""
             UPDATE code_editor_project.sessions
@@ -245,7 +321,7 @@ class CodeSession:
             WHERE id = %s
         """
         affected = db.execute_update(query, tuple(params))
-        
+
         if affected > 0:
             # Update local fields
             if name is not None:
@@ -304,8 +380,9 @@ class WorkspaceItem:
         # Get the session to retrieve its UUID
         session = CodeSession.get_by_id(session_id)
         if not session:
-            raise ValueError(f"Session {session_id} not found")
-        
+            msg = f"Session {session_id} not found"
+            raise ValueError(msg)
+
         # Calculate full_path
         full_path = name
         if parent_id:
@@ -459,7 +536,7 @@ class WorkspaceItem:
         # Use the stored full_path if available
         if self.full_path:
             return self.full_path
-        
+
         # Fallback to calculated path for backwards compatibility
         if not self.parent_id:
             return self.name

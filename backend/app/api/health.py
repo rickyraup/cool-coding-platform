@@ -1,5 +1,7 @@
+"""Health check API endpoints."""
+
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import psutil
@@ -14,7 +16,7 @@ async def health_check() -> dict[str, Any]:
     """Basic health check endpoint."""
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime": psutil.boot_time(),
         "environment": os.getenv("ENVIRONMENT", "development"),
         "version": "1.0.0",
@@ -30,7 +32,7 @@ async def detailed_health_check() -> dict[str, Any]:
 
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime": psutil.boot_time(),
         "environment": os.getenv("ENVIRONMENT", "development"),
         "version": "1.0.0",

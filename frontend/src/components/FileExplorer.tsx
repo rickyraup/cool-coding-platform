@@ -93,7 +93,7 @@ export function FileExplorer(): JSX.Element {
     }
   }, [state.files, currentDirectory]);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const _handleFileClick = useCallback((file: FileItem) => {
     if (file.type === 'directory') {
       // Toggle directory expansion
@@ -130,7 +130,7 @@ export function FileExplorer(): JSX.Element {
     }
   }, [loadDirectoryContents, performFileOperation, setCurrentFile]);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const _handleDirectoryDoubleClick = useCallback((file: FileItem) => {
     if (file.type === 'directory') {
       // Navigate into directory on double-click
@@ -172,7 +172,7 @@ export function FileExplorer(): JSX.Element {
     setNewItemName('');
   }, [newItemName, showCreateDialog, currentDirectory, performFileOperation]);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const _handleDeleteItem = useCallback((file: FileItem, event: React.MouseEvent) => {
     event.stopPropagation();
     
@@ -186,7 +186,7 @@ export function FileExplorer(): JSX.Element {
     }
   }, [performFileOperation, state.currentFile, setCurrentFile]);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const _handleExecuteFile = useCallback((file: FileItem, event: React.MouseEvent) => {
     event.stopPropagation();
     
