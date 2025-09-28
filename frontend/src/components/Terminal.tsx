@@ -4,7 +4,7 @@ import type { JSX } from 'react';
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 
 export function Terminal(): JSX.Element {
   const { state } = useApp();
