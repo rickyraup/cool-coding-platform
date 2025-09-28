@@ -37,12 +37,14 @@ interface AppState {
   isConnected: boolean;
   isLoading: boolean;
   error: string | null;
-  isAutosaveEnabled: boolean;
   hasUnsavedChanges: boolean;
   lastSavedCode: string;
+  // File content cache for multiple files
+  fileContents: Record<string, string>;
+  fileSavedStates: Record<string, string>;
 }
 
-type AppAction = 
+type AppAction =
   | { type: 'SET_SESSION'; payload: CodeSession | null }
   | { type: 'UPDATE_CODE'; payload: string }
   | { type: 'ADD_TERMINAL_LINE'; payload: TerminalLine }
@@ -52,9 +54,11 @@ type AppAction =
   | { type: 'SET_CONNECTED'; payload: boolean }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
-  | { type: 'SET_AUTOSAVE_ENABLED'; payload: boolean }
   | { type: 'MARK_SAVED'; payload: string }
-  | { type: 'CLEAR_UNSAVED_CHANGES' };
+  | { type: 'CLEAR_UNSAVED_CHANGES' }
+  | { type: 'SET_FILE_CONTENT'; payload: { filePath: string; content: string } }
+  | { type: 'CACHE_CURRENT_FILE_CONTENT' }
+  | { type: 'LOAD_FILE_CONTENT'; payload: string };
 
 const initialState: AppState = {
   currentSession: null,
@@ -65,9 +69,10 @@ const initialState: AppState = {
   isConnected: false,
   isLoading: false,
   error: null,
-  isAutosaveEnabled: true,
   hasUnsavedChanges: false,
   lastSavedCode: '',
+  fileContents: {},
+  fileSavedStates: {},
 };
 
 const appReducer = (state: AppState, action: AppAction): AppState => {
@@ -109,9 +114,24 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     
     case 'SET_CURRENT_FILE':
+      // Cache current file content before switching if there was a previous file
+      const updatedFileContents = state.currentFile && state.currentFile !== action.payload
+        ? {
+            ...state.fileContents,
+            [state.currentFile]: state.code,
+          }
+        : state.fileContents;
+
+      // Load content for new file if available in cache
+      const newFileContent = updatedFileContents[action.payload || ''] || '';
+
       return {
         ...state,
+        fileContents: updatedFileContents,
         currentFile: action.payload,
+        code: newFileContent,
+        hasUnsavedChanges: newFileContent !== (state.fileSavedStates[action.payload || ''] || ''),
+        lastSavedCode: state.fileSavedStates[action.payload || ''] || '',
       };
     
     case 'SET_CONNECTED':
@@ -131,13 +151,7 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         ...state,
         error: action.payload,
       };
-    
-    case 'SET_AUTOSAVE_ENABLED':
-      return {
-        ...state,
-        isAutosaveEnabled: action.payload,
-      };
-    
+
     case 'MARK_SAVED':
       return {
         ...state,
@@ -150,7 +164,46 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         ...state,
         hasUnsavedChanges: false,
       };
-    
+
+    case 'SET_FILE_CONTENT':
+      const { filePath, content } = action.payload;
+      return {
+        ...state,
+        fileContents: {
+          ...state.fileContents,
+          [filePath]: content,
+        },
+        fileSavedStates: {
+          ...state.fileSavedStates,
+          [filePath]: content,
+        },
+        // Update current code if this is the current file
+        ...(state.currentFile === filePath && {
+          code: content,
+          hasUnsavedChanges: false,
+          lastSavedCode: content,
+        }),
+      };
+
+    case 'CACHE_CURRENT_FILE_CONTENT':
+      if (!state.currentFile) return state;
+      return {
+        ...state,
+        fileContents: {
+          ...state.fileContents,
+          [state.currentFile]: state.code,
+        },
+      };
+
+    case 'LOAD_FILE_CONTENT':
+      const fileContent = action.payload;
+      return {
+        ...state,
+        code: fileContent,
+        hasUnsavedChanges: fileContent !== (state.fileSavedStates[state.currentFile || ''] || ''),
+        lastSavedCode: state.fileSavedStates[state.currentFile || ''] || '',
+      };
+
     default:
       return state;
   }
@@ -169,9 +222,12 @@ interface AppContextType {
   setConnected: (connected: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
-  setAutosaveEnabled: (enabled: boolean) => void;
   markSaved: (code: string) => void;
   clearUnsavedChanges: () => void;
+  // File content management
+  setFileContent: (filePath: string, content: string) => void;
+  cacheCurrentFileContent: () => void;
+  loadFileContent: (content: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -231,17 +287,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setError: useCallback((error: string | null) => {
       dispatch({ type: 'SET_ERROR', payload: error });
     }, []),
-    
-    setAutosaveEnabled: useCallback((enabled: boolean) => {
-      dispatch({ type: 'SET_AUTOSAVE_ENABLED', payload: enabled });
-    }, []),
-    
+
     markSaved: useCallback((code: string) => {
       dispatch({ type: 'MARK_SAVED', payload: code });
     }, []),
     
     clearUnsavedChanges: useCallback(() => {
       dispatch({ type: 'CLEAR_UNSAVED_CHANGES' });
+    }, []),
+
+    setFileContent: useCallback((filePath: string, content: string) => {
+      dispatch({ type: 'SET_FILE_CONTENT', payload: { filePath, content } });
+    }, []),
+
+    cacheCurrentFileContent: useCallback(() => {
+      dispatch({ type: 'CACHE_CURRENT_FILE_CONTENT' });
+    }, []),
+
+    loadFileContent: useCallback((content: string) => {
+      dispatch({ type: 'LOAD_FILE_CONTENT', payload: content });
     }, []),
   };
 

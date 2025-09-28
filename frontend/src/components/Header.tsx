@@ -46,16 +46,15 @@ export function Header(): JSX.Element {
       const sessionData = {
         id: response.data.id.toString(), // Convert to string for compatibility
         userId: response.data.user_id.toString(),
-        code: '# Write your Python code here\nprint("Hello, World!")',
+        code: '', // Empty code - let workspace handle file loading
         language: 'python' as const,
         createdAt: new Date(response.data.created_at),
         updatedAt: new Date(response.data.updated_at),
         isActive: true,
       };
-      
-      // Set the new session and update code
+
+      // Set the new session - don't set code here, let workspace page handle it
       setSession(sessionData);
-      updateCode(sessionData.code);
       
       console.log('New PostgreSQL session created:', sessionData.id);
       
@@ -100,7 +99,7 @@ export function Header(): JSX.Element {
     clearTerminal();
     setFiles([]);
     setCurrentFile(null);
-    updateCode('# Write your Python code here\nprint("Hello, World!")');
+    updateCode(''); // Clear code on logout
   }, [logout, setSession, clearTerminal, setFiles, setCurrentFile, updateCode]);
 
   const handleSubmitReview = useCallback(async (reviewData: { title: string; description?: string; priority: string }): Promise<void> => {

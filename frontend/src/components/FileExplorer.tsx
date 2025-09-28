@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import type { FileItem } from '../context/AppContext';
 import { useApp } from '../context/AppContext';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWorkspaceApi } from '../hooks/useWorkspaceApi';
 
 export function FileExplorer(): JSX.Element {
-  const { state, setCurrentFile } = useApp();
-  const { performFileOperation, sendTerminalCommand } = useWebSocket();
+  const { state, setCurrentFile, setFiles } = useApp();
+  const { manualSave, loadFileContent, refreshFiles, sessionUuid } = useWorkspaceApi();
   const [loading, setLoading] = useState(false);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [showCreateDialog, setShowCreateDialog] = useState<'file' | 'folder' | null>(null);
@@ -20,66 +20,49 @@ export function FileExplorer(): JSX.Element {
   const lastDirectoryListTime = useRef<{[key: string]: number}>({});
 
   const loadFiles = useCallback(async (path: string = '', showErrors: boolean = false) => {
-    if (!state.currentSession) {
+    if (!sessionUuid) {
       if (showErrors) {
-        console.error('No current session available');
+        console.error('No session UUID available');
       }
       return;
     }
-    
-    if (!state.isConnected) {
-      if (showErrors) {
-        console.error('WebSocket not connected');
-      }
-      return;
-    }
-    
+
     // Debounce directory listing requests (1 second)
     const now = Date.now();
     const lastList = lastDirectoryListTime.current[path] || 0;
     const timeSinceLastList = now - lastList;
     const DEBOUNCE_DELAY = 1000; // 1 second
-    
+
     if (timeSinceLastList < DEBOUNCE_DELAY) {
       console.log('🚫 [FileExplorer] Debouncing directory list request for:', path);
       return;
     }
-    
+
     lastDirectoryListTime.current[path] = now;
     setLoading(true);
     try {
-      console.log('🔄 [FileExplorer] Loading files for path:', path);
-      // Use WebSocket file system operation to list files
-      const success = performFileOperation('list', path);
-      if (!success) {
-        if (showErrors) {
-          console.error('Failed to send file list request - WebSocket not ready');
-        }
-        // Don't keep loading state if the request failed
-        setLoading(false);
+      console.log('🔄 [FileExplorer] Loading files via new API');
+      const success = await refreshFiles();
+      if (!success && showErrors) {
+        console.error('Failed to refresh files');
       }
-      // Note: The actual file list will be received via WebSocket message
-      // and handled in the WebSocket message handler. Loading state will be cleared there.
     } catch (error) {
       if (showErrors) {
         console.error('Error loading files:', error);
       }
+    } finally {
       setLoading(false);
     }
-  }, [state.currentSession, state.isConnected, performFileOperation]);
+  }, [sessionUuid, refreshFiles]);
 
   const loadDirectoryContents = useCallback(async (path: string) => {
-    if (!state.currentSession) return;
-    
+    // For now, since we only support flat file structure, just refresh the main files
     try {
-      const success = performFileOperation('list', path);
-      if (!success) {
-        console.error('Failed to load directory contents');
-      }
+      await refreshFiles();
     } catch (error) {
       console.error('Error loading directory contents:', error);
     }
-  }, [state.currentSession, performFileOperation]);
+  }, [refreshFiles]);
 
   // Update allFiles when state.files changes
   useEffect(() => {
@@ -109,26 +92,14 @@ export function FileExplorer(): JSX.Element {
         return newSet;
       });
     } else {
-      // Load file content into editor and mark as current
+      // Always fetch fresh content from backend when switching files
+      console.log('🔄 [FileExplorer] Switching to file and fetching fresh content:', file.path);
       setCurrentFile(file.path);
-      
-      // Check if we have cached content and it's recent (within 5 seconds)
-      const now = Date.now();
-      const lastRead = lastFileReadTime.current[file.path] || 0;
-      const cacheAge = now - lastRead;
-      const CACHE_DURATION = 5000; // 5 seconds
-      
-      if (fileContentCache.current[file.path] && cacheAge < CACHE_DURATION) {
-        console.log('🚀 [FileExplorer] Using cached content for:', file.path);
-        // Use cached content without making WebSocket request
-        return;
-      }
-      
-      console.log('🔄 [FileExplorer] Reading file content for:', file.path);
-      lastFileReadTime.current[file.path] = now;
-      performFileOperation('read', file.path);
+
+      // Load file content using new API
+      loadFileContent(file.name);
     }
-  }, [loadDirectoryContents, performFileOperation, setCurrentFile]);
+  }, [loadDirectoryContents, setCurrentFile, loadFileContent]);
 
    
   const _handleDirectoryDoubleClick = useCallback((file: FileItem) => {
@@ -154,37 +125,62 @@ export function FileExplorer(): JSX.Element {
     loadFiles('', true); // Show errors for user-initiated actions
   }, [loadFiles]);
 
-  const handleCreateItem = useCallback(() => {
+  const handleCreateItem = useCallback(async () => {
     if (!newItemName.trim()) return;
 
-    const action = showCreateDialog === 'file' ? 'create_file' : 'create_directory';
-    let fileName = showCreateDialog === 'file' && !newItemName.includes('.') ? 
-      `${newItemName}.py` : newItemName;
+    try {
+      if (showCreateDialog === 'file') {
+        // Create file
+        let fileName = !newItemName.includes('.') ? `${newItemName}.py` : newItemName;
 
-    // If we're in a subdirectory, prepend the current directory path
-    if (currentDirectory) {
-      fileName = `${currentDirectory}/${fileName}`;
+        // If we're in a subdirectory, prepend the current directory path
+        if (currentDirectory) {
+          fileName = `${currentDirectory}/${fileName}`;
+        }
+
+        console.log('Creating new file:', fileName);
+
+        // Create file with empty content using the manualSave function
+        const success = await manualSave('', fileName);
+
+        if (success) {
+          console.log('File created successfully:', fileName);
+          // Refresh the file list to show the new file
+          await refreshFiles();
+
+          // Automatically select the new file
+          setCurrentFile(fileName);
+
+          console.log('File explorer refreshed after creating:', fileName);
+        } else {
+          console.error('Failed to create file:', fileName);
+        }
+      } else {
+        // Directory creation not implemented yet
+        console.log('Directory creation not implemented yet');
+      }
+    } catch (error) {
+      console.error('Error creating file:', error);
+    } finally {
+      setShowCreateDialog(null);
+      setNewItemName('');
     }
-
-    performFileOperation(action, fileName, showCreateDialog === 'file' ? '# New file\n' : '');
-    
-    setShowCreateDialog(null);
-    setNewItemName('');
-  }, [newItemName, showCreateDialog, currentDirectory, performFileOperation]);
+  }, [newItemName, showCreateDialog, currentDirectory, manualSave, refreshFiles, setCurrentFile]);
 
    
   const _handleDeleteItem = useCallback((file: FileItem, event: React.MouseEvent) => {
     event.stopPropagation();
     
     if (confirm(`Are you sure you want to delete "${file.name}"?`)) {
-      performFileOperation('delete', file.path);
+      // Delete functionality not implemented in new API yet
+      console.log('Delete file functionality not implemented in new API yet');
       
       // If deleting current file, clear it
       if (state.currentFile === file.path) {
         setCurrentFile(null);
       }
     }
-  }, [performFileOperation, state.currentFile, setCurrentFile]);
+  }, [state.currentFile, setCurrentFile]);
 
    
   const _handleExecuteFile = useCallback((file: FileItem, event: React.MouseEvent) => {
@@ -194,9 +190,10 @@ export function FileExplorer(): JSX.Element {
       // Execute Python file via terminal using full path
       const command = `python "${file.path}"`;
       console.log('🚀 Executing file via handleExecuteFile:', command);
-      sendTerminalCommand(command);
+      // Terminal command functionality will be implemented later
+      console.log('Terminal command functionality not implemented yet:', command);
     }
-  }, [sendTerminalCommand]);
+  }, []);
 
 
   // Reset file loading flag when session changes
@@ -204,14 +201,14 @@ export function FileExplorer(): JSX.Element {
     hasLoadedInitialFiles.current = false;
   }, [state.currentSession?.id]);
 
-  // Load real files from backend when connected
+  // Load real files from backend when session is available
   useEffect(() => {
-    if (state.isConnected && state.currentSession && !hasLoadedInitialFiles.current) {
+    if (sessionUuid && state.currentSession && !hasLoadedInitialFiles.current) {
       hasLoadedInitialFiles.current = true;
       console.log('🔄 [FileExplorer] Loading initial files for session:', state.currentSession.id);
       loadFiles('');
     }
-  }, [state.isConnected, state.currentSession, loadFiles]);
+  }, [sessionUuid, state.currentSession, loadFiles]);
 
   const getFileIconComponent = useCallback((file: FileItem): JSX.Element => {
     if (file.type === 'directory') {
@@ -281,8 +278,9 @@ export function FileExplorer(): JSX.Element {
                 return newSet;
               });
             } else {
+              console.log('🔄 [FileExplorer] Clicking file and fetching fresh content:', file.path);
               setCurrentFile(file.path);
-              performFileOperation('read', file.path);
+              loadFileContent(file.name);
             }
           }}
           onDoubleClick={() => {
@@ -337,7 +335,8 @@ export function FileExplorer(): JSX.Element {
                     // Use the full path for execution
                     const command = `python "${file.path}"`;
                     console.log('🚀 Executing file:', command);
-                    sendTerminalCommand(command);
+                    // Terminal command functionality will be implemented later
+      console.log('Terminal command functionality not implemented yet:', command);
                   }
                 }}
                 className="p-1 text-green-400 hover:text-green-300 hover:bg-green-400/20 rounded transition-colors"
@@ -352,7 +351,8 @@ export function FileExplorer(): JSX.Element {
               onClick={(e) => {
                 e.stopPropagation();
                 if (confirm(`Are you sure you want to delete "${file.name}"?`)) {
-                  performFileOperation('delete', file.path);
+                  // Delete functionality not implemented in new API yet
+      console.log('Delete file functionality not implemented in new API yet');
                   if (state.currentFile === file.path) {
                     setCurrentFile(null);
                   }
@@ -396,17 +396,17 @@ export function FileExplorer(): JSX.Element {
                 hasLoadedInitialFiles.current = false; // Reset the flag to force reload
                 loadFiles(currentDirectory, true); // Show errors for user-initiated refresh
               }}
-              disabled={loading || !state.isConnected}
+              disabled={loading || !sessionUuid}
               className={`p-1.5 rounded-md transition-all duration-200 ${
-                loading || !state.isConnected
+                loading || !sessionUuid
                   ? 'text-gray-600 cursor-not-allowed opacity-50'
                   : 'text-gray-400 hover:text-gray-100 hover:bg-gray-700/60'
               }`}
               title={
-                !state.isConnected 
-                  ? 'Cannot refresh - WebSocket disconnected' 
-                  : loading 
-                    ? 'Loading...' 
+                !sessionUuid
+                  ? 'Cannot refresh - No session available'
+                  : loading
+                    ? 'Loading...'
                     : 'Refresh files'
               }
             >

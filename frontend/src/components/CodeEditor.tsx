@@ -4,13 +4,12 @@ import { useCallback, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import { useApp } from '../context/AppContext';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWorkspaceApi } from '../hooks/useWorkspaceApi';
 
 export function CodeEditor(): JSX.Element {
-  const { state, updateCode, setAutosaveEnabled, markSaved } = useApp();
-  const { saveCurrentFile, manualSave } = useWebSocket();
+  const { state, updateCode, markSaved, cacheCurrentFileContent } = useApp();
+  const { manualSave } = useWorkspaceApi();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleEditorDidMount = useCallback((editorInstance: editor.IStandaloneCodeEditor): void => {
     editorRef.current = editorInstance;
@@ -32,31 +31,10 @@ export function CodeEditor(): JSX.Element {
   const handleEditorChange = useCallback((value: string | undefined): void => {
     const newCode = value ?? '';
     updateCode(newCode);
-    
-    // Only auto-save if autosave is enabled
-    if (state.isAutosaveEnabled) {
-      // Auto-save with debounce (save 2 seconds after user stops typing)
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-      
-      autoSaveTimeoutRef.current = setTimeout(() => {
-        if (newCode.trim() && state.currentSession) {
-          saveCurrentFile(newCode);
-          markSaved(newCode);
-        }
-      }, 2000);
-    }
-  }, [updateCode, saveCurrentFile, state.currentSession, state.isAutosaveEnabled, markSaved]);
+    // Cache the content locally for unsaved changes tracking
+    cacheCurrentFileContent();
+  }, [updateCode, cacheCurrentFileContent]);
 
-  // Cleanup auto-save timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     // Configure Monaco editor options
@@ -204,20 +182,7 @@ export function CodeEditor(): JSX.Element {
             </>
           )}
           
-          {/* Autosave Toggle - moved to left side with file info */}
-          <div className="flex items-center space-x-1">
-            <input
-              type="checkbox"
-              checked={state.isAutosaveEnabled}
-              onChange={(e) => setAutosaveEnabled(e.target.checked)}
-              className="w-3 h-3 rounded"
-              id="autosave-toggle"
-            />
-            <label htmlFor="autosave-toggle" className="text-gray-400 text-xs cursor-pointer">
-              Autosave
-            </label>
-          </div>
-          
+          <span className="text-gray-400 text-xs">Press Cmd+S to save</span>
           <span>•</span>
           <span>Python</span>
           <span>•</span>

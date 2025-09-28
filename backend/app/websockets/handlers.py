@@ -400,8 +400,54 @@ async def handle_file_system(
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
-            # Only add terminal message for manual saves
+            # For manual saves, also persist to database using the same approach as REST API
             if is_manual_save:
+                try:
+                    # Extract workspace ID and save to database
+                    workspace_id = container_manager._extract_workspace_id(session_id)
+                    if workspace_id:
+                        from app.models.postgres_models import CodeSession, WorkspaceItem
+
+                        # Try to get session by UUID
+                        try:
+                            session = CodeSession.get_by_uuid(workspace_id)
+                            if session and session.id:
+                                # Save/update the specific file to database (same approach as REST API)
+                                # Get existing workspace items
+                                workspace_items = WorkspaceItem.get_all_by_session(session.id)
+                                file_item = None
+
+                                # Look for existing file
+                                for item in workspace_items:
+                                    if item.name == path and item.type == "file":
+                                        file_item = item
+                                        break
+
+                                if file_item:
+                                    # Update existing file
+                                    success = file_item.update_content(content)
+                                    if success:
+                                        print(f"✅ Updated file {path} in database for session {workspace_id}")
+                                    else:
+                                        print(f"❌ Failed to update file {path} in database for session {workspace_id}")
+                                else:
+                                    # Create new file
+                                    file_item = WorkspaceItem.create(
+                                        session_id=session.id,
+                                        parent_id=None,  # Root level
+                                        name=path,
+                                        item_type="file",
+                                        content=content
+                                    )
+                                    if file_item:
+                                        print(f"✅ Created file {path} in database for session {workspace_id}")
+                                    else:
+                                        print(f"❌ Failed to create file {path} in database for session {workspace_id}")
+                        except Exception as db_error:
+                            print(f"❌ Database save error for session {session_id}: {db_error}")
+                except Exception as persist_error:
+                    print(f"❌ Persistence error for manual save: {persist_error}")
+
                 response["message"] = f"File {path} saved successfully"
 
             return response

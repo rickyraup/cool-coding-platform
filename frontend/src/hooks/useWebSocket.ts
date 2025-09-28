@@ -69,9 +69,9 @@ class WebSocketManager {
 
     try {
       // Add user authentication to WebSocket URL
-      const wsUrl = userId 
-        ? `ws://localhost:8002/ws?user_id=${encodeURIComponent(userId)}`
-        : 'ws://localhost:8002/ws';
+      const wsUrl = userId
+        ? `ws://localhost:8001/ws?user_id=${encodeURIComponent(userId)}`
+        : 'ws://localhost:8001/ws';
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
@@ -173,7 +173,7 @@ interface WebSocketMessage {
 }
 
 export function useWebSocket() {
-  const { state, setConnected, addTerminalLine, setError, setFiles, updateCode, markSaved, clearTerminal, setCurrentFile } = useApp();
+  const { state, setConnected, addTerminalLine, setError, setFiles, updateCode, markSaved, clearTerminal, setCurrentFile, setFileContent, cacheCurrentFileContent } = useApp();
   const pathname = usePathname();
   
   // Import useUserId hook to get current user ID
@@ -239,8 +239,12 @@ export function useWebSocket() {
           break;
 
         case 'file_system':
-          if (message.action === 'read' && message.content) {
-            updateCode(message.content);
+          if (message.action === 'read' && message.content && message.path) {
+            // Cache the file content and update current code if this is the current file
+            setFileContent(message.path, message.content);
+            if (state.currentFile === message.path) {
+              updateCode(message.content);
+            }
           } else if (message.action === 'list' && message.files) {
             setFiles(message.files);
           } else if (message.action === 'file_created' && message.files) {
@@ -252,9 +256,9 @@ export function useWebSocket() {
           } else if (message.action === 'deleted' && message.files) {
             setFiles(message.files);
             addTerminalLine(`Deleted: ${message.path}`, 'output');
-          } else if (message.action === 'write' && message.content !== undefined) {
-            // Mark the content as saved when write operation succeeds
-            markSaved(message.content);
+          } else if (message.action === 'write' && message.content !== undefined && message.path) {
+            // Update file content cache and mark as saved
+            setFileContent(message.path, message.content);
             // Only show save message if backend provided one (for manual saves)
             if (message.message) {
               addTerminalLine(message.message, 'output');
@@ -367,7 +371,10 @@ export function useWebSocket() {
       
       if (shouldClear) {
         workspaceEntryRef.current = { pathname, timestamp: now };
-        
+
+        // Immediately clear files to prevent showing stale file list from previous workspace
+        setFiles([]);
+
         const refreshTimeout = setTimeout(() => {
           clearTerminal();
           addTerminalLine('CLEAR_TERMINAL', 'output');
@@ -378,7 +385,7 @@ export function useWebSocket() {
       }
     }
     return undefined;
-  }, [pathname, state.currentSession?.id, addTerminalLine, performFileOperation, clearTerminal]);
+  }, [pathname, state.currentSession?.id, addTerminalLine, performFileOperation, clearTerminal, setFiles]);
   
   // Auto-load main.py when files are loaded and main.py exists
   useEffect(() => {

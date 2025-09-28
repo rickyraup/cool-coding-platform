@@ -159,14 +159,58 @@ class ContainerSessionManager:
         # Enforce per-user limits
         self._enforce_user_limits(session_id)
 
-        # Create session working directory
-        working_dir = os.path.join(self.sessions_dir, session_id)
+        # Create session working directory - use consistent workspace directory for same workspace UUID
+        workspace_id = self._extract_workspace_id(session_id)
+        if workspace_id:
+            # Use consistent workspace directory for this workspace UUID
+            working_dir = os.path.join(self.sessions_dir, f"workspace_{workspace_id}")
+        else:
+            # Fallback to unique session directory for sessions without workspace UUID
+            working_dir = os.path.join(self.sessions_dir, session_id)
         os.makedirs(working_dir, exist_ok=True)
 
-        # Create a sample Python file
-        sample_file = os.path.join(working_dir, "main.py")
-        with open(sample_file, "w") as f:
-            f.write("# Welcome to your coding session!\nprint('Hello, World!')\n")
+        # Check if workspace already exists in database before creating defaults
+        should_create_defaults = True
+
+        if workspace_id:
+            try:
+                from app.services.workspace_loader import workspace_loader
+                from app.models.postgres_models import WorkspaceItem, CodeSession
+
+                # Try to convert workspace_id to int (for database lookup)
+                try:
+                    workspace_int_id = int(workspace_id)
+                    # Check if workspace items already exist
+                    existing_items = WorkspaceItem.get_all_by_session(workspace_int_id)
+                    if existing_items:
+                        should_create_defaults = False
+                        logger.info(f"Found {len(existing_items)} existing workspace items for session {workspace_id}, skipping default file creation")
+                except ValueError:
+                    # workspace_id is not numeric (UUID-based), check if session exists in database
+                    logger.debug(f"Workspace ID {workspace_id} is not numeric, checking if UUID-based session exists")
+                    try:
+                        session = CodeSession.get_by_uuid(workspace_id)
+                        if session and session.id:
+                            # Check if this session has any workspace items
+                            existing_items = WorkspaceItem.get_all_by_session(session.id)
+                            if existing_items:
+                                should_create_defaults = False
+                                logger.info(f"Found {len(existing_items)} existing workspace items for UUID session {workspace_id}, skipping default file creation")
+                            else:
+                                logger.info(f"UUID session {workspace_id} exists but has no workspace items, will create defaults")
+                        else:
+                            logger.debug(f"UUID session {workspace_id} not found in database, treating as new workspace")
+                    except Exception as uuid_error:
+                        logger.warning(f"Failed to check UUID session {workspace_id}: {uuid_error}")
+            except Exception as e:
+                logger.warning(f"Failed to check existing workspace items for session {session_id}: {e}")
+
+        # Only create a sample Python file if no workspace items exist
+        if should_create_defaults:
+            sample_file = os.path.join(working_dir, "main.py")
+            with open(sample_file, "w") as f:
+                f.write("# Welcome to your coding session!\nprint('Hello, World!')\n")
+            logger.info(f"Created default main.py for new workspace {session_id}")
 
         try:
             # Create Docker container
@@ -213,10 +257,16 @@ class ContainerSessionManager:
                         )
                         logger.info(f"Loaded workspace {workspace_id} for session {session_id}")
                     except ValueError:
-                        # workspace_id is not numeric (UUID-based), try to look up by UUID
-                        logger.debug(f"Workspace ID {workspace_id} is not numeric, trying UUID-based lookup")
-                        # For now, we'll skip UUID-based workspace loading and just log
-                        logger.info(f"Skipping workspace load for UUID-based workspace {workspace_id}")
+                        # workspace_id is not numeric (UUID-based), sync from database
+                        logger.debug(f"Workspace ID {workspace_id} is not numeric, syncing from database")
+                        try:
+                            from app.api.workspace_files import sync_all_files_to_filesystem
+                            if sync_all_files_to_filesystem(workspace_id):
+                                logger.info(f"Synced database files to container for UUID workspace {workspace_id}")
+                            else:
+                                logger.warning(f"No files found to sync for UUID workspace {workspace_id}")
+                        except Exception as sync_error:
+                            logger.warning(f"Failed to sync database files for workspace {workspace_id}: {sync_error}")
             except Exception as workspace_error:
                 logger.warning(
                     f"Failed to load workspace for session {session_id}: {workspace_error}",

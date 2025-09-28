@@ -20,6 +20,7 @@ from app.api import (
     sessions,
     users,
     workspace,
+    workspace_files,
 )
 from app.core.postgres import init_db
 from app.core.session_manager import session_manager
@@ -109,6 +110,7 @@ app.include_router(
     prefix="/api/session_workspace",
     tags=["session_workspace"],
 )
+app.include_router(workspace_files.router, prefix="/api/workspace", tags=["workspace_files"])
 app.include_router(reviews.router, tags=["reviews"])
 
 
@@ -148,27 +150,43 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
 
                 # Check if we already have a unique session ID for this connection
                 current_session = websocket_manager.get_session(websocket)
+                workspace_uuid = data["sessionId"]
 
-                # Look for an existing session for this workspace across all containers
-                existing_session = container_manager.find_session_by_workspace_id(data["sessionId"])
-
-                if existing_session:
-                    # Use existing session for this workspace
-                    websocket_manager.set_session(websocket, existing_session)
-                    data["sessionId"] = existing_session
-                    print(f"🔄 Reusing existing container session for user {user_id}: {data['sessionId']}")
-                elif current_session and current_session != "default":
-                    # Use current WebSocket session if it exists and is not default
-                    data["sessionId"] = current_session
-                    print(f"🔄 Using current WebSocket session for user {user_id}: {data['sessionId']}")
+                # Check if current session matches the workspace - reuse if same workspace
+                if current_session and current_session != "default":
+                    current_workspace = container_manager._extract_workspace_id(current_session)
+                    if current_workspace == workspace_uuid:
+                        # Same workspace, reuse existing session
+                        data["sessionId"] = current_session
+                        print(f"🔄 Reusing existing container session for user {user_id}: {current_session}")
+                    else:
+                        # Different workspace, look for existing session for this workspace
+                        existing_session = container_manager.find_session_by_workspace_id(workspace_uuid)
+                        if existing_session:
+                            # Use existing session for this workspace
+                            websocket_manager.set_session(websocket, existing_session)
+                            data["sessionId"] = existing_session
+                            print(f"🔄 Switching to existing container session for user {user_id}: {existing_session}")
+                        else:
+                            # Create new unique session ID for new workspace
+                            unique_session_id = create_unique_session_id(workspace_uuid, user_id)
+                            websocket_manager.set_session(websocket, unique_session_id)
+                            print(f"🔄 Created unique session ID for user {user_id}: {workspace_uuid} → {unique_session_id}")
+                            data["sessionId"] = unique_session_id
                 else:
-                    # Create new unique session ID and associate it with this WebSocket
-                    unique_session_id = create_unique_session_id(data["sessionId"], user_id)
-                    websocket_manager.set_session(websocket, unique_session_id)
-                    print(f"🔄 Created unique session ID for user {user_id}: {data['sessionId']} → {unique_session_id}")
-
-                    # Update the message data with the unique session ID
-                    data["sessionId"] = unique_session_id
+                    # No current session, look for existing session for this workspace
+                    existing_session = container_manager.find_session_by_workspace_id(workspace_uuid)
+                    if existing_session:
+                        # Use existing session for this workspace
+                        websocket_manager.set_session(websocket, existing_session)
+                        data["sessionId"] = existing_session
+                        print(f"🔄 Using existing container session for user {user_id}: {existing_session}")
+                    else:
+                        # Create new unique session ID and associate it with this WebSocket
+                        unique_session_id = create_unique_session_id(workspace_uuid, user_id)
+                        websocket_manager.set_session(websocket, unique_session_id)
+                        print(f"🔄 Created unique session ID for user {user_id}: {workspace_uuid} → {unique_session_id}")
+                        data["sessionId"] = unique_session_id
 
             # Handle the message
             response = await handle_websocket_message(data, websocket)

@@ -8,6 +8,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useEffect, useState, use } from 'react';
 import { useApp } from '../../../context/AppContext';
 import { apiService } from '../../../services/api';
+import { getWorkspaceFiles, getFileContent } from '../../../services/workspaceApi';
 import { useAuth, useUserId } from '../../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
@@ -50,35 +51,60 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
           throw new Error(`Invalid session UUID: ${params.id}`);
         }
         
-        // Only load session metadata from API - let WebSocket system handle files
+        // Load session metadata from API
         const sessionResponse = await apiService.getSession(sessionUuid, userId);
-        
+
         // Convert API session to AppContext session format
         const session = {
           id: sessionResponse.data.id.toString(),
           userId: sessionResponse.data.user_id.toString(),
-          code: '', // Will be populated by WebSocket system
+          code: '', // Will be loaded from workspace API
           language: 'python' as const,
           createdAt: new Date(sessionResponse.data.created_at),
           updatedAt: new Date(sessionResponse.data.updated_at),
           isActive: true
         };
-        
-        // Set session in context - this will trigger WebSocket connection
+
+        // Set session in context
         setSession(session);
-        
-        // Start container session and load workspace files from database
+
+        // Load workspace files using new clean API
         try {
-          await apiService.startContainerSession(sessionResponse.data.id);
-          console.log('Container session started and workspace loaded');
-        } catch (containerError) {
-          console.warn('Failed to start container session:', containerError);
-          // Continue anyway - container integration is optional
+          console.log('Loading workspace files for UUID:', sessionUuid);
+
+          // Get all files in workspace
+          let files = await getWorkspaceFiles(sessionUuid);
+          console.log('Files loaded:', files);
+
+          // Note: Default file creation is handled by the backend automatically
+          console.log(`Loaded ${files.length} files from workspace`);
+          if (files.length === 0) {
+            console.log('No files found in workspace - backend will handle default creation if needed');
+          }
+
+          // Set files in context
+          setFiles(files);
+
+          // Auto-select main.py if it exists
+          const mainFile = files.find(file => file.name === 'main.py');
+          if (mainFile) {
+            console.log('Auto-selecting main.py');
+            setCurrentFile(mainFile.path);
+
+            // Load main.py content
+            const fileContent = await getFileContent(sessionUuid, mainFile.name);
+            updateCode(fileContent.content);
+            console.log('Main.py content loaded:', fileContent.content.length, 'characters');
+          }
+
+        } catch (fileError) {
+          console.error('Failed to load workspace files:', fileError);
+          setSessionLoadError('Failed to load workspace files');
         }
-        
+
         setFastLoading(true); // Enable fast loading to show UI immediately
-        
-        console.log('Session loaded, WebSocket will handle file loading');
+
+        console.log('Workspace loaded successfully using new API');
         
       } catch (error) {
         console.error('Failed to load session:', error);
