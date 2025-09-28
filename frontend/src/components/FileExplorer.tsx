@@ -4,10 +4,13 @@ import { useCallback, useEffect, useState, useRef } from 'react';
 import type { FileItem } from '../context/AppContext';
 import { useApp } from '../context/AppContext';
 import { useWorkspaceApi } from '../hooks/useWorkspaceApi';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { deleteFile } from '../services/workspaceApi';
 
 export function FileExplorer(): JSX.Element {
   const { state, setCurrentFile, setFiles } = useApp();
   const { manualSave, loadFileContent, refreshFiles, sessionUuid } = useWorkspaceApi();
+  const { sendTerminalCommand } = useWebSocket();
   const [loading, setLoading] = useState(false);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [showCreateDialog, setShowCreateDialog] = useState<'file' | 'folder' | null>(null);
@@ -18,6 +21,31 @@ export function FileExplorer(): JSX.Element {
   const fileContentCache = useRef<{[key: string]: string}>({});
   const lastFileReadTime = useRef<{[key: string]: number}>({});
   const lastDirectoryListTime = useRef<{[key: string]: number}>({});
+
+  // Delete file handler
+  const handleDeleteFile = useCallback(async (filename: string, filePath: string) => {
+    if (!sessionUuid) {
+      console.error('No session UUID available for delete');
+      return;
+    }
+
+    try {
+      console.log('🗑️ Deleting file:', filename);
+      await deleteFile(sessionUuid, filename);
+
+      // Clear current file if it was the deleted file
+      if (state.currentFile === filePath) {
+        setCurrentFile(null);
+      }
+
+      // Refresh file list to reflect changes
+      await refreshFiles();
+      console.log('✅ File deleted successfully:', filename);
+    } catch (error) {
+      console.error('Failed to delete file:', error);
+      // You could show a toast notification here
+    }
+  }, [sessionUuid, state.currentFile, setCurrentFile, refreshFiles]);
 
   const loadFiles = useCallback(async (path: string = '', showErrors: boolean = false) => {
     if (!sessionUuid) {
@@ -335,8 +363,7 @@ export function FileExplorer(): JSX.Element {
                     // Use the full path for execution
                     const command = `python "${file.path}"`;
                     console.log('🚀 Executing file:', command);
-                    // Terminal command functionality will be implemented later
-      console.log('Terminal command functionality not implemented yet:', command);
+                    sendTerminalCommand(command);
                   }
                 }}
                 className="p-1 text-green-400 hover:text-green-300 hover:bg-green-400/20 rounded transition-colors"
@@ -351,11 +378,7 @@ export function FileExplorer(): JSX.Element {
               onClick={(e) => {
                 e.stopPropagation();
                 if (confirm(`Are you sure you want to delete "${file.name}"?`)) {
-                  // Delete functionality not implemented in new API yet
-      console.log('Delete file functionality not implemented in new API yet');
-                  if (state.currentFile === file.path) {
-                    setCurrentFile(null);
-                  }
+                  handleDeleteFile(file.name, file.path);
                 }
               }}
               className="p-1 text-red-400 hover:text-red-300 hover:bg-red-400/20 rounded transition-colors"

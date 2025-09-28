@@ -15,6 +15,7 @@ router = APIRouter()
 def sync_file_to_filesystem(session_uuid: str, filename: str, content: str) -> bool:
     """Sync a file from database to filesystem for Docker container access."""
     print(f"🔄 Starting sync for {filename} in session {session_uuid}")
+    print(f"📝 Content length: {len(content)} characters")
     try:
         # Use ONE consistent directory per workspace UUID
         sessions_dir = "/tmp/coding_platform_sessions"
@@ -29,15 +30,28 @@ def sync_file_to_filesystem(session_uuid: str, filename: str, content: str) -> b
         if file_dir != workspace_dir:
             os.makedirs(file_dir, exist_ok=True)
 
-        # Write content to file
+        # Write content to file with explicit flush and sync
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(content)
+            f.flush()  # Force write to OS buffer
+            os.fsync(f.fileno())  # Force OS to write to disk
 
-        print(f"✅ Synced file to workspace directory: {file_path}")
-        return True
+        # Verify the file was written correctly
+        with open(file_path, 'r', encoding='utf-8') as f:
+            written_content = f.read()
+            if written_content == content:
+                print(f"✅ Synced file to workspace directory: {file_path}")
+                print(f"📄 Verified content: {len(written_content)} characters")
+                return True
+            else:
+                print(f"❌ Content verification failed for {file_path}")
+                print(f"Expected {len(content)} characters, got {len(written_content)}")
+                return False
 
     except Exception as e:
         print(f"❌ Failed to sync file to filesystem: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -56,65 +70,25 @@ def sync_all_files_to_filesystem(session_uuid: str) -> bool:
         sessions_dir = "/tmp/coding_platform_sessions"
         workspace_dir = os.path.join(sessions_dir, f"workspace_{session_uuid}")
 
-        # INVALIDATE EXISTING CONTAINER SESSIONS - force container recreation with updated files
-        try:
-            from app.services.container_manager import container_manager
-            invalidated_sessions = []
+        # Create the workspace directory if it doesn't exist
+        os.makedirs(workspace_dir, exist_ok=True)
 
-            # Find all active container sessions that match this workspace
-            for session_id in list(container_manager.active_sessions.keys()):
-                if session_uuid in session_id:
-                    invalidated_sessions.append(session_id)
-
-            # Cleanup matching container sessions to force recreation
-            for session_id in invalidated_sessions:
-                try:
-                    import asyncio
-                    # Schedule container cleanup for next event loop iteration
-                    asyncio.create_task(container_manager.cleanup_session(session_id))
-                    print(f"🔄 Scheduled cleanup for container session: {session_id}")
-                except Exception as cleanup_error:
-                    print(f"⚠️ Failed to schedule cleanup for session {session_id}: {cleanup_error}")
-
-            if invalidated_sessions:
-                print(f"🐳 Invalidated {len(invalidated_sessions)} container sessions for workspace switch")
-
-        except Exception as container_error:
-            print(f"⚠️ Failed to invalidate container sessions: {container_error}")
-
-        # CLEAR OLD FILES FIRST - this is crucial for workspace switching
-        if os.path.isdir(workspace_dir):
-            try:
-                # Remove all files in the workspace directory (but keep the directory itself)
-                for filename in os.listdir(workspace_dir):
-                    file_path = os.path.join(workspace_dir, filename)
-                    if os.path.isfile(file_path):
-                        os.remove(file_path)
-                        print(f"🗑️ Removed old file: {filename} from workspace directory")
-                    elif os.path.isdir(file_path):
-                        # Remove subdirectories too
-                        import shutil
-                        shutil.rmtree(file_path)
-                        print(f"🗑️ Removed old directory: {filename} from workspace directory")
-                print(f"🧹 Cleared workspace directory for workspace switch")
-            except Exception as clear_error:
-                print(f"⚠️ Failed to clear workspace directory {workspace_dir}: {clear_error}")
-        else:
-            # Create the workspace directory if it doesn't exist
-            os.makedirs(workspace_dir, exist_ok=True)
-
-        # Now sync new files
+        # Always sync database files to filesystem to ensure consistency
+        # This ensures database is the single source of truth
         total_synced = 0
         file_count = 0
 
         for item in workspace_items:
-            if item.type == "file" and item.content:
+            if item.type == "file":  # Sync all files, even with empty content
                 file_count += 1
-                if sync_file_to_filesystem(session_uuid, item.name, item.content):
+                # Use item.content or empty string to ensure empty files are properly synced
+                content = item.content or ""
+                if sync_file_to_filesystem(session_uuid, item.name, content):
                     total_synced += 1
 
         print(f"✅ Synced {file_count} files to workspace directory for session {session_uuid}")
         print(f"   Directory: {os.path.basename(workspace_dir)}")
+
         return total_synced > 0
 
     except Exception as e:
@@ -264,7 +238,9 @@ async def save_file_content(
             action = "created"
 
         # Sync the file to filesystem for Docker container access
-        sync_file_to_filesystem(session_uuid, filename, request.content)
+        # Use the actual content from the saved file item to ensure consistency
+        actual_content = file_item.content or ""
+        sync_file_to_filesystem(session_uuid, filename, actual_content)
 
         return {
             "message": f"File {filename} {action} successfully",

@@ -118,7 +118,7 @@ async def create_review_request(
         # Check if there's already a pending/in-review request for this session
         existing_requests = ReviewRequest.get_by_user(current_user_id)
         for req in existing_requests:
-            if req.session_id == review_data.session_id and req.status in [ReviewStatus.PENDING, ReviewStatus.IN_REVIEW]:
+            if req.session_id == session.id and req.status in [ReviewStatus.PENDING, ReviewStatus.IN_REVIEW]:
                 raise HTTPException(
                     status_code=400,
                     detail="This session already has a pending or in-review request",
@@ -133,7 +133,7 @@ async def create_review_request(
 
         # Create review request
         review_request = ReviewRequest.create(
-            session_id=review_data.session_id,
+            session_id=session.id,  # Use integer session ID from database, not UUID string
             submitted_by=current_user_id,
             title=review_data.title,
             description=review_data.description,

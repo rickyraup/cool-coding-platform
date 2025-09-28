@@ -87,6 +87,371 @@ async def handle_file_creation_command(
         }
 
 
+async def handle_touch_command(
+    command: str, session_id: str, websocket: WebSocket,
+) -> dict[str, Any]:
+    """Handle touch command for creating empty files through proper database + filesystem sync."""
+    # Parse the touch command to extract filename(s)
+    # Support: touch file.py, touch file1.py file2.py, etc.
+    parts = command.split()
+    if len(parts) < 2:
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "output": "touch: missing file operand",
+            "return_code": 1,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    filenames = parts[1:]  # All parts after "touch"
+    created_files = []
+    failed_files = []
+
+    # Create each file through the workspace API (database + filesystem sync)
+    for filename in filenames:
+        # Validate filename (basic security check)
+        if not filename or filename.startswith("/") or ".." in filename:
+            failed_files.append(f"{filename}: invalid filename")
+            continue
+
+        try:
+            # Use the workspace API to create the file (ensures database + filesystem sync)
+            from app.models.postgres_models import CodeSession, WorkspaceItem
+            from app.api.workspace_files import sync_file_to_filesystem
+
+            # Extract session UUID from session_id for database operations
+            session_uuid = None
+            if "_ws_" in session_id:
+                # Parse session_id format: user_{user_id}_ws_{workspace_id}_{timestamp}_{uuid}
+                parts_sid = session_id.split("_ws_")
+                if len(parts_sid) >= 2:
+                    workspace_part = parts_sid[1]  # {workspace_id}_{timestamp}_{uuid}
+                    workspace_parts = workspace_part.split("_")
+                    if len(workspace_parts) >= 1:
+                        session_uuid = workspace_parts[0]
+
+            if not session_uuid:
+                # Fallback: try to find existing session by container session ID
+                # For now, use a default approach
+                session_uuid = session_id.split("_")[-1] if "_" in session_id else session_id
+
+            # Get or create session
+            session_db = CodeSession.get_by_uuid(session_uuid)
+            if not session_db:
+                # Create minimal session record if it doesn't exist
+                session_db = CodeSession.create(uuid=session_uuid)
+
+            # Check if file already exists
+            existing_files = WorkspaceItem.get_all_by_session(session_db.id)
+            file_exists = any(item.name == filename and item.type == "file" for item in existing_files)
+
+            if not file_exists:
+                # Create new empty file in database
+                WorkspaceItem.create(
+                    session_id=session_db.id,
+                    parent_id=None,  # Root level
+                    name=filename,
+                    item_type="file",
+                    content=""  # Empty content for touch
+                )
+
+            # Sync to filesystem for Docker container access
+            if sync_file_to_filesystem(session_uuid, filename, ""):
+                created_files.append(filename)
+            else:
+                failed_files.append(f"{filename}: filesystem sync failed")
+
+        except Exception as e:
+            failed_files.append(f"{filename}: {str(e)}")
+
+    # Prepare response
+    if created_files and not failed_files:
+        files_str = ", ".join(created_files)
+        output = f"Created files: {files_str}" if len(created_files) > 1 else f"Created file: {files_str}"
+        return_code = 0
+    elif created_files and failed_files:
+        created_str = ", ".join(created_files)
+        failed_str = "; ".join(failed_files)
+        output = f"Created: {created_str}; Failed: {failed_str}"
+        return_code = 0  # Partial success
+    else:
+        failed_str = "; ".join(failed_files)
+        output = f"touch: {failed_str}"
+        return_code = 1
+
+    # Refresh file list to show new files in UI
+    try:
+        from app.services.file_manager import FileManager
+        file_manager = FileManager(session_id)
+        files = await file_manager.list_files_structured("")
+
+        return {
+            "type": "file_created",
+            "sessionId": session_id,
+            "command": command,
+            "output": output,
+            "return_code": return_code,
+            "files": files,
+            "created_files": created_files,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception:
+        # Return success even if file list refresh fails
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "command": command,
+            "output": output,
+            "return_code": return_code,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+
+async def handle_rm_command(
+    command: str, session_id: str, websocket: WebSocket,
+) -> dict[str, Any]:
+    """Handle rm command for deleting files through proper database + filesystem + Docker sync."""
+    # Parse the rm command to extract filename(s)
+    # Support: rm file.py, rm file1.py file2.py, etc.
+    parts = command.split()
+    if len(parts) < 2:
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "output": "rm: missing file operand",
+            "return_code": 1,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    filenames = parts[1:]  # All parts after "rm"
+    deleted_files = []
+    failed_files = []
+
+    # Delete each file through the workspace API (database + filesystem + Docker sync)
+    for filename in filenames:
+        # Validate filename (basic security check)
+        if not filename or filename.startswith("/") or ".." in filename:
+            failed_files.append(f"{filename}: invalid filename")
+            continue
+
+        try:
+            # Use the workspace API to delete the file (ensures database + filesystem + Docker sync)
+            from app.models.postgres_models import CodeSession
+            from app.services.workspace_loader import workspace_loader
+
+            # Extract session UUID from session_id for database operations
+            session_uuid = None
+            if "_ws_" in session_id:
+                # Parse session_id format: user_{user_id}_ws_{workspace_id}_{timestamp}_{uuid}
+                parts_sid = session_id.split("_ws_")
+                if len(parts_sid) >= 2:
+                    workspace_part = parts_sid[1]  # {workspace_id}_{timestamp}_{uuid}
+                    workspace_parts = workspace_part.split("_")
+                    if len(workspace_parts) >= 1:
+                        session_uuid = workspace_parts[0]
+
+            if not session_uuid:
+                # Fallback: try to find existing session by container session ID
+                session_uuid = session_id.split("_")[-1] if "_" in session_id else session_id
+
+            # Get session from database
+            session_db = CodeSession.get_by_uuid(session_uuid)
+            if not session_db:
+                failed_files.append(f"{filename}: session not found")
+                continue
+
+            # Use the existing delete_workspace_file method that I enhanced
+            success = await workspace_loader.delete_workspace_file(session_db.id, filename)
+
+            if success:
+                deleted_files.append(filename)
+            else:
+                failed_files.append(f"{filename}: deletion failed")
+
+        except Exception as e:
+            failed_files.append(f"{filename}: {str(e)}")
+
+    # Prepare response
+    if deleted_files and not failed_files:
+        files_str = ", ".join(deleted_files)
+        output = f"Deleted files: {files_str}" if len(deleted_files) > 1 else f"Deleted file: {files_str}"
+        return_code = 0
+    elif deleted_files and failed_files:
+        deleted_str = ", ".join(deleted_files)
+        failed_str = "; ".join(failed_files)
+        output = f"Deleted: {deleted_str}; Failed: {failed_str}"
+        return_code = 0  # Partial success
+    else:
+        failed_str = "; ".join(failed_files)
+        output = f"rm: {failed_str}"
+        return_code = 1
+
+    # Refresh file list to show updated files in UI
+    try:
+        from app.services.file_manager import FileManager
+        file_manager = FileManager(session_id)
+        files = await file_manager.list_files_structured("")
+
+        return {
+            "type": "file_deleted",
+            "sessionId": session_id,
+            "command": command,
+            "output": output,
+            "return_code": return_code,
+            "files": files,
+            "deleted_files": deleted_files,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception:
+        # Return success even if file list refresh fails
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "command": command,
+            "output": output,
+            "return_code": return_code,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+
+async def handle_mkdir_command(
+    command: str, session_id: str, websocket: WebSocket,
+) -> dict[str, Any]:
+    """Handle mkdir command for creating directories through proper database + filesystem + Docker sync."""
+    # Parse the mkdir command to extract directory name(s)
+    parts = command.split()
+    if len(parts) < 2:
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "output": "mkdir: missing operand",
+            "return_code": 1,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    directories = parts[1:]  # All parts after "mkdir"
+    created_dirs = []
+    failed_dirs = []
+
+    # Create each directory through the workspace API (database + filesystem + Docker sync)
+    for dirname in directories:
+        # Validate dirname (basic security check)
+        if not dirname or dirname.startswith("/") or ".." in dirname:
+            failed_dirs.append(f"{dirname}: invalid directory name")
+            continue
+
+        try:
+            # Use the workspace API to create the directory (ensures database + filesystem + Docker sync)
+            from app.models.postgres_models import CodeSession, WorkspaceItem
+            from app.services.workspace_loader import workspace_loader
+
+            # Extract session UUID from session_id for database operations
+            session_uuid = None
+            if "_ws_" in session_id:
+                # Parse session_id format: user_{user_id}_ws_{workspace_id}_{timestamp}_{uuid}
+                parts_sid = session_id.split("_ws_")
+                if len(parts_sid) >= 2:
+                    workspace_part = parts_sid[1]  # {workspace_id}_{timestamp}_{uuid}
+                    workspace_parts = workspace_part.split("_")
+                    if len(workspace_parts) >= 1:
+                        session_uuid = workspace_parts[0]
+
+            if not session_uuid:
+                # Fallback: try to find existing session by container session ID
+                session_uuid = session_id.split("_")[-1] if "_" in session_id else session_id
+
+            # Get session from database
+            session_db = CodeSession.get_by_uuid(session_uuid)
+            if not session_db:
+                failed_dirs.append(f"{dirname}: session not found")
+                continue
+
+            # Check if directory already exists
+            existing_item = WorkspaceItem.get_by_session_and_path(session_db.id, dirname)
+            if existing_item:
+                failed_dirs.append(f"{dirname}: directory already exists")
+                continue
+
+            # Create directory in Docker container first
+            output, return_code = await container_manager.execute_command(
+                session_id, f"mkdir -p {dirname}"
+            )
+
+            if return_code != 0:
+                failed_dirs.append(f"{dirname}: failed to create in container - {output}")
+                continue
+
+            # Create directory in filesystem (mounted volume)
+            import os
+            from pathlib import Path
+
+            session_dir = f"/tmp/coding_platform_sessions/workspace_{session_uuid}"
+            dir_path = Path(session_dir) / dirname
+            try:
+                dir_path.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                failed_dirs.append(f"{dirname}: failed to create in filesystem - {str(e)}")
+                continue
+
+            # Create directory entry in database
+            try:
+                workspace_item = WorkspaceItem(
+                    session_id=session_db.id,
+                    full_path=dirname,
+                    relative_path=dirname,
+                    filename=dirname.split("/")[-1] if "/" in dirname else dirname,
+                    file_type="directory",
+                    content="",  # Empty content for directories
+                    is_directory=True,
+                )
+                workspace_item.save()
+                created_dirs.append(dirname)
+            except Exception as e:
+                failed_dirs.append(f"{dirname}: failed to save to database - {str(e)}")
+                continue
+
+        except Exception as e:
+            failed_dirs.append(f"{dirname}: {str(e)}")
+
+    # Prepare response with proper return codes and file list refresh
+    if created_dirs and not failed_dirs:
+        return_code = 0
+        output = f"Created directories: {', '.join(created_dirs)}"
+    elif created_dirs and failed_dirs:
+        return_code = 1
+        output = f"Created: {', '.join(created_dirs)}. Failed: {', '.join(failed_dirs)}"
+    else:
+        return_code = 1
+        output = f"Failed to create directories: {', '.join(failed_dirs)}"
+
+    # Refresh file list for frontend
+    try:
+        from app.services.file_manager import FileManager
+
+        file_manager = FileManager(session_id)
+        files = await file_manager.list_files_structured("")
+
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "command": command,
+            "output": output,
+            "return_code": return_code,
+            "files": files,  # Include refreshed file list
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception:
+        # If file refresh fails, still return the mkdir result
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "command": command,
+            "output": output,
+            "return_code": return_code,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+
 async def handle_file_input_response(
     data: dict[str, Any], websocket: WebSocket,
 ) -> dict[str, Any]:
@@ -205,6 +570,18 @@ async def handle_terminal_input(
     if ">" in command and any(cmd in command for cmd in ["cat >", "echo >", "cat >"]):
         return await handle_file_creation_command(command, session_id, websocket)
 
+    # Handle touch command for file creation
+    if command.startswith("touch "):
+        return await handle_touch_command(command, session_id, websocket)
+
+    # Handle rm command for file deletion
+    if command.startswith("rm "):
+        return await handle_rm_command(command, session_id, websocket)
+
+    # Handle mkdir command for directory creation
+    if command.startswith("mkdir "):
+        return await handle_mkdir_command(command, session_id, websocket)
+
     if not command:
         return {
             "type": "terminal_output",
@@ -226,6 +603,7 @@ async def handle_terminal_input(
                         help                - Show this help
                         pwd                 - Show current directory
                         touch <file>        - Create empty file
+                        rm <file>           - Delete file
                         mkdir <dir>         - Create directory
                         echo "text" > file  - Write text to file
 
@@ -428,6 +806,14 @@ async def handle_file_system(
                                     success = file_item.update_content(content)
                                     if success:
                                         print(f"✅ Updated file {path} in database for session {workspace_id}")
+
+                                        # CRITICAL: Sync the updated content to filesystem for Docker container access
+                                        from app.api.workspace_files import sync_file_to_filesystem
+                                        sync_success = sync_file_to_filesystem(workspace_id, path, content)
+                                        if sync_success:
+                                            print(f"✅ Synced updated file {path} to filesystem for Docker container")
+                                        else:
+                                            print(f"❌ Failed to sync updated file {path} to filesystem for Docker container")
                                     else:
                                         print(f"❌ Failed to update file {path} in database for session {workspace_id}")
                                 else:
@@ -443,6 +829,15 @@ async def handle_file_system(
                                         print(f"✅ Created file {path} in database for session {workspace_id}")
                                     else:
                                         print(f"❌ Failed to create file {path} in database for session {workspace_id}")
+
+                                # CRITICAL: Sync the saved content to filesystem for Docker container access
+                                from app.api.workspace_files import sync_file_to_filesystem
+                                sync_success = sync_file_to_filesystem(workspace_id, path, content)
+                                if sync_success:
+                                    print(f"✅ Synced file {path} to filesystem for Docker container")
+                                else:
+                                    print(f"❌ Failed to sync file {path} to filesystem for Docker container")
+
                         except Exception as db_error:
                             print(f"❌ Database save error for session {session_id}: {db_error}")
                 except Exception as persist_error:
@@ -497,17 +892,39 @@ async def handle_file_system(
             }
 
         if action == "delete":
-            await file_manager.delete_file(path)
-            # Refresh file list
-            files = await file_manager.list_files_structured("")
-            return {
-                "type": "file_system",
-                "action": "deleted",
-                "sessionId": session_id,
-                "path": path,
-                "files": files,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
+            try:
+                await file_manager.delete_file(path)
+                # Refresh file list
+                files = await file_manager.list_files_structured("")
+
+                # Send a positive terminal message for successful deletion via trash icon
+                await websocket.send_json({
+                    "type": "terminal_output",
+                    "sessionId": session_id,
+                    "output": f"File '{path}' deleted successfully via UI\n",
+                    "timestamp": datetime.utcnow().isoformat(),
+                })
+
+                return {
+                    "type": "file_system",
+                    "action": "deleted",
+                    "sessionId": session_id,
+                    "path": path,
+                    "files": files,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            except Exception as delete_error:
+                # Handle deletion errors gracefully without sending to terminal
+                files = await file_manager.list_files_structured("")
+                return {
+                    "type": "file_system",
+                    "action": "delete_error",
+                    "sessionId": session_id,
+                    "path": path,
+                    "files": files,
+                    "message": f"Could not delete '{path}': {str(delete_error)}",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
 
         return {
             "type": "error",
@@ -516,10 +933,12 @@ async def handle_file_system(
         }
 
     except Exception as e:
+        # Don't send file system errors to terminal - they're usually UI-related
+        # and shouldn't clutter the terminal output
         return {
-            "type": "terminal_output",
+            "type": "error",
             "sessionId": session_id,
-            "output": f"File system error: {e!s}\\n",
+            "message": f"File system error: {e!s}",
             "timestamp": datetime.utcnow().isoformat(),
         }
 
