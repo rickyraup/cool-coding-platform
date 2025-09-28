@@ -251,7 +251,7 @@ export function FileExplorer(): JSX.Element {
         </svg>
       );
     }
-    
+
     // File icons based on extension
     const ext = file.name.split('.').pop()?.toLowerCase();
     switch (ext) {
@@ -269,12 +269,141 @@ export function FileExplorer(): JSX.Element {
         return <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
           <path d="M1.125 0C.502 0 0 .502 0 1.125v21.75C0 23.498.502 24 1.125 24h21.75c.623 0 1.125-.502 1.125-1.125V1.125C24 .502 23.498 0 22.875 0zm17.363 9.75c.612 0 1.154.037 1.627.111a6.38 6.38 0 0 1 1.306.34v2.458a3.95 3.95 0 0 0-.643-.361 5.093 5.093 0 0 0-.717-.26 5.453 5.453 0 0 0-1.426-.2c-.3 0-.573.028-.819.086a2.1 2.1 0 0 0-.623.242c-.17.104-.3.229-.393.374a.888.888 0 0 0-.14.49c0 .196.053.373.156.529.104.156.252.304.443.444s.423.276.696.41c.273.135.582.274.926.416.47.197.892.407 1.266.628.374.222.695.473.963.753.268.279.472.598.614.957.142.359.214.776.214 1.253 0 .657-.125 1.21-.373 1.656a3.033 3.033 0 0 1-1.012 1.085 4.38 4.38 0 0 1-1.487.596c-.566.12-1.163.18-1.79.18a9.916 9.916 0 0 1-1.84-.164 5.544 5.544 0 0 1-1.512-.493v-2.63a5.033 5.033 0 0 0 3.237 1.2c.333 0 .624-.03.872-.09.249-.06.456-.144.623-.25.166-.108.29-.234.373-.38a1.023 1.023 0 0 0-.074-1.089 2.12 2.12 0 0 0-.537-.5 5.597 5.597 0 0 0-.807-.444 27.72 27.72 0 0 0-1.007-.436c-.918-.383-1.602-.852-2.053-1.405-.45-.553-.676-1.222-.676-2.005 0-.614.123-1.141.369-1.582.246-.441.58-.804 1.004-1.089a4.494 4.494 0 0 1 1.47-.629 7.536 7.536 0 0 1 1.77-.201zm-15.113.188h9.563v2.166H9.506v9.646H6.789v-9.646H3.375z"/>
         </svg>;
+      case 'html':
+        return <svg className="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M1.5 0h21l-1.91 21.563L11.977 24l-8.565-2.438L1.5 0zm7.031 9.75l-.232-2.718 10.059.003.23-2.622L5.412 4.41l.698 8.01h9.126l-.326 3.426-2.91.804-2.955-.81-.188-2.11H6.248l.33 4.171L12 19.351l5.379-1.443.744-8.157H8.531z"/>
+        </svg>;
+      case 'css':
+        return <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M1.5 0h21l-1.91 21.563L11.977 24l-8.564-2.438L1.5 0zm17.09 4.413L5.41 4.41l.213 2.622 10.125.002-.255 2.716h-6.64l.24 2.573h6.182l-.366 3.523-2.91.804-2.956-.81-.188-2.11h-2.61l.29 3.855L12 19.288l5.373-1.53L18.59 4.414z"/>
+        </svg>;
+      case 'json':
+        return <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M5.85 3.5a3.5 3.5 0 00-3.5 3.5v1a1.5 1.5 0 01-1.5 1.5.75.75 0 000 1.5 1.5 1.5 0 011.5 1.5v1a3.5 3.5 0 003.5 3.5.75.75 0 000-1.5 2 2 0 01-2-2v-1a3 3 0 00-.879-2.121A3 3 0 004.85 9.5v-1a2 2 0 012-2 .75.75 0 000-1.5zm12.3 0a.75.75 0 000 1.5 2 2 0 012 2v1a3 3 0 00.879 2.121A3 3 0 0019.15 12.5v1a2 2 0 01-2 2 .75.75 0 000 1.5 3.5 3.5 0 003.5-3.5v-1a1.5 1.5 0 011.5-1.5.75.75 0 000-1.5 1.5 1.5 0 01-1.5-1.5v-1a3.5 3.5 0 00-3.5-3.5z"/>
+        </svg>;
+      case 'md':
+      case 'markdown':
+        return <svg className="w-4 h-4 text-blue-300" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M22.27 19.385H1.73A1.73 1.73 0 010 17.655V6.345a1.73 1.73 0 011.73-1.73h20.54A1.73 1.73 0 0124 6.345v11.31a1.73 1.73 0 01-1.73 1.73zM5.769 15.923v-4.5l2.308 2.885 2.307-2.885v4.5h2.308V8.077h-2.308l-2.307 2.885-2.308-2.885H3.46v7.846h2.309zm13.846-4.5H16.23v4.5h-2.307v-4.5h-3.385V9.23h9.077v2.192z"/>
+        </svg>;
+      case 'txt':
+        return <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>;
+      case 'csv':
+        return <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8s0 0 0 0l-6-6zM9.5 7.5H12v1.5H9.5v1.5H12v1.5H9.5V13h3v1.5h-3V16H12v1.5H9.5z"/>
+        </svg>;
+      case 'xml':
+        return <svg className="w-4 h-4 text-orange-400" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M5.85 3.5a3.5 3.5 0 00-3.5 3.5v1a1.5 1.5 0 01-1.5 1.5.75.75 0 000 1.5 1.5 1.5 0 011.5 1.5v1a3.5 3.5 0 003.5 3.5.75.75 0 000-1.5 2 2 0 01-2-2v-1a3 3 0 00-.879-2.121A3 3 0 004.85 9.5v-1a2 2 0 012-2 .75.75 0 000-1.5zm12.3 0a.75.75 0 000 1.5 2 2 0 012 2v1a3 3 0 00.879 2.121A3 3 0 0019.15 12.5v1a2 2 0 01-2 2 .75.75 0 000 1.5 3.5 3.5 0 003.5-3.5v-1a1.5 1.5 0 011.5-1.5.75.75 0 000-1.5 1.5 1.5 0 01-1.5-1.5v-1a3.5 3.5 0 00-3.5-3.5z"/>
+        </svg>;
+      case 'java':
+        return <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M8.851 18.56s-.917.534.653.714c1.902.218 2.874.187 4.969-.211 0 0 .552.346 1.321.646-4.699 2.013-10.633-.118-6.943-1.149M8.276 15.933s-1.028.761.542.924c2.032.209 3.636.227 6.413-.308 0 0 .384.389.987.602-5.679 1.661-12.007.13-7.942-1.218"/>
+        </svg>;
+      case 'c':
+      case 'cpp':
+      case 'h':
+        return <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M22.394 6c-.167-.29-.398-.543-.652-.69L12.926.22c-.509-.294-1.34-.294-1.848 0L2.26 5.31c-.508.293-.923 1.013-.923 1.6v10.18c0 .294.104.62.271.91.167.29.398.543.652.69l8.816 5.09c.508.293 1.339.293 1.848 0l8.816-5.09c.254-.147.485-.4.652-.69.167-.29.27-.616.27-.91V6.91c.003-.294-.1-.62-.268-.91zM12 19.11c-3.92 0-7.109-3.19-7.109-7.11 0-3.92 3.19-7.11 7.109-7.11a7.133 7.133 0 016.156 3.553l-3.076 1.78a3.567 3.567 0 00-3.08-1.78A3.56 3.56 0 008.444 12 3.56 3.56 0 0012 15.555a3.57 3.57 0 003.08-1.778l3.078 1.78A7.135 7.135 0 0112 19.11z"/>
+        </svg>;
+      case 'sh':
+      case 'bash':
+        return <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M21.038 4.9l-7.577-4.498c-.914-.543-2.009-.543-2.924 0L2.96 4.9C2.046 5.443 1.5 6.398 1.5 7.503v8.995c0 1.104.546 2.059 1.46 2.603l7.577 4.497c.914.543 2.009.543 2.924 0l7.577-4.497c.914-.544 1.46-1.499 1.46-2.603V7.503c0-1.105-.546-2.06-1.46-2.603z"/>
+        </svg>;
+      case 'yml':
+      case 'yaml':
+        return <svg className="w-4 h-4 text-purple-400" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M5.85 3.5a3.5 3.5 0 00-3.5 3.5v1a1.5 1.5 0 01-1.5 1.5.75.75 0 000 1.5 1.5 1.5 0 011.5 1.5v1a3.5 3.5 0 003.5 3.5.75.75 0 000-1.5 2 2 0 01-2-2v-1a3 3 0 00-.879-2.121A3 3 0 004.85 9.5v-1a2 2 0 012-2 .75.75 0 000-1.5zm12.3 0a.75.75 0 000 1.5 2 2 0 012 2v1a3 3 0 00.879 2.121A3 3 0 0019.15 12.5v1a2 2 0 01-2 2 .75.75 0 000 1.5 3.5 3.5 0 003.5-3.5v-1a1.5 1.5 0 011.5-1.5.75.75 0 000-1.5 1.5 1.5 0 01-1.5-1.5v-1a3.5 3.5 0 00-3.5-3.5z"/>
+        </svg>;
+      case 'sql':
+        return <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2l10 6-10 6L2 8l10-6zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>;
+      case 'php':
+        return <svg className="w-4 h-4 text-purple-500" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M7.01 10.207h-.944l-.515 2.648h.838c.556 0 .97-.105 1.242-.314.272-.21.455-.559.55-1.049.092-.47.05-.802-.124-.995-.175-.193-.523-.29-1.047-.29zM12 5.688C5.373 5.688 0 8.514 0 12s5.373 6.313 12 6.313S24 15.486 24 12c0-3.486-5.373-6.312-12-6.312z"/>
+        </svg>;
+      case 'go':
+        return <svg className="w-4 h-4 text-cyan-400" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M1.811 10.231c-.047 0-.058-.023-.035-.059l.246-.315c.023-.035.081-.058.128-.058h4.172c.046 0 .058.035.035.07l-.199.303c-.023.036-.082.07-.117.07zM.047 11.306c-.047 0-.059-.023-.035-.058l.245-.316c.023-.035.082-.058.129-.058h5.516c.047 0 .07.035.058.07l-.093.28c-.012.047-.058.07-.105.07z"/>
+        </svg>;
+      case 'rust':
+      case 'rs':
+        return <svg className="w-4 h-4 text-orange-600" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M23.8346 11.7033l-1.0073-.6236a13.7268 13.7268 0 00-.0283-.2936l.8656-.8069a.3483.3483 0 00-.1154-.5702l-1.3647-.5178a.3483.3483 0 00-.4423.1961l-.5178 1.0073a13.7268 13.7268 0 00-.2936.0283l-.8069-.8656a.3483.3483 0 00-.5702.1154l-.5178 1.3647a.3483.3483 0 00.1961.4423z"/>
+        </svg>;
+      case 'rb':
+        return <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M20.156.083L12 4.8 3.844.083l-.688 15.509L12 24l8.844-8.408L20.156.083zM6.51 17.509l-.344-7.842L12 6.667l5.834 3L17.49 17.509 12 21l-5.49-3.491z"/>
+        </svg>;
+      case 'swift':
+        return <svg className="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M7.508 0c-.287 0-.573.098-.798.323L.323 6.71C.098 6.935 0 7.221 0 7.508s.098.573.323.798l6.387 6.387c.225.225.511.323.798.323s.573-.098.798-.323l6.387-6.387c.225-.225.323-.511.323-.798s-.098-.573-.323-.798L8.306.323C8.081.098 7.795 0 7.508 0z"/>
+        </svg>;
+      case 'kt':
+      case 'kts':
+        return <svg className="w-4 h-4 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M24 24H0V0h24L12 12 24 24z"/>
+        </svg>;
+      case 'dockerfile':
+        return <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.186"/>
+        </svg>;
+      case 'env':
+        return <svg className="w-4 h-4 text-green-300" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+        </svg>;
       default:
         return <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>;
     }
   }, [expandedDirs]);
+
+  // Helper function to get file type badge
+  const getFileTypeBadge = useCallback((file: FileItem): string | null => {
+    if (file.type === 'directory') return null;
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'py': return 'PY';
+      case 'js': return 'JS';
+      case 'jsx': return 'JSX';
+      case 'ts': return 'TS';
+      case 'tsx': return 'TSX';
+      case 'html': return 'HTML';
+      case 'css': return 'CSS';
+      case 'json': return 'JSON';
+      case 'md':
+      case 'markdown': return 'MD';
+      case 'txt': return 'TXT';
+      case 'csv': return 'CSV';
+      case 'xml': return 'XML';
+      case 'java': return 'JAVA';
+      case 'c': return 'C';
+      case 'cpp': return 'CPP';
+      case 'h': return 'H';
+      case 'sh':
+      case 'bash': return 'SH';
+      case 'yml':
+      case 'yaml': return 'YAML';
+      case 'sql': return 'SQL';
+      case 'php': return 'PHP';
+      case 'go': return 'GO';
+      case 'rust':
+      case 'rs': return 'RUST';
+      case 'rb': return 'RUBY';
+      case 'swift': return 'SWIFT';
+      case 'kt':
+      case 'kts': return 'KOTLIN';
+      case 'dockerfile': return 'DOCKER';
+      case 'env': return 'ENV';
+      default: return null;
+    }
+  }, []);
 
   // Build hierarchical tree structure for rendering
   const buildFileTree = useCallback((basePath: string = currentDirectory, depth: number = 0, visited: Set<string> = new Set()) => {
@@ -349,8 +478,14 @@ export function FileExplorer(): JSX.Element {
           )}
           
           <span className="flex-shrink-0">{getFileIconComponent(file)}</span>
-          <span className="truncate flex-1 font-medium">
+          <span className="truncate flex-1 font-medium flex items-center gap-2">
             {file.name}
+            {/* File type badge */}
+            {getFileTypeBadge(file) && (
+              <span className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-gray-600/80 text-gray-200 rounded border border-gray-500/50 flex-shrink-0">
+                {getFileTypeBadge(file)}
+              </span>
+            )}
           </span>
           
           {/* Action buttons */}
