@@ -300,6 +300,104 @@ async def delete_file(session_uuid: str, filename: str) -> Dict[str, str]:
         )
 
 
+@router.get("/{session_uuid}/status")
+async def get_workspace_status(session_uuid: str) -> Dict[str, Any]:
+    """Get workspace initialization status."""
+    try:
+        # Get session by UUID
+        session = CodeSession.get_by_uuid(session_uuid)
+        if not session:
+            return {
+                "status": "not_found",
+                "message": "Session not found",
+                "initialized": False
+            }
+
+        # Check if workspace items exist
+        workspace_items = WorkspaceItem.get_all_by_session(session.id)
+
+        # Check if filesystem is synced
+        sessions_dir = "/tmp/coding_platform_sessions"
+        workspace_dir = os.path.join(sessions_dir, f"workspace_{session_uuid}")
+        filesystem_exists = os.path.exists(workspace_dir)
+
+        # Check if container exists and is running
+        from app.services.container_manager import container_manager
+        container_session = None
+        container_ready = False
+
+        # Look for existing container session
+        session_id_in_manager = container_manager.find_session_by_workspace_id(session_uuid)
+        if session_id_in_manager and session_id_in_manager in container_manager.active_sessions:
+            container_session = container_manager.active_sessions[session_id_in_manager]
+            try:
+                container_session.container.reload()
+                container_ready = container_session.container.status == "running"
+            except Exception:
+                container_ready = False
+
+        if not workspace_items:
+            # If no workspace items exist, we need to initialize
+            if not container_ready:
+                # Trigger container creation (this will also create default files)
+                try:
+                    container_session = await container_manager.get_or_create_session(session_uuid)
+                    container_ready = True
+                    return {
+                        "status": "initializing",
+                        "message": "Container created, initializing workspace...",
+                        "initialized": False,
+                        "filesystem_synced": True
+                    }
+                except Exception as e:
+                    return {
+                        "status": "error",
+                        "message": f"Failed to create container: {str(e)}",
+                        "initialized": False
+                    }
+            else:
+                return {
+                    "status": "empty",
+                    "message": "Workspace has no files, need to initialize",
+                    "initialized": False,
+                    "filesystem_synced": filesystem_exists
+                }
+
+        # If workspace items exist but container doesn't, create container
+        if not container_ready:
+            try:
+                container_session = await container_manager.get_or_create_session(session_uuid)
+                container_ready = True
+                return {
+                    "status": "initializing",
+                    "message": "Container created, loading workspace files...",
+                    "initialized": False,
+                    "filesystem_synced": True
+                }
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "message": f"Failed to create container: {str(e)}",
+                    "initialized": False
+                }
+
+        # Both workspace items and container exist - check if everything is ready
+        return {
+            "status": "ready",
+            "message": "Workspace is ready",
+            "initialized": True,
+            "filesystem_synced": filesystem_exists,
+            "file_count": len(workspace_items)
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to check workspace status: {str(e)}",
+            "initialized": False
+        }
+
+
 @router.post("/{session_uuid}/ensure-default")
 async def ensure_default_files(session_uuid: str) -> Dict[str, Any]:
     """Ensure workspace has default main.py file if no files exist."""

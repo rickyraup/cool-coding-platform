@@ -7,8 +7,9 @@ import { FileExplorer } from '../../../components/FileExplorer';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useEffect, useState, use } from 'react';
 import { useApp } from '../../../context/AppContext';
-import { apiService } from '../../../services/api';
-import { getWorkspaceFiles, getFileContent } from '../../../services/workspaceApi';
+import { apiService, type ReviewRequest } from '../../../services/api';
+import { getWorkspaceFiles, getFileContent, getWorkspaceStatus, ensureDefaultFiles } from '../../../services/workspaceApi';
+import WorkspaceStartupLoader from '../../../components/WorkspaceStartupLoader';
 import { useAuth, useUserId } from '../../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
@@ -24,6 +25,10 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
   const router = useRouter();
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
   const [fastLoading, setFastLoading] = useState(false); // Show content as soon as session loads
+  const [workspaceInitialized, setWorkspaceInitialized] = useState(false);
+  const [showStartupLoader, setShowStartupLoader] = useState(true);
+  const [reviewStatus, setReviewStatus] = useState<{ isUnderReview: boolean; reviewRequest?: ReviewRequest; isReviewer?: boolean }>({ isUnderReview: false });
+  const [isProcessingReview, setIsProcessingReview] = useState(false);
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -32,10 +37,65 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
     }
   }, [isAuthenticated, authLoading, router]);
 
+  // Check workspace initialization status
+  useEffect(() => {
+    const checkWorkspaceStatus = async () => {
+      if (!isAuthenticated || authLoading || !userId) return;
+
+      const sessionUuid = params.id;
+      if (!sessionUuid || sessionUuid.trim() === '') return;
+
+      try {
+        // Check workspace status periodically until it's ready
+        const checkStatus = async (): Promise<boolean> => {
+          const status = await getWorkspaceStatus(sessionUuid);
+
+          if (status.status === 'ready' && status.initialized) {
+            setWorkspaceInitialized(true);
+            setShowStartupLoader(false);
+            return true;
+          } else if (status.status === 'empty') {
+            // Initialize workspace with default files
+            await ensureDefaultFiles(sessionUuid);
+            // Check again after initialization
+            return false;
+          } else if (status.status === 'error' || status.status === 'not_found') {
+            setSessionLoadError(status.message);
+            setShowStartupLoader(false);
+            return true;
+          }
+
+          return false;
+        };
+
+        const isReady = await checkStatus();
+
+        if (!isReady) {
+          // Poll every 1 second until workspace is ready
+          const pollInterval = setInterval(async () => {
+            const ready = await checkStatus();
+            if (ready) {
+              clearInterval(pollInterval);
+            }
+          }, 1000);
+
+          // Cleanup interval on unmount
+          return () => clearInterval(pollInterval);
+        }
+      } catch (error) {
+        console.error('Failed to check workspace status:', error);
+        setSessionLoadError('Failed to initialize workspace');
+        setShowStartupLoader(false);
+      }
+    };
+
+    checkWorkspaceStatus();
+  }, [params.id, isAuthenticated, authLoading, userId]);
+
   // Load session data
   useEffect(() => {
     const loadSession = async () => {
-      if (!isAuthenticated || authLoading || !userId) return;
+      if (!isAuthenticated || authLoading || !userId || !workspaceInitialized) return;
       
       try {
         setLoading(true);
@@ -115,7 +175,53 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
     };
 
     loadSession();
-  }, [params.id, isAuthenticated, authLoading, userId, clearTerminal]); // clearTerminal is stable from useCallback
+  }, [params.id, isAuthenticated, authLoading, userId, workspaceInitialized, clearTerminal]); // clearTerminal is stable from useCallback
+
+  // Load review status for this session
+  useEffect(() => {
+    const loadReviewStatus = async () => {
+      if (!isAuthenticated || authLoading || !params.id) return;
+
+      try {
+        const status = await apiService.getReviewStatusForSession(params.id);
+        setReviewStatus(status);
+        console.log('Review status loaded:', status);
+      } catch (error) {
+        console.error('Failed to load review status:', error);
+      }
+    };
+
+    loadReviewStatus();
+  }, [params.id, isAuthenticated, authLoading]);
+
+  // Handler for reviewer actions
+  const handleReviewAction = async (action: 'approved' | 'rejected' | 'requires_changes') => {
+    if (!reviewStatus.reviewRequest || !reviewStatus.isReviewer) return;
+
+    try {
+      setIsProcessingReview(true);
+      await apiService.updateReviewStatus(reviewStatus.reviewRequest.id, action);
+
+      // Refresh review status
+      const updatedStatus = await apiService.getReviewStatusForSession(params.id);
+      setReviewStatus(updatedStatus);
+
+      // Show success message
+      const actionText = action.replace('_', ' ').toLowerCase();
+      alert(`Review ${actionText} successfully!`);
+
+    } catch (error) {
+      console.error('Failed to update review status:', error);
+      alert('Failed to update review status. Please try again.');
+    } finally {
+      setIsProcessingReview(false);
+    }
+  };
+
+  // Show startup loader while workspace is initializing
+  if (showStartupLoader) {
+    return <WorkspaceStartupLoader isVisible={true} message="Starting up workspace..." />;
+  }
 
   // Loading state - only show spinner if we don't have basic session data
   if (authLoading || (state.isLoading && !fastLoading && !state.currentSession)) {
@@ -155,7 +261,66 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-900 text-white overflow-hidden">
       <Header />
-      
+
+      {/* Review Status Banner */}
+      {reviewStatus.isUnderReview && reviewStatus.reviewRequest && (
+        <div className={`px-6 py-3 border-b border-gray-700 ${
+          reviewStatus.reviewRequest.status === 'pending'
+            ? 'bg-yellow-900/30 border-yellow-500/30'
+            : 'bg-blue-900/30 border-blue-500/30'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${
+                  reviewStatus.reviewRequest.status === 'pending' ? 'bg-yellow-400' : 'bg-blue-400'
+                }`}></div>
+                <span className="font-medium">
+                  {reviewStatus.isReviewer ? 'Review Mode' : 'Under Review'}
+                </span>
+              </div>
+              <div className="text-sm text-gray-400">
+                {reviewStatus.reviewRequest.title} - Status: {reviewStatus.reviewRequest.status.replace('_', ' ').toUpperCase()}
+              </div>
+            </div>
+
+            {/* Reviewer Action Buttons */}
+            {reviewStatus.isReviewer && reviewStatus.reviewRequest.status === 'in_review' && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleReviewAction('approved')}
+                  disabled={isProcessingReview}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  ✓ Approve
+                </button>
+                <button
+                  onClick={() => handleReviewAction('requires_changes')}
+                  disabled={isProcessingReview}
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  ↻ Request Changes
+                </button>
+                <button
+                  onClick={() => handleReviewAction('rejected')}
+                  disabled={isProcessingReview}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  ✗ Reject
+                </button>
+              </div>
+            )}
+
+            {/* Read-only indicator for submitters */}
+            {reviewStatus.isUnderReview && !reviewStatus.isReviewer && (
+              <div className="text-sm text-gray-400 bg-gray-800 px-3 py-1 rounded-md">
+                🔒 Read-only during review
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 overflow-hidden">
         <PanelGroup direction="horizontal" className="h-full">
           {/* File Explorer Sidebar */}
@@ -178,7 +343,10 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
                     </div>
                   </div>
                   <div className="flex-1 overflow-hidden">
-                    <CodeEditor />
+                    <CodeEditor
+                      readOnly={reviewStatus.isUnderReview && !reviewStatus.isReviewer}
+                      reviewMode={reviewStatus.isUnderReview}
+                    />
                   </div>
                 </div>
               </Panel>

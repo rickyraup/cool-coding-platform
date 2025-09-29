@@ -158,7 +158,7 @@ function getWebSocketManager(): WebSocketManager {
 }
 
 interface WebSocketMessage {
-  type: 'terminal_input' | 'terminal_output' | 'terminal_clear' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'ping' | 'pong';
+  type: 'terminal_input' | 'terminal_output' | 'terminal_clear' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'file_sync' | 'ping' | 'pong';
   sessionId?: string;
   command?: string;
   output?: string;
@@ -170,6 +170,10 @@ interface WebSocketMessage {
   content?: string;
   message?: string;
   files?: { name: string; type: 'file' | 'directory'; path: string; }[];
+  sync_info?: {
+    updated_files?: string[];
+    new_files?: string[];
+  };
 }
 
 export function useWebSocket() {
@@ -262,6 +266,26 @@ export function useWebSocket() {
             // Only show save message if backend provided one (for manual saves)
             if (message.message) {
               addTerminalLine(message.message, 'output');
+            }
+          }
+          break;
+
+        case 'file_sync':
+          if (message.files) {
+            // Update file list
+            setFiles(message.files);
+          }
+
+          // If there are updated or new files, and one of them is currently open, reload it
+          if (message.sync_info && state.currentFile) {
+            const updatedFiles = message.sync_info.updated_files || [];
+            const newFiles = message.sync_info.new_files || [];
+            const allChangedFiles = [...updatedFiles, ...newFiles];
+
+            // If the currently open file was modified via terminal, reload its content
+            if (allChangedFiles.includes(state.currentFile)) {
+              // Request fresh content for the current file
+              performFileOperation('read', state.currentFile);
             }
           }
           break;

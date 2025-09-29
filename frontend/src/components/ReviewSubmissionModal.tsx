@@ -1,20 +1,57 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { apiService } from '@/services/api';
+
+interface User {
+  id: number;
+  username: string;
+  email: string;
+  is_reviewer: boolean;
+  reviewer_level: number;
+  created_at?: string;
+}
 
 interface ReviewSubmissionModalProps {
   sessionId: string;
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: { title: string; description: string; priority: string }) => Promise<void>;
+  onSubmit: (data: { title: string; description: string; priority: string; reviewer_ids: number[] }) => Promise<void>;
 }
 
 export function ReviewSubmissionModal({ sessionId, isOpen, onClose, onSubmit }: ReviewSubmissionModalProps): JSX.Element | null {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
+  const [selectedReviewers, setSelectedReviewers] = useState<User[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Search users for reviewer selection
+  useEffect(() => {
+    const searchUsers = async () => {
+      if (searchQuery.length >= 2) {
+        setIsSearching(true);
+        try {
+          const response = await apiService.searchUsers(searchQuery);
+          setSearchResults(response.data);
+        } catch (err) {
+          console.error('Failed to search users:', err);
+          setSearchResults([]);
+        } finally {
+          setIsSearching(false);
+        }
+      } else {
+        setSearchResults([]);
+      }
+    };
+
+    const timeoutId = setTimeout(searchUsers, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
   if (!isOpen) return null;
 
@@ -33,13 +70,17 @@ export function ReviewSubmissionModal({ sessionId, isOpen, onClose, onSubmit }: 
       await onSubmit({
         title: title.trim(),
         description: description.trim() || undefined,
-        priority
+        priority,
+        reviewer_ids: selectedReviewers.map(r => r.id)
       });
       
       // Reset form and close modal
       setTitle('');
       setDescription('');
       setPriority('medium');
+      setSelectedReviewers([]);
+      setSearchQuery('');
+      setSearchResults([]);
       onClose();
       
     } catch (err) {
@@ -54,6 +95,9 @@ export function ReviewSubmissionModal({ sessionId, isOpen, onClose, onSubmit }: 
       setTitle('');
       setDescription('');
       setPriority('medium');
+      setSelectedReviewers([]);
+      setSearchQuery('');
+      setSearchResults([]);
       setError(null);
       onClose();
     }
@@ -123,6 +167,78 @@ export function ReviewSubmissionModal({ sessionId, isOpen, onClose, onSubmit }: 
               <option value="high">High</option>
               <option value="urgent">Urgent</option>
             </select>
+          </div>
+
+          <div>
+            <label htmlFor="reviewers" className="block text-sm font-medium text-gray-300 mb-2">
+              Reviewers (optional)
+            </label>
+
+            {/* Selected reviewers */}
+            {selectedReviewers.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {selectedReviewers.map((reviewer) => (
+                  <span
+                    key={reviewer.id}
+                    className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-900 text-blue-200"
+                  >
+                    {reviewer.username}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedReviewers(prev => prev.filter(r => r.id !== reviewer.id))}
+                      className="ml-1 text-blue-400 hover:text-blue-300"
+                      disabled={isSubmitting}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Search input */}
+            <input
+              type="text"
+              id="reviewers"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Search for users by username or email..."
+              disabled={isSubmitting}
+            />
+
+            {/* Search results */}
+            {searchResults.length > 0 && (
+              <div className="mt-2 bg-gray-700 border border-gray-600 rounded-lg max-h-40 overflow-y-auto">
+                {searchResults.map((user) => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => {
+                      if (!selectedReviewers.find(r => r.id === user.id)) {
+                        setSelectedReviewers(prev => [...prev, user]);
+                      }
+                      setSearchQuery('');
+                      setSearchResults([]);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-600 flex items-center justify-between text-sm"
+                    disabled={isSubmitting || selectedReviewers.find(r => r.id === user.id) !== undefined}
+                  >
+                    <span className="text-white">{user.username}</span>
+                    <div className="flex items-center space-x-2">
+                      {user.is_reviewer && (
+                        <span className="text-xs text-green-400">Reviewer</span>
+                      )}
+                      <span className="text-xs text-gray-400">{user.email}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {isSearching && (
+              <div className="mt-2 text-sm text-gray-400">Searching...</div>
+            )}
           </div>
 
           <div className="flex space-x-3 pt-4">

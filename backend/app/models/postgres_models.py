@@ -149,6 +149,51 @@ class User:
             for row in results
         ]
 
+    @classmethod
+    def search_users(cls, query: str = "") -> list["User"]:
+        """Search users by username or email."""
+        db = get_db()
+        if query.strip():
+            # Search by username or email with case-insensitive matching
+            sql_query = """
+                SELECT id, username, email, password_hash, is_reviewer, reviewer_level, created_at, updated_at
+                FROM code_editor_project.users
+                WHERE LOWER(username) LIKE LOWER(%s) OR LOWER(email) LIKE LOWER(%s)
+                ORDER BY
+                    CASE WHEN is_reviewer THEN 0 ELSE 1 END,
+                    reviewer_level DESC,
+                    username
+                LIMIT 20
+            """
+            search_term = f"%{query}%"
+            results = db.execute_query(sql_query, (search_term, search_term))
+        else:
+            # Return all users if no query
+            sql_query = """
+                SELECT id, username, email, password_hash, is_reviewer, reviewer_level, created_at, updated_at
+                FROM code_editor_project.users
+                ORDER BY
+                    CASE WHEN is_reviewer THEN 0 ELSE 1 END,
+                    reviewer_level DESC,
+                    username
+                LIMIT 20
+            """
+            results = db.execute_query(sql_query)
+
+        return [
+            cls(
+                id=row["id"],
+                username=row["username"],
+                email=row["email"],
+                password_hash=row["password_hash"],
+                is_reviewer=row["is_reviewer"],
+                reviewer_level=row["reviewer_level"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+            for row in results
+        ]
+
     def update_reviewer_status(self, is_reviewer: bool, reviewer_level: int = 1) -> bool:
         """Update user's reviewer status."""
         if not self.id:

@@ -1,5 +1,6 @@
 """WebSocket message handlers for the coding platform."""
 
+import re
 from datetime import datetime
 from typing import Any, Optional
 
@@ -9,6 +10,59 @@ from app.core.session_manager import session_manager
 from app.services.code_execution import CodeExecutor
 from app.services.container_manager import container_manager
 from app.services.file_manager import FileManager
+from app.services.file_sync import get_file_sync_service
+
+
+def validate_file_execution_command(command: str) -> tuple[bool, str, str]:
+    """
+    Validate if a command is trying to execute a file and check if the file type is allowed.
+
+    Returns:
+        tuple: (is_execution_command, filename, error_message)
+    """
+    # Allowed file extensions for execution
+    ALLOWED_EXTENSIONS = {'.py', '.js', '.ts', '.mjs', '.jsx', '.tsx'}
+
+    # Common execution patterns
+    execution_patterns = [
+        r'^python\s+["\']?([^"\'\s]+)["\']?',       # python file.py or python "file.py"
+        r'^python3\s+["\']?([^"\'\s]+)["\']?',      # python3 file.py or python3 "file.py"
+        r'^node\s+["\']?([^"\'\s]+)["\']?',         # node file.js or node "file.js"
+        r'^npm\s+run\s+["\']?([^"\'\s]+)["\']?',    # npm run script (allow all)
+        r'^\.\/["\']?([^"\'\s]+)["\']?',            # ./file or ./"file"
+        r'^["\']?([^"\'\s]+\.(?:py|js|ts|mjs|jsx|tsx))["\']?(?:\s|$)',  # direct file execution with optional quotes
+    ]
+
+    for pattern in execution_patterns:
+        match = re.match(pattern, command.strip())
+        if match:
+            # For npm run commands, allow them (they're script executions, not direct file executions)
+            if pattern.startswith(r'^\s*npm\s+run'):
+                return (True, "", "")
+
+            filename = match.group(1)
+            # Debug logging
+            print(f"DEBUG: Command '{command}' matched pattern '{pattern}', extracted filename: '{filename}'")
+
+            # Check if filename has an allowed extension
+            file_ext = None
+            for ext in ALLOWED_EXTENSIONS:
+                if filename.lower().endswith(ext):
+                    file_ext = ext
+                    break
+
+            if file_ext:
+                return (True, filename, "")  # Allowed
+            else:
+                # Get the actual extension to show in error
+                if '.' in filename:
+                    actual_ext = '.' + filename.split('.')[-1]
+                else:
+                    actual_ext = "no extension"
+                error_msg = f"Execution of '{filename}' is not allowed. Only Python (.py), JavaScript (.js, .mjs, .jsx), and TypeScript (.ts, .tsx) files can be executed. Found: {actual_ext}"
+                return (True, filename, error_msg)  # Not allowed
+
+    return (False, "", "")  # Not an execution command
 
 
 async def handle_file_creation_command(
@@ -582,6 +636,18 @@ async def handle_terminal_input(
     if command.startswith("mkdir "):
         return await handle_mkdir_command(command, session_id, websocket)
 
+    # Validate file execution commands
+    is_execution, filename, error_msg = validate_file_execution_command(command)
+    if is_execution and error_msg:
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "command": command,
+            "output": f"Error: {error_msg}",
+            "return_code": 1,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
     if not command:
         return {
             "type": "terminal_output",
@@ -594,7 +660,8 @@ async def handle_terminal_input(
     if command == "help":
         help_text = """
                     Available commands:
-                        python script.py    - Run Python script
+                        python script.py    - Run Python script (.py)
+                        node script.js      - Run JavaScript/TypeScript script (.js, .ts, .jsx, .tsx, .mjs)
                         pip install <pkg>   - Install Python package
                         ps                  - Show running processes (container-isolated)
                         ls                  - List files
@@ -606,6 +673,10 @@ async def handle_terminal_input(
                         rm <file>           - Delete file
                         mkdir <dir>         - Create directory
                         echo "text" > file  - Write text to file
+
+                        File execution restrictions:
+                        Only Python (.py), JavaScript (.js, .mjs, .jsx), and TypeScript (.ts, .tsx)
+                        files can be executed. Other file types can be created and viewed but not run.
 
                         All commands run in your isolated Docker container.
                     """
@@ -637,7 +708,8 @@ async def handle_terminal_input(
             # Return just the command output, frontend will handle prompt formatting
             formatted_output = output if output else ""
 
-            return {
+            # Trigger file synchronization after command execution
+            response = {
                 "type": "terminal_output",
                 "sessionId": session_id,
                 "command": command,
@@ -645,6 +717,36 @@ async def handle_terminal_input(
                 "return_code": return_code,
                 "timestamp": datetime.utcnow().isoformat(),
             }
+
+            # Sync files after command execution (non-blocking)
+            try:
+                file_sync_service = get_file_sync_service(session_id)
+                sync_result = await file_sync_service.sync_after_command(command)
+
+                if sync_result.get("success") and "results" in sync_result:
+                    results = sync_result["results"]
+                    if results.get("updated_files") or results.get("new_files"):
+                        # Send file list update to client
+                        from app.services.file_manager import FileManager
+                        file_manager = FileManager(session_id)
+                        files = await file_manager.list_files_structured("")
+
+                        # Send file sync notification to WebSocket
+                        await websocket.send_json({
+                            "type": "file_sync",
+                            "sessionId": session_id,
+                            "files": files,
+                            "sync_info": {
+                                "updated_files": results.get("updated_files", []),
+                                "new_files": results.get("new_files", []),
+                            },
+                            "timestamp": datetime.utcnow().isoformat(),
+                        })
+            except Exception as sync_error:
+                # Don't fail the command if sync fails, just log it
+                print(f"File sync error: {sync_error}")
+
+            return response
 
         except Exception as e:
             # If Docker fails, try fallback to subprocess

@@ -156,6 +156,33 @@ async def login_user(login_data: UserLogin) -> AuthResponse:
         )
 
 
+@router.get("/search")
+async def search_users(q: str = "") -> dict[str, Any]:
+    """Search users by username or email for reviewer selection."""
+    try:
+        users = User.search_users(q)
+
+        user_data = []
+        for user in users:
+            user_data.append({
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "is_reviewer": user.is_reviewer,
+                "reviewer_level": user.reviewer_level,
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+            })
+
+        return {
+            "success": True,
+            "data": user_data,
+            "total": len(user_data)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to search users: {e!s}")
+
+
 @router.get("/{user_id}")
 async def get_user(user_id: int) -> AuthResponse:
     """Get user by ID."""
@@ -237,33 +264,6 @@ def get_current_user_id() -> int:
     # Hardcoded for development - replace with actual auth
     return 5
 
-
-@router.get("/reviewers")
-async def get_reviewers() -> dict[str, Any]:
-    """Get all reviewers - public endpoint for choosing reviewers."""
-    try:
-        reviewers = User.get_reviewers()
-
-        reviewer_data = []
-        for reviewer in reviewers:
-            reviewer_data.append({
-                "id": reviewer.id,
-                "username": reviewer.username,
-                "email": reviewer.email,
-                "is_reviewer": reviewer.is_reviewer,
-                "reviewer_level": reviewer.reviewer_level,
-                "created_at": reviewer.created_at.isoformat() if reviewer.created_at else None,
-                "updated_at": reviewer.updated_at.isoformat() if reviewer.updated_at else None,
-            })
-
-        return {
-            "success": True,
-            "data": reviewer_data,
-            "total": len(reviewer_data)
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch reviewers: {e!s}")
 
 
 @router.get("/me")

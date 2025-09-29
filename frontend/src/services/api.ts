@@ -2,7 +2,7 @@
  * API service for communicating with the backend PostgreSQL APIs
  */
 
-const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8002';
+const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8001';
 
 // User types
 interface User {
@@ -117,7 +117,7 @@ interface ReviewRequestCreate {
   title: string;
   description?: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
-  assigned_to?: number;
+  reviewer_ids: number[];
 }
 
 interface ReviewRequestUpdate {
@@ -443,8 +443,8 @@ class ApiService {
   }
 
   // Reviewer Management
-  async getReviewers(): Promise<{ success: boolean; data: User[]; total: number }> {
-    return await this.fetchWithErrorHandling<{ success: boolean; data: User[]; total: number }>('/api/users/reviewers');
+  async searchUsers(query: string = ''): Promise<{ success: boolean; data: User[]; total: number }> {
+    return await this.fetchWithErrorHandling<{ success: boolean; data: User[]; total: number }>(`/api/users/search?q=${encodeURIComponent(query)}`);
   }
 
   async getCurrentUser(): Promise<User> {
@@ -458,6 +458,63 @@ class ApiService {
         is_reviewer: isReviewer,
         reviewer_level: reviewerLevel
       }),
+    });
+  }
+
+  // Workspace Shutdown
+  async shutdownWorkspace(workspaceId: string): Promise<{ success: boolean; message: string; workspace_id: string; session_id?: string; container_cleaned?: boolean }> {
+    const FASTAPI_BASE_URL = 'http://localhost:8001';
+    const response = await fetch(`${FASTAPI_BASE_URL}/workspace/${workspaceId}/shutdown`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return await response.json();
+  }
+
+  // Review Status
+  async getReviewStatusForSession(sessionId: string): Promise<{ isUnderReview: boolean; reviewRequest?: ReviewRequest; isReviewer?: boolean }> {
+    try {
+      // Get all review requests for the session
+      const myRequests = await this.getMyReviewRequests();
+      const assignedReviews = await this.getAssignedReviews();
+
+      // Check if this session has any active review requests
+      const allReviews = [...myRequests.data, ...assignedReviews.data];
+      const activeReview = allReviews.find(review =>
+        review.session_id === sessionId &&
+        ['pending', 'in_review'].includes(review.status)
+      );
+
+      if (activeReview) {
+        // Check if current user is the reviewer
+        const assignedReview = assignedReviews.data.find(review => review.session_id === sessionId);
+
+        return {
+          isUnderReview: true,
+          reviewRequest: activeReview,
+          isReviewer: !!assignedReview
+        };
+      }
+
+      return { isUnderReview: false };
+    } catch (error) {
+      console.error('Error checking review status:', error);
+      return { isUnderReview: false };
+    }
+  }
+
+  // Update review request status
+  async updateReviewStatus(reviewId: number, status: 'approved' | 'rejected' | 'requires_changes'): Promise<ApiResponse<ReviewRequest>> {
+    return await this.fetchWithErrorHandling<ApiResponse<ReviewRequest>>(`/api/reviews/${reviewId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
     });
   }
 }

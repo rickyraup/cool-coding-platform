@@ -497,12 +497,50 @@ export function FileExplorer(): JSX.Element {
                   if (file.type === 'file' && file.name.endsWith('.py')) {
                     // Use the full path for execution
                     const command = `python "${file.path}"`;
-                    console.log('🚀 Executing file:', command);
+                    console.log('🚀 Executing Python file:', command);
                     sendTerminalCommand(command);
                   }
                 }}
                 className="p-1 text-green-400 hover:text-green-300 hover:bg-green-400/20 rounded transition-colors"
                 title="Run Python file"
+              >
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </button>
+            )}
+            {file.type === 'file' && (file.name.endsWith('.js') || file.name.endsWith('.jsx')) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (file.type === 'file' && (file.name.endsWith('.js') || file.name.endsWith('.jsx'))) {
+                    // Use the full path for execution with Node.js
+                    const command = `node "${file.path}"`;
+                    console.log('🚀 Executing JavaScript file:', command);
+                    sendTerminalCommand(command);
+                  }
+                }}
+                className="p-1 text-green-400 hover:text-green-300 hover:bg-green-400/20 rounded transition-colors"
+                title="Run JavaScript file"
+              >
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </button>
+            )}
+            {file.type === 'file' && (file.name.endsWith('.ts') || file.name.endsWith('.tsx')) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (file.type === 'file' && (file.name.endsWith('.ts') || file.name.endsWith('.tsx'))) {
+                    // Use ts-node for TypeScript files
+                    const command = `npx ts-node "${file.path}"`;
+                    console.log('🚀 Executing TypeScript file:', command);
+                    sendTerminalCommand(command);
+                  }
+                }}
+                className="p-1 text-green-400 hover:text-green-300 hover:bg-green-400/20 rounded transition-colors"
+                title="Run TypeScript file"
               >
                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z"/>
@@ -582,9 +620,10 @@ export function FileExplorer(): JSX.Element {
               </svg>
             </button>
             <button
-              onClick={() => setShowCreateDialog('folder')}
-              className="p-1.5 text-gray-400 hover:text-gray-100 hover:bg-gray-700/60 rounded-md transition-all duration-200"
-              title="New Folder"
+              onClick={() => alert('Folder creation is temporarily disabled. This feature will be available soon!')}
+              disabled={true}
+              className="p-1.5 text-gray-600 cursor-not-allowed opacity-50 rounded-md transition-all duration-200"
+              title="New Folder (Temporarily Disabled)"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />

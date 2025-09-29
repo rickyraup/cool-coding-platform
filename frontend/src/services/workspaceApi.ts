@@ -120,3 +120,22 @@ export async function ensureDefaultFiles(sessionUuid: string): Promise<{
 
   return response.json();
 }
+
+/**
+ * Get workspace initialization status
+ */
+export async function getWorkspaceStatus(sessionUuid: string): Promise<{
+  status: 'not_found' | 'empty' | 'ready' | 'initializing' | 'error';
+  message: string;
+  initialized: boolean;
+  filesystem_synced?: boolean;
+  file_count?: number;
+}> {
+  const response = await fetch(`${API_BASE_URL}/api/workspace/${sessionUuid}/status`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch workspace status: ${response.statusText}`);
+  }
+
+  return response.json();
+}

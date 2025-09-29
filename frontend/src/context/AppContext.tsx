@@ -58,7 +58,8 @@ type AppAction =
   | { type: 'CLEAR_UNSAVED_CHANGES' }
   | { type: 'SET_FILE_CONTENT'; payload: { filePath: string; content: string } }
   | { type: 'CACHE_CURRENT_FILE_CONTENT' }
-  | { type: 'LOAD_FILE_CONTENT'; payload: string };
+  | { type: 'LOAD_FILE_CONTENT'; payload: string }
+  | { type: 'RESET_ALL_STATE' };
 
 const initialState: AppState = {
   currentSession: null,
@@ -204,6 +205,13 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         lastSavedCode: state.fileSavedStates[state.currentFile || ''] || '',
       };
 
+    case 'RESET_ALL_STATE':
+      return {
+        ...initialState,
+        // Keep connection state and loading state as they're not workspace-specific
+        isConnected: state.isConnected,
+      };
+
     default:
       return state;
   }
@@ -228,6 +236,8 @@ interface AppContextType {
   setFileContent: (filePath: string, content: string) => void;
   cacheCurrentFileContent: () => void;
   loadFileContent: (content: string) => void;
+  // Complete state reset for workspace switching
+  resetAllState: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -306,6 +316,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     loadFileContent: useCallback((content: string) => {
       dispatch({ type: 'LOAD_FILE_CONTENT', payload: content });
+    }, []),
+
+    resetAllState: useCallback(() => {
+      dispatch({ type: 'RESET_ALL_STATE' });
     }, []),
   };
 

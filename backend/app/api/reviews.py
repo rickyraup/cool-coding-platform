@@ -23,7 +23,7 @@ class ReviewRequestCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255, description="Review title")
     description: Optional[str] = Field(None, description="Review description")
     priority: ReviewPriority = Field(ReviewPriority.MEDIUM, description="Review priority")
-    assigned_to: Optional[int] = Field(None, description="Reviewer user ID")
+    reviewer_ids: list[int] = Field(default_factory=list, description="List of reviewer user IDs")
 
 
 class ReviewRequestUpdate(BaseModel):
@@ -32,7 +32,7 @@ class ReviewRequestUpdate(BaseModel):
     description: Optional[str] = None
     priority: Optional[ReviewPriority] = None
     status: Optional[ReviewStatus] = None
-    assigned_to: Optional[int] = None
+    reviewer_ids: Optional[list[int]] = Field(None, description="List of reviewer user IDs")
 
 
 class ReviewCommentCreate(BaseModel):
@@ -118,28 +118,45 @@ async def create_review_request(
         # Check if there's already a pending/in-review request for this session
         existing_requests = ReviewRequest.get_by_user(current_user_id)
         for req in existing_requests:
-            if req.session_id == session.id and req.status in [ReviewStatus.PENDING, ReviewStatus.IN_REVIEW]:
+            if req.session_id == review_data.session_id and req.status in [ReviewStatus.PENDING, ReviewStatus.IN_REVIEW]:
                 raise HTTPException(
                     status_code=400,
                     detail="This session already has a pending or in-review request",
                 )
 
-        # Verify assigned reviewer if provided
-        if review_data.assigned_to:
-            reviewer = User.get_by_id(review_data.assigned_to)
-            if not reviewer:
-                raise HTTPException(status_code=404, detail="Assigned reviewer not found")
-            # TODO: Check if user is actually a reviewer (reviewer_level > 0)
+        # Verify reviewers if provided
+        if review_data.reviewer_ids:
+            for reviewer_id in review_data.reviewer_ids:
+                reviewer = User.get_by_id(reviewer_id)
+                if not reviewer:
+                    raise HTTPException(status_code=404, detail=f"Reviewer with ID {reviewer_id} not found")
+                # TODO: Check if user is actually a reviewer (reviewer_level > 0)
 
         # Create review request
+        print(f"🔍 API: About to call ReviewRequest.create with:")
+        print(f"  session_id: {review_data.session_id} (type: {type(review_data.session_id)})")
+        print(f"  submitted_by: {current_user_id} (type: {type(current_user_id)})")
+        print(f"  title: {review_data.title}")
+        print(f"  description: {review_data.description}")
+        print(f"  priority: {review_data.priority}")
+        print(f"  reviewer_ids: {review_data.reviewer_ids}")
+
+        # For now, use the first reviewer as assigned_to to maintain compatibility
+        # TODO: Update ReviewRequest model to support multiple reviewers
+        assigned_to = review_data.reviewer_ids[0] if review_data.reviewer_ids else None
+
         review_request = ReviewRequest.create(
-            session_id=session.id,  # Use integer session ID from database, not UUID string
+            session_id=review_data.session_id,  # Use UUID string as provided in the request
             submitted_by=current_user_id,
             title=review_data.title,
             description=review_data.description,
             priority=review_data.priority,
-            assigned_to=review_data.assigned_to,
+            assigned_to=assigned_to,
         )
+
+        # If a reviewer is assigned, automatically transition to in_review
+        if assigned_to:
+            review_request.update_status(ReviewStatus.IN_REVIEW, assigned_to)
 
         return _format_review_request_response(review_request)
 
@@ -226,8 +243,14 @@ async def update_review_request(
         if update_data.status and not is_reviewer:
             raise HTTPException(status_code=403, detail="Only assigned reviewer can update status")
 
-        # Update status if provided
+        # Update status if provided - handle proper status progression
         if update_data.status:
+            # Automatically transition to in_review if status is pending and reviewer is taking action
+            if review_request.status == ReviewStatus.PENDING and update_data.status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED, ReviewStatus.REQUIRES_CHANGES]:
+                # First transition to in_review
+                review_request.update_status(ReviewStatus.IN_REVIEW, current_user_id)
+
+            # Then update to final status
             review_request.update_status(update_data.status, current_user_id)
 
         # Update other fields (title, description, priority) - TODO: implement in model

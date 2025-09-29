@@ -6,7 +6,12 @@ import type { editor } from 'monaco-editor';
 import { useApp } from '../context/AppContext';
 import { useWorkspaceApi } from '../hooks/useWorkspaceApi';
 
-export function CodeEditor(): JSX.Element {
+interface CodeEditorProps {
+  readOnly?: boolean;
+  reviewMode?: boolean;
+}
+
+export function CodeEditor({ readOnly = false, reviewMode = false }: CodeEditorProps): JSX.Element {
   const { state, updateCode, markSaved, cacheCurrentFileContent } = useApp();
   const { manualSave } = useWorkspaceApi();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
@@ -29,11 +34,13 @@ export function CodeEditor(): JSX.Element {
   }, []);
 
   const handleEditorChange = useCallback((value: string | undefined): void => {
+    if (readOnly) return; // Prevent changes in read-only mode
+
     const newCode = value ?? '';
     updateCode(newCode);
     // Cache the content locally for unsaved changes tracking
     cacheCurrentFileContent();
-  }, [updateCode, cacheCurrentFileContent]);
+  }, [updateCode, cacheCurrentFileContent, readOnly]);
 
 
   useEffect(() => {
@@ -130,7 +137,7 @@ export function CodeEditor(): JSX.Element {
             renderLineHighlight: 'all',
             selectOnLineNumbers: true,
             roundedSelection: false,
-            readOnly: false,
+            readOnly: readOnly,
             cursorStyle: 'line',
             automaticLayout: true,
             wordWrap: 'on',

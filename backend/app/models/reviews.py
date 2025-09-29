@@ -62,7 +62,7 @@ class ReviewRequest:
     @classmethod
     def create(
         cls,
-        session_id: int,
+        session_id: str,
         submitted_by: int,
         title: str,
         description: Optional[str] = None,
@@ -70,15 +70,24 @@ class ReviewRequest:
         assigned_to: Optional[int] = None,
     ) -> "ReviewRequest":
         """Create a new review request."""
+        print(f"🔍 ReviewRequest.create called with:")
+        print(f"  session_id: {session_id} (type: {type(session_id)})")
+        print(f"  submitted_by: {submitted_by} (type: {type(submitted_by)})")
+        print(f"  assigned_to: {assigned_to} (type: {type(assigned_to)})")
+        print(f"  title: {title}")
+        print(f"  description: {description}")
+        print(f"  priority: {priority}")
+
         db = get_db()
         query = """
             INSERT INTO code_editor_project.review_requests
             (session_id, submitted_by, assigned_to, title, description, priority, status)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
-        request_id = db.execute_insert(
-            query, (session_id, submitted_by, assigned_to, title, description, priority.value, ReviewStatus.PENDING.value),
-        )
+        params = (session_id, submitted_by, assigned_to, title, description, priority.value, ReviewStatus.PENDING.value)
+        print(f"🔍 Query parameters: {params}")
+
+        request_id = db.execute_insert(query, params)
         return cls.get_by_id(request_id)
 
     @classmethod

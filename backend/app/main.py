@@ -237,6 +237,44 @@ async def root() -> dict[str, Any]:
     }
 
 
+@app.post("/workspace/{workspace_id}/shutdown")
+async def shutdown_workspace(workspace_id: str) -> dict[str, Any]:
+    """Gracefully shutdown a workspace and clean up its container."""
+    try:
+        # Find session by workspace ID
+        session_id = container_manager.find_session_by_workspace_id(workspace_id)
+
+        if not session_id:
+            return {
+                "success": True,
+                "message": f"No active session found for workspace {workspace_id}",
+                "workspace_id": workspace_id
+            }
+
+        # Check if there are any active WebSocket connections to this session
+        connection_count = websocket_manager.get_session_connection_count(session_id)
+
+        # Clean up the session
+        cleanup_success = await container_manager.cleanup_session(session_id)
+
+        return {
+            "success": cleanup_success,
+            "message": f"Workspace {workspace_id} shutdown completed",
+            "workspace_id": workspace_id,
+            "session_id": session_id,
+            "active_connections": connection_count,
+            "container_cleaned": cleanup_success
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error shutting down workspace {workspace_id}: {str(e)}",
+            "workspace_id": workspace_id,
+            "error": str(e)
+        }
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     # Disable reload for stable WebSocket connections
