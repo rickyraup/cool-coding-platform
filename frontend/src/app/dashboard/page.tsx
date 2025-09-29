@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { CodeSession, ReviewRequest } from '../../services/api';
+import type { CodeSession } from '../../services/api';
 import { apiService } from '../../services/api';
 
 export default function DashboardPage(): JSX.Element {
@@ -19,7 +19,6 @@ export default function DashboardPage(): JSX.Element {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalWorkspaces, setTotalWorkspaces] = useState(0);
   const [workspacesPerPage] = useState(16); // 4 columns * 4 rows on xl screens
-  const [reviewRequests, setReviewRequests] = useState<ReviewRequest[]>([]);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -27,26 +26,20 @@ export default function DashboardPage(): JSX.Element {
     }
   }, [isAuthenticated, isLoading, router]);
 
-  // Fetch user's workspaces with pagination and review requests
+  // Fetch user's workspaces with pagination
   useEffect(() => {
     const fetchWorkspaces = async (): Promise<void> => {
       if (!isAuthenticated || !user) return;
-      
+
       try {
         setLoadingWorkspaces(true);
         setWorkspacesError(null);
-        
+
         const skip = (currentPage - 1) * workspacesPerPage;
-        
-        // Fetch workspaces and review requests in parallel
-        const [workspacesResponse, reviewsResponse] = await Promise.all([
-          apiService.getSessions(user.id, skip, workspacesPerPage),
-          apiService.getMyReviewRequests().catch(() => ({ data: [] })) // Don't fail if reviews API fails
-        ]);
-        
+        const workspacesResponse = await apiService.getSessions(user.id, skip, workspacesPerPage);
+
         setWorkspaces(workspacesResponse.data);
         setTotalWorkspaces(workspacesResponse.count);
-        setReviewRequests(reviewsResponse.data);
       } catch (error) {
         console.error('Failed to fetch workspaces:', error);
         setWorkspacesError(error instanceof Error ? error.message : 'Failed to load workspaces');
@@ -62,38 +55,6 @@ export default function DashboardPage(): JSX.Element {
   const getHumanReadableId = (uuid: string) => {
     // Take the first 8 characters of the UUID for a shorter, human-readable format
     return uuid.substring(0, 8).toUpperCase();
-  };
-
-  // Helper function to get review status for a workspace
-  const getWorkspaceReviewStatus = (sessionId: string) => {
-    // Note: This will need to be updated when review API supports UUID lookup
-    const sessionReviews = reviewRequests.filter(review => review.session_id.toString() === sessionId);
-    if (sessionReviews.length === 0) return null;
-    
-    // Get the most recent review request
-    const latestReview = sessionReviews.sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    )[0];
-    
-    return latestReview;
-  };
-
-  // Helper function to get status display info
-  const getStatusDisplay = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return { color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', text: 'Pending Review', icon: '⏳' };
-      case 'in_review':
-        return { color: 'bg-blue-500/20 text-blue-300 border-blue-500/30', text: 'In Review', icon: '👀' };
-      case 'approved':
-        return { color: 'bg-green-500/20 text-green-300 border-green-500/30', text: 'Approved', icon: '✅' };
-      case 'rejected':
-        return { color: 'bg-red-500/20 text-red-300 border-red-500/30', text: 'Rejected', icon: '❌' };
-      case 'requires_changes':
-        return { color: 'bg-orange-500/20 text-orange-300 border-orange-500/30', text: 'Changes Requested', icon: '🔄' };
-      default:
-        return { color: 'bg-gray-500/20 text-gray-300 border-gray-500/30', text: status, icon: '📝' };
-    }
   };
 
   const handleShowCreateModal = () => {
@@ -221,37 +182,42 @@ export default function DashboardPage(): JSX.Element {
           </div>
         </div>
 
-        {/* Code Reviews Section */}
-        <div className="mb-8 bg-gradient-to-r from-purple-900/20 to-blue-900/20 border border-purple-500/20 rounded-lg p-6">
+        {/* Code Reviews Section - Disabled */}
+        <div className="mb-8 bg-gradient-to-r from-gray-800/40 to-gray-700/40 border border-gray-600/30 rounded-lg p-6 opacity-60">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-xl font-semibold text-white mb-1">Code Reviews</h3>
-              <p className="text-gray-400 text-sm">Manage your review requests and assignments</p>
+              <div className="flex items-center space-x-2 mb-1">
+                <h3 className="text-xl font-semibold text-gray-300">Code Reviews</h3>
+                <span className="px-2 py-1 bg-yellow-600/20 text-yellow-400 text-xs font-medium rounded-md border border-yellow-500/30">
+                  🚧 Work in Progress
+                </span>
+              </div>
+              <p className="text-gray-500 text-sm">Review system is currently being updated</p>
             </div>
             <button
-              onClick={() => router.push('/reviews')}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors text-sm font-medium"
+              disabled
+              className="px-4 py-2 bg-gray-600 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
             >
               View All Reviews →
             </button>
           </div>
-          
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-yellow-400">{reviewRequests.filter(r => r.status === 'pending').length}</div>
-              <div className="text-sm text-gray-400">Pending Reviews</div>
+            <div className="bg-gray-800/30 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-gray-500">—</div>
+              <div className="text-sm text-gray-500">Pending Reviews</div>
             </div>
-            <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-blue-400">{reviewRequests.filter(r => r.status === 'in_review').length}</div>
-              <div className="text-sm text-gray-400">In Review</div>
+            <div className="bg-gray-800/30 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-gray-500">—</div>
+              <div className="text-sm text-gray-500">In Review</div>
             </div>
-            <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-green-400">{reviewRequests.filter(r => r.status === 'approved').length}</div>
-              <div className="text-sm text-gray-400">Approved</div>
+            <div className="bg-gray-800/30 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-gray-500">—</div>
+              <div className="text-sm text-gray-500">Approved</div>
             </div>
-            <div className="bg-gray-800/50 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-purple-400">{reviewRequests.length}</div>
-              <div className="text-sm text-gray-400">Total Requests</div>
+            <div className="bg-gray-800/30 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-gray-500">—</div>
+              <div className="text-sm text-gray-500">Total Requests</div>
             </div>
           </div>
 
@@ -310,9 +276,6 @@ export default function DashboardPage(): JSX.Element {
           ) : workspaces.length > 0 ? (
             // Workspaces data
             workspaces.map((workspace) => {
-              const reviewStatus = getWorkspaceReviewStatus(workspace.id);
-              const statusDisplay = reviewStatus ? getStatusDisplay(reviewStatus.status) : null;
-              
               return (
                 <div
                   key={workspace.id}
@@ -329,26 +292,8 @@ export default function DashboardPage(): JSX.Element {
                           <p className="text-sm text-gray-400">Python workspace</p>
                         </div>
                       </div>
-                      
-                      {/* Review Status Indicator */}
-                      {statusDisplay && (
-                        <div className={`px-2 py-1 rounded-md text-xs font-medium border flex items-center space-x-1 ${statusDisplay.color}`}>
-                          <span>{statusDisplay.icon}</span>
-                          <span>{statusDisplay.text}</span>
-                        </div>
-                      )}
                     </div>
-                    
-                    {/* Review Details */}
-                    {reviewStatus && (
-                      <div className="mb-3 p-2 bg-gray-700/50 rounded-md">
-                        <p className="text-xs text-gray-300 font-medium">{reviewStatus.title}</p>
-                        {reviewStatus.description && (
-                          <p className="text-xs text-gray-400 mt-1">{reviewStatus.description}</p>
-                        )}
-                      </div>
-                    )}
-                    
+
                     <div className="flex items-center justify-between text-sm text-gray-400">
                       <span>Created</span>
                       <span>{new Date(workspace.created_at).toLocaleDateString()}</span>

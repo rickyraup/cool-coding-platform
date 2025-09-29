@@ -474,7 +474,7 @@ class ApiService {
 
   // Workspace Shutdown
   async shutdownWorkspace(workspaceId: string): Promise<{ success: boolean; message: string; workspace_id: string; session_id?: string; container_cleaned?: boolean }> {
-    const FASTAPI_BASE_URL = 'http://localhost:8001';
+    const FASTAPI_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8002';
     const response = await fetch(`${FASTAPI_BASE_URL}/workspace/${workspaceId}/shutdown`, {
       method: 'POST',
       headers: {

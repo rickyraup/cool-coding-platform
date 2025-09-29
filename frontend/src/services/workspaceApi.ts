@@ -3,7 +3,7 @@
  * Handles per-workspace (UUID session) file operations
  */
 
-const API_BASE_URL = 'http://localhost:8001';
+const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8002';
 
 export interface FileItem {
   name: string;

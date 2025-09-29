@@ -26,6 +26,23 @@ class FileManager:
             ".ts",
             ".html",
             ".css",
+            ".jsx",
+            ".tsx",
+            ".yml",
+            ".yaml",
+            ".xml",
+            ".log",
+            ".conf",
+            ".cfg",
+            ".ini",
+            ".env",
+            ".gitignore",
+            ".dockerignore",
+            ".sql",
+            ".sh",
+            ".bash",
+            ".zsh",
+            ".dockerfile",
         }
 
     def _validate_path(self, file_path: str, is_directory: bool = False) -> str:
@@ -126,16 +143,24 @@ class FileManager:
                 if os.path.isfile(item_path):
                     # Check if file extension is allowed
                     _, ext = os.path.splitext(item)
+
+                    # Debug logging to see what files are being processed
+                    print(f"🔍 FileManager: Found file '{item}' with extension '{ext}'")
+
                     if (
                         ext in self.allowed_extensions or ext == ""
                     ):  # Allow files without extensions
                         files.append(
                             {"name": item, "type": "file", "path": path_prefix + item},
                         )
+                        print(f"✅ FileManager: Added file '{item}' to list")
+                    else:
+                        print(f"❌ FileManager: Skipped file '{item}' - extension '{ext}' not allowed")
                 elif os.path.isdir(item_path):
                     files.append(
                         {"name": item, "type": "directory", "path": path_prefix + item},
                     )
+                    print(f"📁 FileManager: Added directory '{item}' to list")
 
             # Sort with directories first, then files
             files.sort(key=lambda x: (x["type"] == "file", x["name"].lower()))

@@ -69,9 +69,10 @@ class WebSocketManager {
 
     try {
       // Add user authentication to WebSocket URL
+      const WS_BASE_URL = process.env['NEXT_PUBLIC_WS_URL'] ?? 'ws://localhost:8002/ws';
       const wsUrl = userId
-        ? `ws://localhost:8001/ws?user_id=${encodeURIComponent(userId)}`
-        : 'ws://localhost:8001/ws';
+        ? `${WS_BASE_URL}?user_id=${encodeURIComponent(userId)}`
+        : WS_BASE_URL;
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {

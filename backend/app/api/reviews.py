@@ -179,15 +179,20 @@ async def get_review_requests(
             requests = ReviewRequest.get_by_user(current_user_id, status)
         elif assigned_to_me:
             requests = ReviewRequest.get_assigned_to_reviewer(current_user_id, status)
-        # Return all pending reviews or by status
-        elif status:
-            if status == ReviewStatus.PENDING:
-                requests = ReviewRequest.get_pending_reviews()
-            else:
-                # For other statuses, we'd need a general query method
-                requests = []
         else:
-            requests = ReviewRequest.get_pending_reviews()
+            # Security: Don't return all reviews without explicit filtering
+            # Users should only see their own reviews or reviews assigned to them
+            # Combine both user's submitted reviews and assigned reviews
+            user_requests = ReviewRequest.get_by_user(current_user_id, status)
+            assigned_requests = ReviewRequest.get_assigned_to_reviewer(current_user_id, status)
+
+            # Combine and deduplicate (in case a user is assigned their own review)
+            seen_ids = set()
+            requests = []
+            for req in user_requests + assigned_requests:
+                if req.id not in seen_ids:
+                    requests.append(req)
+                    seen_ids.add(req.id)
 
         return [_format_review_request_response(req) for req in requests]
 

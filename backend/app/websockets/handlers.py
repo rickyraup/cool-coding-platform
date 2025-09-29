@@ -13,56 +13,7 @@ from app.services.file_manager import FileManager
 from app.services.file_sync import get_file_sync_service
 
 
-def validate_file_execution_command(command: str) -> tuple[bool, str, str]:
-    """
-    Validate if a command is trying to execute a file and check if the file type is allowed.
-
-    Returns:
-        tuple: (is_execution_command, filename, error_message)
-    """
-    # Allowed file extensions for execution
-    ALLOWED_EXTENSIONS = {'.py', '.js', '.ts', '.mjs', '.jsx', '.tsx'}
-
-    # Common execution patterns
-    execution_patterns = [
-        r'^python\s+["\']?([^"\'\s]+)["\']?',       # python file.py or python "file.py"
-        r'^python3\s+["\']?([^"\'\s]+)["\']?',      # python3 file.py or python3 "file.py"
-        r'^node\s+["\']?([^"\'\s]+)["\']?',         # node file.js or node "file.js"
-        r'^npm\s+run\s+["\']?([^"\'\s]+)["\']?',    # npm run script (allow all)
-        r'^\.\/["\']?([^"\'\s]+)["\']?',            # ./file or ./"file"
-        r'^["\']?([^"\'\s]+\.(?:py|js|ts|mjs|jsx|tsx))["\']?(?:\s|$)',  # direct file execution with optional quotes
-    ]
-
-    for pattern in execution_patterns:
-        match = re.match(pattern, command.strip())
-        if match:
-            # For npm run commands, allow them (they're script executions, not direct file executions)
-            if pattern.startswith(r'^\s*npm\s+run'):
-                return (True, "", "")
-
-            filename = match.group(1)
-            # Debug logging
-            print(f"DEBUG: Command '{command}' matched pattern '{pattern}', extracted filename: '{filename}'")
-
-            # Check if filename has an allowed extension
-            file_ext = None
-            for ext in ALLOWED_EXTENSIONS:
-                if filename.lower().endswith(ext):
-                    file_ext = ext
-                    break
-
-            if file_ext:
-                return (True, filename, "")  # Allowed
-            else:
-                # Get the actual extension to show in error
-                if '.' in filename:
-                    actual_ext = '.' + filename.split('.')[-1]
-                else:
-                    actual_ext = "no extension"
-                error_msg = f"Execution of '{filename}' is not allowed. Only Python (.py), JavaScript (.js, .mjs, .jsx), and TypeScript (.ts, .tsx) files can be executed. Found: {actual_ext}"
-                return (True, filename, error_msg)  # Not allowed
-
-    return (False, "", "")  # Not an execution command
+# File execution validation completely removed - all commands are allowed
 
 
 async def handle_file_creation_command(
@@ -233,13 +184,14 @@ async def handle_touch_command(
         output = f"touch: {failed_str}"
         return_code = 1
 
-    # Refresh file list to show new files in UI
+    # Always refresh file list after touch command - force file explorer update
+    response_with_files = None
     try:
         from app.services.file_manager import FileManager
         file_manager = FileManager(session_id)
         files = await file_manager.list_files_structured("")
 
-        return {
+        response_with_files = {
             "type": "file_created",
             "sessionId": session_id,
             "command": command,
@@ -249,8 +201,24 @@ async def handle_touch_command(
             "created_files": created_files,
             "timestamp": datetime.utcnow().isoformat(),
         }
-    except Exception:
-        # Return success even if file list refresh fails
+
+        # FORCE a file sync message to ensure frontend refreshes
+        await websocket.send_json({
+            "type": "file_sync",
+            "sessionId": session_id,
+            "files": files,
+            "sync_info": {
+                "updated_files": [],
+                "new_files": created_files,
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+
+        return response_with_files
+
+    except Exception as e:
+        print(f"File refresh error after touch: {e}")
+        # Return basic success even if file list refresh fails
         return {
             "type": "terminal_output",
             "sessionId": session_id,
@@ -620,6 +588,19 @@ async def handle_terminal_input(
     command = data.get("command", "").strip()
     session_id = data.get("sessionId", "default")
 
+    # Block restricted commands
+    command_parts = command.split()
+    if command_parts:
+        base_command = command_parts[0].lower()
+        if base_command in ["cd", "mkdir"]:
+            return {
+                "type": "terminal_output",
+                "sessionId": session_id,
+                "command": command,
+                "output": f"Error: '{base_command}' command is not allowed right now.",
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
     # Check for interactive file editing commands
     if ">" in command and any(cmd in command for cmd in ["cat >", "echo >", "cat >"]):
         return await handle_file_creation_command(command, session_id, websocket)
@@ -632,21 +613,9 @@ async def handle_terminal_input(
     if command.startswith("rm "):
         return await handle_rm_command(command, session_id, websocket)
 
-    # Handle mkdir command for directory creation
-    if command.startswith("mkdir "):
-        return await handle_mkdir_command(command, session_id, websocket)
+    # mkdir command blocked - see restricted commands check above
 
-    # Validate file execution commands
-    is_execution, filename, error_msg = validate_file_execution_command(command)
-    if is_execution and error_msg:
-        return {
-            "type": "terminal_output",
-            "sessionId": session_id,
-            "command": command,
-            "output": f"Error: {error_msg}",
-            "return_code": 1,
-            "timestamp": datetime.utcnow().isoformat(),
-        }
+    # File execution validation removed - allow all commands to pass through
 
     if not command:
         return {
