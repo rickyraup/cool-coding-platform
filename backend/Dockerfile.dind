@@ -1,0 +1,54 @@
+# Dockerfile with Docker-in-Docker support for Fly.io
+FROM docker:26-dind
+
+# Install Python and required system packages
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    python3-dev \
+    gcc \
+    musl-dev \
+    libffi-dev \
+    postgresql-dev \
+    curl \
+    bash \
+    shadow \
+    sudo
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY backend/requirements.txt .
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+
+# Copy application code
+COPY backend/ .
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /tmp/coding_platform_sessions && \
+    mkdir -p /var/lib/docker && \
+    mkdir -p /etc/docker && \
+    chmod 755 /tmp/coding_platform_sessions
+
+# Copy and set up startup script
+COPY start-with-docker.sh /start-with-docker.sh
+RUN chmod +x /start-with-docker.sh
+
+# Create a non-root user for running the application (but Docker daemon runs as root)
+RUN addgroup -g 1000 appuser && \
+    adduser -D -s /bin/bash -u 1000 -G appuser appuser && \
+    addgroup appuser docker
+
+# Set up sudo for appuser to manage Docker
+RUN echo "appuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# Expose port
+EXPOSE 8002
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV DOCKER_HOST=unix:///var/run/docker.sock
+
+# Run Docker daemon and the application
+CMD ["/start-with-docker.sh"]

@@ -1,8 +1,17 @@
 app = "cool-coding-platform"
 primary_region = "ord"
+kill_signal = "SIGINT"
+kill_timeout = "5s"
 
 [build]
-  dockerfile = "backend/Dockerfile.production"
+  dockerfile = "backend/Dockerfile.dind"
+
+[experimental]
+  auto_rollback = true
+
+[[mounts]]
+  source = "data"
+  destination = "/data"
 
 [http_service]
   internal_port = 8002
@@ -17,10 +26,20 @@ primary_region = "ord"
     soft_limit = 20
 
 [[vm]]
-  memory = "1gb"
+  memory = "2gb"
   cpu_kind = "shared"
   cpus = 1
 
 [env]
   PORT = "8002"
   ENVIRONMENT = "production"
+  DOCKER_HOST = "unix:///var/run/docker.sock"
+
+# Required for Docker-in-Docker
+[[vm]]
+  memory = "2gb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[init]
+  cmd = "/start-with-docker.sh"
