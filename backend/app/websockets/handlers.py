@@ -6,7 +6,7 @@ from typing import Any, Optional
 from fastapi import WebSocket
 
 from app.core.session_manager import session_manager
-from app.services.code_execution import PythonExecutor
+from app.services.code_execution import CodeExecutor
 from app.services.container_manager import container_manager
 from app.services.file_manager import FileManager
 
@@ -707,7 +707,7 @@ async def handle_terminal_input(
 async def handle_code_execution(
     data: dict[str, Any], websocket: WebSocket,
 ) -> dict[str, Any]:
-    """Handle Python code execution."""
+    """Handle code execution for Python and JavaScript files."""
     code = data.get("code", "")
     session_id = data.get("sessionId", "default")
     filename = data.get("filename", "main.py")
@@ -721,7 +721,7 @@ async def handle_code_execution(
         }
 
     try:
-        executor = PythonExecutor(session_id)
+        executor = CodeExecutor(session_id)
         result = await executor.execute_code(code, filename)
 
         return {

@@ -140,6 +140,8 @@ class DockerClientService:
                     "PYTHONPATH": "/app",
                     "HOME": "/app",
                     "USER": "codeuser",
+                    "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                    "NODE_ENV": "development",
                 },
             },
         )

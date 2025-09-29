@@ -1,4 +1,4 @@
-"""Python code execution service for the coding platform."""
+"""Multi-language code execution service for the coding platform."""
 
 import asyncio
 import os
@@ -8,16 +8,26 @@ from typing import Any
 from app.services.container_manager import container_manager
 
 
-class PythonExecutor:
-    """Handles Python code execution in isolated environments."""
+class CodeExecutor:
+    """Handles multi-language code execution in isolated environments."""
 
     def __init__(self, session_id: str) -> None:
         self.session_id = session_id
 
+    def _get_execution_command(self, filename: str) -> str:
+        """Determine the execution command based on file extension."""
+        if filename.endswith('.py'):
+            return 'python'
+        elif filename.endswith('.js'):
+            return 'node'
+        else:
+            # Default to python for backward compatibility
+            return 'python'
+
     async def execute_code(
         self, code: str, filename: str = "main.py",
     ) -> dict[str, Any]:
-        """Execute Python code and return the result."""
+        """Execute code and return the result. Supports Python (.py) and JavaScript (.js) files."""
         try:
             # First try to execute using Docker container if available
             if container_manager.is_docker_available():
@@ -39,9 +49,10 @@ class PythonExecutor:
             write_command = f"cat > {filename} << 'EOF'\n{code}\nEOF"
             await container_manager.execute_command(self.session_id, write_command)
 
-            # Execute the Python file
+            # Execute the file with appropriate command
+            command = self._get_execution_command(filename)
             output, return_code = await container_manager.execute_command(
-                self.session_id, f"python {filename}",
+                self.session_id, f"{command} {filename}",
             )
 
             return {
@@ -61,16 +72,20 @@ class PythonExecutor:
         """Execute code using subprocess as fallback."""
         try:
             # Create a temporary file with the code
+            # Determine file suffix based on filename
+            suffix = ".py" if filename.endswith('.py') else ".js" if filename.endswith('.js') else ".py"
             with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".py", delete=False, encoding="utf-8",
+                mode="w", suffix=suffix, delete=False, encoding="utf-8",
             ) as temp_file:
                 temp_file.write(code)
                 temp_file_path = temp_file.name
 
             try:
-                # Execute the Python file with timeout
+                # Execute the file with timeout using appropriate command
+                command = self._get_execution_command(filename)
+                exec_command = "python3" if command == "python" else "node"
                 process = await asyncio.create_subprocess_exec(
-                    "python3",
+                    exec_command,
                     temp_file_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
@@ -116,12 +131,13 @@ class PythonExecutor:
             }
 
     async def execute_file(self, file_path: str) -> dict[str, Any]:
-        """Execute a Python file by path."""
+        """Execute a file by path. Supports Python (.py) and JavaScript (.js) files."""
         try:
             if container_manager.is_docker_available():
-                # Execute the file in the container
+                # Execute the file in the container with appropriate command
+                command = self._get_execution_command(file_path)
                 output, return_code = await container_manager.execute_command(
-                    self.session_id, f"python {file_path}",
+                    self.session_id, f"{command} {file_path}",
                 )
 
                 return {
