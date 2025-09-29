@@ -12,10 +12,8 @@ from app.models.postgres_models import CodeSession, WorkspaceItem
 router = APIRouter()
 
 
-def sync_file_to_filesystem(session_uuid: str, filename: str, content: str) -> bool:
+def sync_file_to_filesystem(session_uuid: str, filename: str, content: str, verbose: bool = False) -> bool:
     """Sync a file from database to filesystem for Docker container access."""
-    print(f"🔄 Starting sync for {filename} in session {session_uuid}")
-    print(f"📝 Content length: {len(content)} characters")
     try:
         # Use ONE consistent directory per workspace UUID
         sessions_dir = "/tmp/coding_platform_sessions"
@@ -30,32 +28,51 @@ def sync_file_to_filesystem(session_uuid: str, filename: str, content: str) -> b
         if file_dir != workspace_dir:
             os.makedirs(file_dir, exist_ok=True)
 
+        # Check if file already exists with same content to avoid unnecessary writes
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                existing_content = f.read()
+                if existing_content == content:
+                    if verbose:
+                        print(f"⚡ Skipped sync for {filename} (content unchanged)")
+                    return True
+        except (FileNotFoundError, IOError):
+            # File doesn't exist or can't be read, continue with write
+            pass
+
+        if verbose:
+            print(f"🔄 Starting sync for {filename} in session {session_uuid}")
+            print(f"📝 Content length: {len(content)} characters")
+
         # Write content to file with explicit flush and sync
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(content)
             f.flush()  # Force write to OS buffer
             os.fsync(f.fileno())  # Force OS to write to disk
 
-        # Verify the file was written correctly
-        with open(file_path, 'r', encoding='utf-8') as f:
-            written_content = f.read()
-            if written_content == content:
-                print(f"✅ Synced file to workspace directory: {file_path}")
-                print(f"📄 Verified content: {len(written_content)} characters")
-                return True
-            else:
-                print(f"❌ Content verification failed for {file_path}")
-                print(f"Expected {len(content)} characters, got {len(written_content)}")
-                return False
+        # Verify the file was written correctly (but only if verbose)
+        if verbose:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                written_content = f.read()
+                if written_content == content:
+                    print(f"✅ Synced file to workspace directory: {file_path}")
+                    print(f"📄 Verified content: {len(written_content)} characters")
+                else:
+                    print(f"❌ Content verification failed for {file_path}")
+                    print(f"Expected {len(content)} characters, got {len(written_content)}")
+                    return False
+
+        return True
 
     except Exception as e:
-        print(f"❌ Failed to sync file to filesystem: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        if verbose:
+            print(f"❌ Failed to sync file to filesystem: {str(e)}")
+            import traceback
+            traceback.print_exc()
         return False
 
 
-def sync_all_files_to_filesystem(session_uuid: str) -> bool:
+def sync_all_files_to_filesystem(session_uuid: str, verbose: bool = False) -> bool:
     """Sync all database files to filesystem for Docker container access."""
     try:
         # Get session
@@ -77,22 +94,30 @@ def sync_all_files_to_filesystem(session_uuid: str) -> bool:
         # This ensures database is the single source of truth
         total_synced = 0
         file_count = 0
+        skipped_count = 0
 
         for item in workspace_items:
             if item.type == "file":  # Sync all files, even with empty content
                 file_count += 1
                 # Use item.content or empty string to ensure empty files are properly synced
                 content = item.content or ""
-                if sync_file_to_filesystem(session_uuid, item.name, content):
+                # Only use verbose logging for individual file sync operations if explicitly requested
+                if sync_file_to_filesystem(session_uuid, item.name, content, verbose=False):
                     total_synced += 1
+                else:
+                    skipped_count += 1
 
-        print(f"✅ Synced {file_count} files to workspace directory for session {session_uuid}")
-        print(f"   Directory: {os.path.basename(workspace_dir)}")
+        if verbose or file_count > 0:
+            print(f"✅ Synced {total_synced} files to workspace directory for session {session_uuid}")
+            if skipped_count > 0:
+                print(f"   ⚡ Skipped {skipped_count} files (content unchanged)")
+            print(f"   Directory: {os.path.basename(workspace_dir)}")
 
         return total_synced > 0
 
     except Exception as e:
-        print(f"❌ Failed to sync files to filesystem: {str(e)}")
+        if verbose:
+            print(f"❌ Failed to sync files to filesystem: {str(e)}")
         return False
 
 

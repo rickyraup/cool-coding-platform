@@ -10,13 +10,14 @@ import { useParams } from 'next/navigation';
 export function useWorkspaceApi() {
   const { state, markSaved, updateCode, setFiles, setCurrentFile } = useApp();
   const params = useParams();
-  const sessionUuid = params?.id as string;
+  // Support both workspace pages (/workspace/[id]) and review pages (/review/[sessionId])
+  const sessionUuid = (params?.id || params?.sessionId) as string;
 
   // Save current file using the new API
   const manualSave = useCallback(async (content?: string, filename?: string): Promise<boolean> => {
     try {
       if (!sessionUuid) {
-        console.error('No session UUID available for save');
+        console.error('No session UUID available for save', { params });
         return false;
       }
 
@@ -49,7 +50,7 @@ export function useWorkspaceApi() {
   const loadFileContent = useCallback(async (filename: string): Promise<boolean> => {
     try {
       if (!sessionUuid) {
-        console.error('No session UUID available for load');
+        console.error('No session UUID available for load', { params, filename });
         return false;
       }
 
@@ -75,7 +76,7 @@ export function useWorkspaceApi() {
   const refreshFiles = useCallback(async (): Promise<boolean> => {
     try {
       if (!sessionUuid) {
-        console.error('No session UUID available for refresh');
+        console.error('No session UUID available for refresh', { params });
         return false;
       }
 

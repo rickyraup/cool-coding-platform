@@ -27,66 +27,124 @@ This database schema is designed to support a multi-user **Code Execution Platfo
 
 ---
 
-### 2. `sessions`
+### 2. `code_sessions`
 
-- **Role:** Represents individual user sessions. Each session acts as an isolated workspace environment.
+- **Role:** Represents individual user sessions with containerized execution environments. Each session acts as an isolated workspace with its own Docker container.
 - **Key fields:**
-  - `id`: Primary key for the session.
-  - `user_id`: Foreign key linking to `users.id`. This establishes ownership and enables multi-session management per user.
-  - `name`: Optional label for the session.
+  - `id`: Primary key for the session (auto-increment).
+  - `uuid`: Public-facing UUID identifier used for container management and frontend routing.
+  - `user_id`: Foreign key linking to `users.id` (defaults to "anonymous" for guest sessions).
+  - `name`: Optional label for the session for user organization.
+  - `code`: Current code content in the session editor (default Python hello world).
+  - `language`: Programming language (defaults to "python").
+  - `is_active`: Boolean flag for session cleanup and container management.
   - Timestamps: `created_at` and `updated_at`.
 
-- **Relationships:**  
-  Each session belongs to one user (`user_id` FK). Sessions isolate user workspace state, enabling multiple independent project workspaces per user.
+- **Related table - `terminal_commands`:**
+  - `id`: Primary key (auto-increment).
+  - `session_id`: Foreign key to `code_sessions.id`.
+  - `command`: The terminal command that was executed.
+  - `output`: The output/response from the command execution.
+  - `timestamp`: When the command was executed.
+  - `success`: Boolean indicating if the command executed successfully.
 
-- **Constraints:**  
-  On user deletion, all their sessions cascade delete.
+- **Relationships:**
+  - Each session belongs to one user or is anonymous (`user_id` FK).
+  - Sessions isolate user workspace state, enabling multiple independent project workspaces per user.
+  - Each session can have many terminal commands stored in history.
+  - Each session can have many workspace items (files/folders).
+  - Sessions can be submitted for code review via review requests.
+
+- **Constraints:**
+  - On user deletion, all their sessions cascade delete.
+  - UUID must be unique for container identification.
+  - Terminal command history cascades delete when session is removed.
 
 ---
 
 ### 3. `workspace_items`
 
-- **Role:** Stores files and folders within a session’s workspace.
+- **Role:** Stores files and folders within a session's workspace, providing hierarchical file system structure.
 - **Key fields:**
-  - `id`: Primary key.
+  - `id`: Primary key (auto-increment).
   - `session_id`: Foreign key referencing the session this item belongs to.
   - `parent_id`: Self-referential foreign key pointing to another `workspace_items.id` for nested folder structures.
   - `name`: Name of the file or folder.
   - `type`: Enum-like (`file` or `folder`).
   - `content`: Text content for files. `NULL` for folders.
+  - `full_path`: Computed full path from root (e.g., "folder/subfolder/file.py").
+  - `session_uuid`: Denormalized UUID from the session for faster container operations.
   - Timestamps: `created_at` and `updated_at`.
 
 - **Relationships:**
   - Each workspace item belongs to one session (`session_id`).
-  - Folder hierarchy is implemented via `parent_id` pointing to another item, allowing nesting of folders/files.
+  - Folder hierarchy is implemented via `parent_id` pointing to another item, allowing unlimited nesting.
+  - Each item maintains a reference to its session's UUID for container sync operations.
 
 - **Constraints:**
   - Deleting a session cascades and deletes all workspace items in that session.
-  - Deleting a folder cascades and deletes all child items.
+  - Deleting a folder cascades and deletes all child items recursively.
   - Type is restricted to either `file` or `folder` via a CHECK constraint.
+  - Full path is automatically calculated and stored for performance.
 
-- **Indexes:**  
-  Index on `(session_id, parent_id)` optimizes querying workspace items by session and parent folder.
+- **Indexes:**
+  - Index on `(session_id, parent_id)` optimizes querying workspace items by session and parent folder.
+  - Index on `session_uuid` for fast container file synchronization operations.
 
 ---
 
-### 4. Review System (User-Based)
+### 4. Review System
 
-- **Role:** Enables code review functionality through user reviewer status.
+- **Role:** Complete code review workflow for workspaces.
 - **Implementation:**
-  - Uses existing `users` table with `is_reviewer` and `reviewer_level` fields.
-  - No separate review tables - review functionality is role-based.
-  - Any user can self-promote to reviewer status through the frontend.
+  - Uses `review_requests` table for review submissions
+  - Uses `review_comments` table for line-by-line feedback
+  - Uses `review_history` table for audit trail
+  - Integrates with existing `users` table for reviewer status
+
+#### Review Requests (`review_requests`)
+
+- **Key fields:**
+  - `id`: Primary key (auto-increment)
+  - `session_id`: Foreign key referencing the workspace session being reviewed
+  - `submitted_by`: Foreign key referencing the user who submitted for review
+  - `assigned_to`: Foreign key referencing the assigned reviewer (nullable)
+  - `title`: Review request title
+  - `description`: Optional detailed description
+  - `status`: Enum - 'pending', 'in_review', 'approved', 'rejected'
+  - `priority`: Enum - 'low', 'medium', 'high', 'urgent'
+  - Timestamps: `submitted_at`, `reviewed_at`, `created_at`, `updated_at`
+
+#### Review Comments (`review_comments`)
+
+- **Key fields:**
+  - `id`: Primary key (auto-increment)
+  - `review_request_id`: Foreign key referencing the review request
+  - `commenter_id`: Foreign key referencing the user who made the comment
+  - `workspace_item_id`: Foreign key referencing specific file (nullable for general comments)
+  - `line_number`: Specific line number for inline comments (nullable)
+  - `comment_text`: The actual comment content
+  - `comment_type`: Enum - 'general', 'suggestion', 'issue', 'question', 'approval'
+  - `is_resolved`: Boolean flag for comment resolution
+  - Timestamps: `created_at`, `updated_at`
+
+#### Review History (`review_history`)
+
+- **Key fields:**
+  - `id`: Primary key (auto-increment)
+  - `review_request_id`: Foreign key referencing the review request
+  - `changed_by`: Foreign key referencing the user who made the change
+  - `old_status`: Previous status value
+  - `new_status`: New status value
+  - `change_description`: Optional description of the change
+  - Timestamp: `created_at`
 
 - **Key Features:**
-  - **Self-Service Promotion:** Users can become reviewers without admin approval.
-  - **Reviewer Levels:** Support for junior and senior reviewer distinctions.
-  - **Flexible Assignment:** Users can choose any reviewer for their code submissions.
-
-- **API Endpoints:**
-  - `GET /api/users/reviewers` - Get all available reviewers
-  - `GET /api/users/me` - Get current user info including reviewer status
-  - `PUT /api/users/me/reviewer-status` - Toggle reviewer status and level
+  - **Complete Workflow:** pending → in_review → approved/rejected
+  - **Line-by-line Comments:** Detailed feedback on specific code lines
+  - **Priority System:** Support for different urgency levels
+  - **Audit Trail:** Full history of review status changes
+  - **Resolution Tracking:** Mark comments as resolved/unresolved
 
 ---
 

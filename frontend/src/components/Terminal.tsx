@@ -6,7 +6,12 @@ import { useApp } from '../context/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import '@xterm/xterm/css/xterm.css';
 
-export function Terminal(): JSX.Element {
+interface TerminalProps {
+  readOnly?: boolean;
+  reviewMode?: boolean;
+}
+
+export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps): JSX.Element {
   const { state } = useApp();
   const { sendTerminalCommand } = useWebSocket();
 
@@ -21,12 +26,20 @@ export function Terminal(): JSX.Element {
   const isInitializedRef = useRef(false);
 
   const displayWelcomeMessage = useCallback((terminal: any) => {
-    terminal.writeln('\x1b[36m╭────────────────────────────────────╮\x1b[0m');
-    terminal.writeln('\x1b[36m│     Welcome to the Terminal       │\x1b[0m');
-    terminal.writeln('\x1b[36m│ Type commands or "help" to begin  │\x1b[0m');
-    terminal.writeln('\x1b[36m╰────────────────────────────────────╯\x1b[0m');
-    terminal.write('\x1b[32m$ \x1b[0m');
-  }, []);
+    if (reviewMode) {
+      terminal.writeln('\x1b[36m╭────────────────────────────────────╮\x1b[0m');
+      terminal.writeln('\x1b[36m│     Review Mode Terminal          │\x1b[0m');
+      terminal.writeln('\x1b[36m│ Read-only: Use arrows to run files │\x1b[0m');
+      terminal.writeln('\x1b[36m╰────────────────────────────────────╯\x1b[0m');
+      terminal.writeln('');
+    } else {
+      terminal.writeln('\x1b[36m╭────────────────────────────────────╮\x1b[0m');
+      terminal.writeln('\x1b[36m│     Welcome to the Terminal       │\x1b[0m');
+      terminal.writeln('\x1b[36m│ Type commands or "help" to begin  │\x1b[0m');
+      terminal.writeln('\x1b[36m╰────────────────────────────────────╯\x1b[0m');
+      terminal.write('\x1b[32m$ \x1b[0m');
+    }
+  }, [reviewMode]);
 
   const replaceCurrentLine = useCallback((newLine: string): void => {
     const terminal = xtermRef.current;
@@ -134,6 +147,11 @@ export function Terminal(): JSX.Element {
         displayWelcomeMessage(terminal);
 
         terminal.onData((data: string) => {
+          // In read-only mode, ignore all input
+          if (readOnly || reviewMode) {
+            return;
+          }
+
           if (data === '\r') {
             const cmd = currentLineRef.current.trim();
             currentLineRef.current = '';

@@ -92,8 +92,18 @@ A modern web-based development environment that provides users with an isolated 
 ├── docs/                        # Project documentation
 │   ├── SETUP.md                # Complete setup guide
 │   ├── FEATURES.md             # Detailed feature documentation
-│   ├── architecture/           # Architecture diagrams
-│   └── database/               # Database schema documentation
+│   ├── api/                    # API documentation
+│   │   ├── README.md           # API overview
+│   │   ├── reviews.md          # Review system API
+│   │   ├── users.md            # User management API
+│   │   ├── workspace.md        # Workspace operations API
+│   │   └── websocket.md        # WebSocket API
+│   ├── architecture/           # Architecture documentation
+│   │   └── ARCHITECTURE.md     # System design and components
+│   ├── database/               # Database documentation
+│   │   └── DATABASE.md         # Schema design and models
+│   └── deployment/             # Deployment guides
+│       └── README.md           # Production deployment guide
 └── README.md                   # This file
 ```
 
@@ -146,10 +156,21 @@ npm run dev
 
 ## 📚 Documentation
 
+### 🚀 Getting Started
 - **[Setup Guide](docs/SETUP.md)** - Complete installation and configuration
 - **[Features](docs/FEATURES.md)** - Detailed feature documentation
-- **[Architecture](docs/architecture/ARCHITECTURE.md)** - System architecture overview
-- **[Database](docs/database/DATABASE.md)** - Database schema and design
+- **[Deployment Guide](docs/deployment/README.md)** - Production deployment strategies
+
+### 🏗️ Technical Reference
+- **[Architecture](docs/architecture/ARCHITECTURE.md)** - System design and components
+- **[Database](docs/database/DATABASE.md)** - Schema design and data models
+- **[API Documentation](docs/api/README.md)** - Complete API reference
+
+### 🔌 API Endpoints
+- **[Reviews API](docs/api/reviews.md)** - Code review system endpoints
+- **[Users API](docs/api/users.md)** - User management and authentication
+- **[Workspace API](docs/api/workspace.md)** - File and session operations
+- **[WebSocket API](docs/api/websocket.md)** - Real-time terminal communication
 
 ## 🔧 Development
 

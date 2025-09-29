@@ -10,7 +10,16 @@ import { ReviewSubmissionModal } from './ReviewSubmissionModal';
 import WorkspaceShutdownLoader from './WorkspaceShutdownLoader';
 import { useRouter, usePathname } from 'next/navigation';
 
-export function Header(): JSX.Element {
+interface HeaderProps {
+  reviewStatus?: {
+    isUnderReview: boolean;
+    isReviewer?: boolean;
+    reviewRequest?: any;
+  };
+  onReviewStatusChange?: () => void;
+}
+
+export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {}): JSX.Element {
   const { state, setSession, setLoading, setError, clearTerminal, setFiles, setCurrentFile, updateCode, resetAllState } = useApp();
   const { user, isAuthenticated, logout } = useAuth();
   const userId = useUserId();
@@ -155,6 +164,11 @@ export function Header(): JSX.Element {
       
       // Show success message or redirect
       alert('Review request submitted successfully!');
+
+      // Refresh review status in parent component
+      if (onReviewStatusChange) {
+        onReviewStatusChange();
+      }
       
     } catch (error) {
       console.error('Failed to submit review request:', error);
@@ -177,20 +191,20 @@ export function Header(): JSX.Element {
               {/* Navigation Buttons */}
               {isAuthenticated && (
                 <div className="flex items-center space-x-2">
-                  {(pathname?.startsWith('/workspace/') || pathname?.startsWith('/reviews')) && (
+                  {(pathname?.startsWith('/workspace/') || pathname?.startsWith('/reviews') || pathname?.startsWith('/review/')) && (
                     <button
-                      onClick={pathname?.startsWith('/workspace/') ? handleWorkspaceShutdown : () => router.push('/dashboard')}
+                      onClick={pathname?.startsWith('/workspace/') ? handleWorkspaceShutdown : () => router.push(pathname?.startsWith('/review/') ? '/reviews' : '/dashboard')}
                       disabled={isShuttingDown}
                       className="px-3 py-1.5 text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-200 hover:text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {isShuttingDown ? 'Shutting down...' : '← Dashboard'}
+                      {isShuttingDown ? 'Shutting down...' : pathname?.startsWith('/review/') ? '← Reviews' : '← Dashboard'}
                     </button>
                   )}
                 </div>
               )}
             </div>
             
-            {!pathname?.startsWith('/reviews') && (
+            {!pathname?.startsWith('/reviews') && !pathname?.startsWith('/review/') && (
               <div className="flex items-center space-x-3 bg-gray-700/50 px-3 py-1.5 rounded-lg">
                 <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-red-400 shadow-sm shadow-red-400/50'}`} />
                 <span className={`text-sm font-medium ${isConnected ? 'text-emerald-300' : 'text-red-300'}`}>
@@ -252,8 +266,8 @@ export function Header(): JSX.Element {
             {/* Action Buttons */}
             
 
-            {/* Save Button - only show in workspace */}
-            {pathname?.startsWith('/workspace/') && (
+            {/* Save Button - only show in workspace for non-reviewers */}
+            {pathname?.startsWith('/workspace/') && !reviewStatus?.isReviewer && (
               <button
                 onClick={handleSave}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm ${
@@ -268,14 +282,15 @@ export function Header(): JSX.Element {
               </button>
             )}
 
-            {/* Review Submission Button - only show in workspace */}
-            {pathname?.startsWith('/workspace/') && state.currentSession && isAuthenticated && (
-              <button 
+            {/* Review Submission Button - only show in workspace and hide for reviewers */}
+            {pathname?.startsWith('/workspace/') && state.currentSession && isAuthenticated && !reviewStatus?.isReviewer && (
+              <button
                 onClick={() => setShowReviewModal(true)}
                 className="px-4 py-2 text-sm font-medium bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                disabled={state.isLoading}
+                disabled={state.isLoading || (reviewStatus?.isUnderReview && reviewStatus?.reviewRequest && ['pending', 'in_review'].includes(reviewStatus.reviewRequest.status))}
+                title={reviewStatus?.isUnderReview && reviewStatus?.reviewRequest && ['pending', 'in_review'].includes(reviewStatus.reviewRequest.status) ? 'Workspace is currently under review' : 'Submit workspace for review'}
               >
-                📝 Submit for Review
+                📝 {reviewStatus?.isUnderReview && reviewStatus?.reviewRequest && ['pending', 'in_review'].includes(reviewStatus.reviewRequest.status) ? 'Under Review' : 'Submit for Review'}
               </button>
             )}
           </div>

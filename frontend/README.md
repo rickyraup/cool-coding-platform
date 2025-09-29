@@ -8,7 +8,7 @@ Modern Next.js 15 frontend application providing a comprehensive web-based Pytho
 - **Interactive Terminal** - Real-time terminal emulation with xterm.js
 - **File Explorer** - Hierarchical workspace management
 - **User Authentication** - Registration and login system
-- **Reviewer Management** - Self-service reviewer promotion system
+- **Code Review System** - Workspace review and approval workflow
 - **Responsive Design** - Mobile-friendly interface with dark theme
 
 ## 🛠️ Tech Stack
@@ -27,7 +27,9 @@ Modern Next.js 15 frontend application providing a comprehensive web-based Pytho
 src/
 ├── app/                    # Next.js App Router
 │   ├── dashboard/          # User dashboard page
-│   ├── reviewers/          # Reviewer management page
+│   ├── reviews/            # Code review pages
+│   ├── review/             # Individual review pages
+│   │   └── [sessionId]/   # Review workspace routes
 │   ├── workspace/          # Code workspace pages
 │   │   └── [id]/          # Dynamic workspace routes
 │   ├── layout.tsx         # Root layout with fonts
@@ -37,17 +39,24 @@ src/
 │   ├── CodeEditor.tsx    # Monaco editor wrapper
 │   ├── FileExplorer.tsx  # Workspace file tree
 │   ├── Header.tsx        # Navigation header
-│   ├── ReviewerManagement.tsx # Reviewer system
+│   ├── ReviewActionModal.tsx # Review action modal
+│   ├── ReviewerWorkspace.tsx # Review workspace component
 │   ├── ReviewSubmissionModal.tsx # Code review modal
-│   └── Terminal.tsx      # xterm.js terminal
+│   ├── Terminal.tsx      # xterm.js terminal
+│   ├── WorkspaceShutdownLoader.tsx # Shutdown loader
+│   └── WorkspaceStartupLoader.tsx # Startup loader
 ├── contexts/             # React contexts
 │   ├── AppContext.tsx    # Global app state
 │   └── AuthContext.tsx   # Authentication state
 ├── hooks/                # Custom React hooks
-│   └── useWebSocket.ts   # WebSocket communication
-└── services/             # API and service layer
-    ├── api.ts           # Backend API client
-    └── auth.ts          # Authentication utilities
+│   ├── useWebSocket.ts   # WebSocket communication
+│   └── useWorkspaceApi.ts # Workspace API operations
+├── services/             # API and service layer
+│   ├── api.ts           # Backend API client
+│   ├── auth.ts          # Authentication utilities
+│   └── workspaceApi.ts  # Workspace file operations
+└── utils/                # Utility functions
+    └── cache.ts         # API response caching
 ```
 
 ## 🚦 Quick Start

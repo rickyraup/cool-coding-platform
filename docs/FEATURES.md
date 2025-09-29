@@ -67,17 +67,20 @@ A comprehensive web-based Python development environment with code editing, term
 
 ### 📝 Code Review System
 - **Review Requests**
-  - Submit code for review
-  - Assign to specific reviewers
+  - Submit code workspaces for review
+  - Assign to specific reviewers or auto-assignment
   - Priority levels (low, medium, high, urgent)
-  - Review status tracking
-  - Review comments and feedback
+  - Review status tracking (pending → in_review → approved/rejected)
+  - Line-by-line comments and feedback
+  - Review history and audit trail
 
 - **Review Management**
-  - Reviewer dashboard
-  - Review assignment
-  - Code approval/rejection
-  - Review history tracking
+  - Comprehensive reviewer dashboard
+  - Review request filtering and search
+  - Code approval/rejection workflow
+  - Review statistics and overview
+  - Comment resolution tracking
+  - Review history with status changes
 
 ## User Interface Features
 

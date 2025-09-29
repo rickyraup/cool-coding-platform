@@ -2,7 +2,7 @@
  * API service for communicating with the backend PostgreSQL APIs
  */
 
-const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8001';
+const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8002';
 
 // User types
 interface User {
@@ -115,9 +115,9 @@ interface ReviewRequest {
 interface ReviewRequestCreate {
   session_id: string; // Fixed: UUID string instead of number
   title: string;
-  description?: string;
-  priority?: 'low' | 'medium' | 'high' | 'urgent';
-  reviewer_ids: number[];
+  description?: string | undefined;
+  priority?: 'low' | 'medium' | 'high' | 'urgent' | undefined;
+  assigned_to?: number | undefined;
 }
 
 interface ReviewRequestUpdate {
@@ -358,10 +358,6 @@ class ApiService {
     });
   }
 
-  async getSessionWorkspaceTree(sessionUuid: string): Promise<WorkspaceTreeResponse> {
-    return await this.fetchWithErrorHandling<WorkspaceTreeResponse>(`/api/session_workspace/${sessionUuid}/workspace/tree`);
-  }
-
   // Legacy Session Management (keep for backwards compatibility)
   async createLegacySession(sessionData?: { user_id?: string; code?: string; language?: string }): Promise<LegacySession> {
     return await this.fetchWithErrorHandling('/api/sessions', {
@@ -437,14 +433,29 @@ class ApiService {
     return await this.fetchWithErrorHandling('/api/reviews/stats/overview');
   }
 
+  async getReviewStatusForSession(sessionId: string): Promise<{
+    reviewRequest: ReviewRequest | null;
+    isReviewer: boolean;
+    canSubmitForReview: boolean;
+  }> {
+    return await this.fetchWithErrorHandling(`/api/reviews/session/${sessionId}/status`);
+  }
+
+  async updateReviewStatus(reviewId: number, status: 'pending' | 'in_review' | 'approved' | 'rejected' | 'requires_changes'): Promise<ApiResponse<ReviewRequest>> {
+    return await this.fetchWithErrorHandling<ApiResponse<ReviewRequest>>(`/api/reviews/${reviewId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
+
   // Health Check
   async healthCheck(): Promise<{ status: string; timestamp: string }> {
     return await this.fetchWithErrorHandling('/api/health/');
   }
 
   // Reviewer Management
-  async searchUsers(query: string = ''): Promise<{ success: boolean; data: User[]; total: number }> {
-    return await this.fetchWithErrorHandling<{ success: boolean; data: User[]; total: number }>(`/api/users/search?q=${encodeURIComponent(query)}`);
+  async getReviewers(): Promise<{ success: boolean; data: User[]; total: number }> {
+    return await this.fetchWithErrorHandling<{ success: boolean; data: User[]; total: number }>('/api/users/reviewers');
   }
 
   async getCurrentUser(): Promise<User> {
@@ -476,46 +487,6 @@ class ApiService {
     }
 
     return await response.json();
-  }
-
-  // Review Status
-  async getReviewStatusForSession(sessionId: string): Promise<{ isUnderReview: boolean; reviewRequest?: ReviewRequest; isReviewer?: boolean }> {
-    try {
-      // Get all review requests for the session
-      const myRequests = await this.getMyReviewRequests();
-      const assignedReviews = await this.getAssignedReviews();
-
-      // Check if this session has any active review requests
-      const allReviews = [...myRequests.data, ...assignedReviews.data];
-      const activeReview = allReviews.find(review =>
-        review.session_id === sessionId &&
-        ['pending', 'in_review'].includes(review.status)
-      );
-
-      if (activeReview) {
-        // Check if current user is the reviewer
-        const assignedReview = assignedReviews.data.find(review => review.session_id === sessionId);
-
-        return {
-          isUnderReview: true,
-          reviewRequest: activeReview,
-          isReviewer: !!assignedReview
-        };
-      }
-
-      return { isUnderReview: false };
-    } catch (error) {
-      console.error('Error checking review status:', error);
-      return { isUnderReview: false };
-    }
-  }
-
-  // Update review request status
-  async updateReviewStatus(reviewId: number, status: 'approved' | 'rejected' | 'requires_changes'): Promise<ApiResponse<ReviewRequest>> {
-    return await this.fetchWithErrorHandling<ApiResponse<ReviewRequest>>(`/api/reviews/${reviewId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ status }),
-    });
   }
 }
 

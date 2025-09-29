@@ -20,7 +20,7 @@ A full-stack web platform that provides users with an isolated Python developmen
 │  │  File Explorer Tree   │  │ Workspace file management
 │  └──────────────────────┘  │
 │  ┌──────────────────────┐  │
-│  │  Reviewer Management  │  │ Self-service reviewer system
+│  │  Code Review System   │  │ Review workflow + workspace review
 │  └──────────────────────┘  │
 └────────────┬───────────────┘
              │ HTTP API / WebSocket
@@ -43,6 +43,12 @@ A full-stack web platform that provides users with an isolated Python developmen
 │  └──────────────────────┘  │
 │  ┌──────────────────────┐  │
 │  │  User & Auth Service  │  │ Authentication + reviewer system
+│  └──────────────────────┘  │
+│  ┌──────────────────────┐  │
+│  │   Review Service      │  │ Code review request management
+│  └──────────────────────┘  │
+│  ┌──────────────────────┐  │
+│  │    File Sync Service  │  │ Sync files between API and containers
 │  └──────────────────────┘  │
 └────────────┬───────────────┘
              │ Database queries
@@ -100,3 +106,68 @@ A full-stack web platform that provides users with an isolated Python developmen
 - **Containers:** Docker for secure Python execution
 - **File Storage:** Database-backed with container sync
 - **Security:** Sandboxed execution environments
+
+## Current System Features
+
+### Code Review System
+- **Review Workflow:** Submit workspaces for review with priority levels
+- **Status Tracking:** pending → in_review → approved/rejected
+- **Reviewer Management:** Self-service reviewer promotion system
+- **Review Interface:** Dedicated review workspace with read-only code view
+
+### Authentication & Authorization
+- **User Management:** Username/password authentication
+- **Session Management:** Server-side session tracking
+- **Reviewer System:** Multi-level reviewer permissions (Level 1-4)
+- **Access Control:** Role-based access to review functions
+
+### Workspace Management
+- **Session Isolation:** Each workspace gets unique container environment
+- **File Persistence:** Files synchronized between database and containers
+- **Real-time Collaboration:** WebSocket-based terminal sharing
+- **Container Lifecycle:** Automatic cleanup when sessions end
+
+### API Architecture
+- **RESTful Design:** Standard HTTP methods for resource operations
+- **WebSocket Integration:** Real-time terminal communication
+- **Error Handling:** Consistent error response format
+- **Type Safety:** Full TypeScript coverage on frontend
+
+## Security Considerations
+
+### Container Security
+- **Process Isolation:** Each user session runs in separate container
+- **Resource Limits:** Memory and CPU constraints per container
+- **Network Isolation:** Limited network access from containers
+- **File System Isolation:** No access to host file system
+
+### Application Security
+- **Input Validation:** All user inputs validated on backend
+- **SQL Injection Prevention:** Parameterized queries throughout
+- **XSS Protection:** Content sanitization on frontend
+- **CORS Configuration:** Restricted to allowed origins
+
+### Data Protection
+- **Session Security:** Secure session management
+- **Code Privacy:** User code only accessible to owner and assigned reviewers
+- **Audit Logging:** Container and review actions logged
+- **Data Encryption:** Sensitive data encrypted at rest
+
+## Performance Optimizations
+
+### Container Management
+- **Lazy Loading:** Containers created only when needed
+- **Session Reuse:** Multiple WebSocket connections can share containers
+- **Background Cleanup:** Automated container lifecycle management
+- **Resource Monitoring:** Container resource usage tracking
+
+### Frontend Performance
+- **Code Splitting:** Route-based code splitting with Next.js
+- **Caching:** API response caching for static data
+- **Optimistic Updates:** Immediate UI feedback for user actions
+- **WebSocket Efficiency:** Minimal message overhead
+
+### Database Performance
+- **Connection Pooling:** Efficient database connection management
+- **Query Optimization:** Indexed queries for common operations
+- **Data Modeling:** Normalized schema with appropriate relationships

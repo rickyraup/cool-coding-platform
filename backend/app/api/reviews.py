@@ -246,7 +246,7 @@ async def update_review_request(
         # Update status if provided - handle proper status progression
         if update_data.status:
             # Automatically transition to in_review if status is pending and reviewer is taking action
-            if review_request.status == ReviewStatus.PENDING and update_data.status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED, ReviewStatus.REQUIRES_CHANGES]:
+            if review_request.status == ReviewStatus.PENDING and update_data.status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED]:
                 # First transition to in_review
                 review_request.update_status(ReviewStatus.IN_REVIEW, current_user_id)
 
@@ -418,6 +418,47 @@ async def get_review_history(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {e!s}")
+
+
+@router.get("/session/{session_id}/status")
+async def get_review_status_for_session(
+    session_id: str,
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+) -> dict[str, Any]:
+    """Get review status information for a specific workspace session."""
+    try:
+        # Verify session exists
+        session = CodeSession.get_by_uuid(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Find any review request for this session
+        review_request = None
+        all_requests = ReviewRequest.get_by_user(session.user_id)
+        for req in all_requests:
+            if req.session_id == session_id:
+                review_request = req
+                break
+
+        # Check if current user is the reviewer for this session
+        is_reviewer = review_request and review_request.assigned_to == current_user_id
+
+        # Check if current user can submit this session for review
+        can_submit_for_review = (
+            session.user_id == current_user_id and
+            (not review_request or review_request.status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED])
+        )
+
+        return {
+            "reviewRequest": _format_review_request_response(review_request) if review_request else None,
+            "isReviewer": is_reviewer,
+            "canSubmitForReview": can_submit_for_review,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch review status: {e!s}")
 
 
 @router.get("/stats/overview", response_model=ReviewStatsResponse)

@@ -255,32 +255,6 @@ export default function DashboardPage(): JSX.Element {
             </div>
           </div>
 
-          {reviewRequests.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium text-gray-300 mb-2">Recent Activity</h4>
-              <div className="space-y-2">
-                {reviewRequests.slice(0, 2).map((review) => {
-                  const statusColor = getStatusDisplay(review.status).color;
-                  return (
-                    <div key={review.id} className="flex items-center justify-between bg-gray-800/30 rounded-lg p-3">
-                      <div className="flex items-center space-x-3">
-                        <div className={`px-2 py-1 rounded text-xs font-medium ${statusColor}`}>
-                          {review.status.toUpperCase()}
-                        </div>
-                        <span className="text-sm text-white">{review.title}</span>
-                      </div>
-                      <button
-                        onClick={() => router.push(`/workspace/${review.session_id}`)}
-                        className="text-xs text-blue-400 hover:text-blue-300"
-                      >
-                        View →
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Create New Workspace Button */}

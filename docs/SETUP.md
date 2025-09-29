@@ -178,7 +178,16 @@ docker-compose -f docker-compose.test.yml up --build
 
 ## Additional Resources
 
-- [API Documentation](http://localhost:8002/docs) (when running)
-- [Architecture Overview](./architecture/ARCHITECTURE.md)
-- [Database Schema](./database/DATABASE.md)
-- [Feature Guide](./FEATURES.md)
+### 📚 Documentation
+- **[API Documentation](http://localhost:8002/docs)** - Interactive API docs (when running)
+- **[Complete API Reference](./api/README.md)** - Comprehensive API documentation
+- **[Architecture Overview](./architecture/ARCHITECTURE.md)** - System design and components
+- **[Database Schema](./database/DATABASE.md)** - Data models and relationships
+- **[Feature Guide](./FEATURES.md)** - Detailed feature descriptions
+- **[Deployment Guide](./deployment/README.md)** - Production deployment strategies
+
+### 🔌 API References
+- **[Reviews API](./api/reviews.md)** - Code review system endpoints
+- **[Users API](./api/users.md)** - User management and authentication
+- **[Workspace API](./api/workspace.md)** - File and session operations
+- **[WebSocket API](./api/websocket.md)** - Real-time terminal communication

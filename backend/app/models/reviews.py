@@ -14,7 +14,6 @@ class ReviewStatus(str, Enum):
     IN_REVIEW = "in_review"
     APPROVED = "approved"
     REJECTED = "rejected"
-    REQUIRES_CHANGES = "requires_changes"
 
 
 class ReviewPriority(str, Enum):
@@ -241,10 +240,10 @@ class ReviewRequest:
 
         query = """
             UPDATE code_editor_project.review_requests
-            SET status = %s, reviewed_at = %s, updated_at = NOW()
+            SET status = %s, reviewed_at = %s, updated_by = %s, updated_at = NOW()
             WHERE id = %s
         """
-        affected = db.execute_update(query, (new_status.value, reviewed_at, self.id))
+        affected = db.execute_update(query, (new_status.value, reviewed_at, reviewer_id, self.id))
 
         if affected > 0:
             self.status = new_status
@@ -260,10 +259,10 @@ class ReviewRequest:
         db = get_db()
         query = """
             UPDATE code_editor_project.review_requests
-            SET assigned_to = %s, status = %s, updated_at = NOW()
+            SET assigned_to = %s, status = %s, updated_by = %s, updated_at = NOW()
             WHERE id = %s
         """
-        affected = db.execute_update(query, (reviewer_id, ReviewStatus.IN_REVIEW.value, self.id))
+        affected = db.execute_update(query, (reviewer_id, ReviewStatus.IN_REVIEW.value, reviewer_id, self.id))
 
         if affected > 0:
             self.assigned_to = reviewer_id

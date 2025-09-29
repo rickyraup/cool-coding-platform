@@ -146,7 +146,27 @@ export default function ReviewsPage(): JSX.Element {
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-900 text-white">
       <Header />
-      
+
+      {/* Work in Progress Banner */}
+      <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-y border-yellow-500/30 px-6 py-3">
+        <div className="max-w-7xl mx-auto flex items-center gap-3">
+          <div className="w-5 h-5 rounded-full bg-yellow-500 flex items-center justify-center">
+            <div className="w-2 h-2 rounded-full bg-yellow-800 animate-pulse"></div>
+          </div>
+          <div className="flex-1">
+            <div className="text-yellow-200 font-medium text-sm">
+              🚧 Work in Progress
+            </div>
+            <div className="text-yellow-300/80 text-xs">
+              This review system is currently under development. Some features may be incomplete or subject to change.
+            </div>
+          </div>
+          <div className="text-yellow-300/60 text-xs">
+            Beta Version
+          </div>
+        </div>
+      </div>
+
       <div className="flex-1 overflow-hidden p-6">
         <div className="max-w-7xl mx-auto h-full flex flex-col">
           {/* Page Header */}
@@ -292,7 +312,7 @@ export default function ReviewsPage(): JSX.Element {
                         </div>
                         <div className="flex items-center space-x-3">
                           <button
-                            onClick={() => router.push(`/workspace/${request.session_id}`)}
+                            onClick={() => router.push(`/review/${request.session_id}`)}
                             className="text-blue-400 hover:text-blue-300 transition-colors"
                           >
                             Review →
