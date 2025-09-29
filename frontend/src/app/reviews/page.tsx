@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { apiService, type ReviewRequest } from '../../services/api';
@@ -15,7 +15,7 @@ interface ReviewStats {
   my_assigned_reviews: number;
 }
 
-export default function ReviewsPage(): JSX.Element {
+export default function ReviewsPage(): React.JSX.Element {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
