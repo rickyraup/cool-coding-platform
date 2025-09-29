@@ -165,11 +165,14 @@ interface WorkspaceTreeResponse extends BaseResponse {
 
 class ApiService {
   private async fetchWithErrorHandling<T>(
-    url: string, 
+    url: string,
     options?: RequestInit
   ): Promise<T> {
     try {
-      const response = await fetch(`${API_BASE_URL}${url}`, {
+      // Normalize URL to avoid double slashes
+      const baseUrl = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
+      const normalizedUrl = url.startsWith('/') ? url : `/${url}`;
+      const response = await fetch(`${baseUrl}${normalizedUrl}`, {
         headers: {
           'Content-Type': 'application/json',
           ...options?.headers,
@@ -475,7 +478,8 @@ class ApiService {
   // Workspace Shutdown
   async shutdownWorkspace(workspaceId: string): Promise<{ success: boolean; message: string; workspace_id: string; session_id?: string; container_cleaned?: boolean }> {
     const FASTAPI_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8002';
-    const response = await fetch(`${FASTAPI_BASE_URL}/workspace/${workspaceId}/shutdown`, {
+    const baseUrl = FASTAPI_BASE_URL.endsWith('/') ? FASTAPI_BASE_URL.slice(0, -1) : FASTAPI_BASE_URL;
+    const response = await fetch(`${baseUrl}/workspace/${workspaceId}/shutdown`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
