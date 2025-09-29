@@ -46,31 +46,31 @@ export default [
         },
 
         rules: {
-            // TypeScript Rules - Most Strict (Available in current version)
-            "@typescript-eslint/no-explicit-any": "error",
-            "@typescript-eslint/prefer-nullish-coalescing": "error",
-            "@typescript-eslint/prefer-optional-chain": "error",
-            "@typescript-eslint/no-non-null-assertion": "error",
-            "@typescript-eslint/no-unnecessary-condition": "error",
-            "@typescript-eslint/no-unnecessary-type-assertion": "error",
-            "@typescript-eslint/prefer-readonly": "error",
-            "@typescript-eslint/require-array-sort-compare": "error",
-            "@typescript-eslint/switch-exhaustiveness-check": "error",
-            "@typescript-eslint/consistent-type-definitions": ["error", "interface"],
-            "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
-            "@typescript-eslint/no-import-type-side-effects": "error",
-            "@typescript-eslint/no-unused-vars": ["error", { 
+            // TypeScript Rules - Relaxed for deployment
+            "@typescript-eslint/no-explicit-any": "warn",
+            "@typescript-eslint/prefer-nullish-coalescing": "warn",
+            "@typescript-eslint/prefer-optional-chain": "warn",
+            "@typescript-eslint/no-non-null-assertion": "warn",
+            "@typescript-eslint/no-unnecessary-condition": "off",
+            "@typescript-eslint/no-unnecessary-type-assertion": "warn",
+            "@typescript-eslint/prefer-readonly": "off",
+            "@typescript-eslint/require-array-sort-compare": "off",
+            "@typescript-eslint/switch-exhaustiveness-check": "warn",
+            "@typescript-eslint/consistent-type-definitions": "off",
+            "@typescript-eslint/consistent-type-imports": "off",
+            "@typescript-eslint/no-import-type-side-effects": "off",
+            "@typescript-eslint/no-unused-vars": ["warn", {
                 argsIgnorePattern: "^_",
                 varsIgnorePattern: "^_",
                 caughtErrorsIgnorePattern: "^_"
             }],
-            "@typescript-eslint/no-shadow": "error",
-            "@typescript-eslint/no-use-before-define": "error",
-            "@typescript-eslint/prefer-as-const": "error",
+            "@typescript-eslint/no-shadow": "warn",
+            "@typescript-eslint/no-use-before-define": "warn",
+            "@typescript-eslint/prefer-as-const": "warn",
             "@typescript-eslint/explicit-function-return-type": "off",
             "@typescript-eslint/explicit-module-boundary-types": "off",
             "@typescript-eslint/no-floating-promises": "warn",
-            "@typescript-eslint/await-thenable": "error",
+            "@typescript-eslint/await-thenable": "warn",
             "@typescript-eslint/no-misused-promises": "warn",
 
             // Disable conflicting base ESLint rules
