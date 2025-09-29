@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -7,7 +8,7 @@ import Link from 'next/link';
 import type { CodeSession } from '../../services/api';
 import { apiService } from '../../services/api';
 
-export default function DashboardPage(): JSX.Element {
+export default function DashboardPage(): React.JSX.Element {
   const { user, logout, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const [workspaces, setWorkspaces] = useState<CodeSession[]>([]);
