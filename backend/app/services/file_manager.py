@@ -93,7 +93,7 @@ class FileManager:
 
         except Exception as e:
             msg = f"Failed to write file: {e!s}"
-            raise Exception(msg)
+            raise Exception(msg) from e
 
     async def read_file(self, file_path: str) -> str:
         """Read content from a file."""
@@ -113,12 +113,11 @@ class FileManager:
             async with aiofiles.open(full_path, encoding="utf-8") as f:
                 return await f.read()
 
-
         except FileNotFoundError:
             raise
         except Exception as e:
             msg = f"Failed to read file: {e!s}"
-            raise Exception(msg)
+            raise Exception(msg) from e
 
     async def list_files_structured(self, directory: str = "") -> list[dict[str, Any]]:
         """List files in the session directory or subdirectory with structured data."""
@@ -155,7 +154,9 @@ class FileManager:
                         )
                         print(f"✅ FileManager: Added file '{item}' to list")
                     else:
-                        print(f"❌ FileManager: Skipped file '{item}' - extension '{ext}' not allowed")
+                        print(
+                            f"❌ FileManager: Skipped file '{item}' - extension '{ext}' not allowed"
+                        )
                 elif os.path.isdir(item_path):
                     files.append(
                         {"name": item, "type": "directory", "path": path_prefix + item},
@@ -168,7 +169,7 @@ class FileManager:
 
         except Exception as e:
             msg = f"Failed to list files: {e!s}"
-            raise Exception(msg)
+            raise Exception(msg) from e
 
     async def list_files(self, directory: str = "") -> list[str]:
         """List files in the session directory or subdirectory."""
@@ -199,7 +200,7 @@ class FileManager:
 
         except Exception as e:
             msg = f"Failed to list files: {e!s}"
-            raise Exception(msg)
+            raise Exception(msg) from e
 
     async def delete_file(self, file_path: str) -> bool:
         """Delete a file or directory."""
@@ -225,7 +226,7 @@ class FileManager:
             raise
         except Exception as e:
             msg = f"Failed to delete file: {e!s}"
-            raise Exception(msg)
+            raise Exception(msg) from e
 
     async def create_directory(self, dir_path: str) -> bool:
         """Create a new directory."""
@@ -241,7 +242,7 @@ class FileManager:
 
         except Exception as e:
             msg = f"Failed to create directory: {e!s}"
-            raise Exception(msg)
+            raise Exception(msg) from e
 
     async def create_file(self, file_path: str, content: str = "") -> bool:
         """Create a new file with optional content."""
@@ -264,7 +265,7 @@ class FileManager:
 
         except Exception as e:
             msg = f"Failed to create file: {e!s}"
-            raise Exception(msg)
+            raise Exception(msg) from e
 
     async def file_exists(self, file_path: str) -> bool:
         """Check if a file exists."""
@@ -297,7 +298,7 @@ class FileManager:
             raise
         except Exception as e:
             msg = f"Failed to get file info: {e!s}"
-            raise Exception(msg)
+            raise Exception(msg) from e
 
     def cleanup_session(self) -> None:
         """Clean up the entire session directory."""

@@ -17,13 +17,10 @@ from app.api import (
     postgres_sessions,
     reviews,
     session_workspace,
-    sessions,
     users,
-    workspace,
     workspace_files,
 )
 from app.core.postgres import init_db
-from app.core.session_manager import session_manager
 from app.services.container_manager import container_manager
 from app.websockets.handlers import handle_websocket_message
 from app.websockets.manager import WebSocketManager
@@ -36,7 +33,9 @@ load_dotenv()
 websocket_manager = WebSocketManager()
 
 
-def create_unique_session_id(base_session_id: str, user_id: Optional[str] = None) -> str:
+def create_unique_session_id(
+    base_session_id: str, user_id: Optional[str] = None
+) -> str:
     """Create a unique session ID that includes user ID and timestamp to prevent reuse."""
     timestamp = int(time.time() * 1000)  # milliseconds
     unique_id = str(uuid.uuid4())[:8]  # short UUID
@@ -63,9 +62,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     # Shutdown
     print("🔄 Shutting down...")
-    print("🧹 Cleaning up active sessions and stopping background tasks...")
+    print("🧹 Stopping background tasks...")
     await background_task_manager.stop_background_tasks()
-    await session_manager.cleanup_all_sessions()
     print("✅ Cleanup complete")
 
 
@@ -78,7 +76,9 @@ app = FastAPI(
 )
 
 # CORS middleware - get allowed origins from environment variable
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+cors_origins = os.getenv(
+    "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+).split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -89,7 +89,6 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health.router, prefix="/api/health", tags=["health"])
-app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
 
 # PostgreSQL-based routers
 app.include_router(users.router, prefix="/api/users", tags=["users"])
@@ -98,18 +97,21 @@ app.include_router(
     prefix="/api/postgres_sessions",
     tags=["postgres_sessions"],
 )
-app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
 app.include_router(
     session_workspace.router,
     prefix="/api/session_workspace",
     tags=["session_workspace"],
 )
-app.include_router(workspace_files.router, prefix="/api/workspace", tags=["workspace_files"])
+app.include_router(
+    workspace_files.router, prefix="/api/workspace", tags=["workspace_files"]
+)
 app.include_router(reviews.router, tags=["reviews"])
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None) -> None:
+async def websocket_endpoint(
+    websocket: WebSocket, user_id: Optional[str] = None
+) -> None:
     # Store user_id as a custom attribute on the websocket connection
     if user_id:
         # Use setattr to store user_id since path_params is read-only
@@ -148,38 +150,60 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
 
                 # Check if current session matches the workspace - reuse if same workspace
                 if current_session and current_session != "default":
-                    current_workspace = container_manager._extract_workspace_id(current_session)
+                    current_workspace = container_manager._extract_workspace_id(
+                        current_session
+                    )
                     if current_workspace == workspace_uuid:
                         # Same workspace, reuse existing session
                         data["sessionId"] = current_session
-                        print(f"🔄 Reusing existing container session for user {user_id}: {current_session}")
+                        print(
+                            f"🔄 Reusing existing container session for user {user_id}: {current_session}"
+                        )
                     else:
                         # Different workspace, look for existing session for this workspace
-                        existing_session = container_manager.find_session_by_workspace_id(workspace_uuid)
+                        existing_session = (
+                            container_manager.find_session_by_workspace_id(
+                                workspace_uuid
+                            )
+                        )
                         if existing_session:
                             # Use existing session for this workspace
                             websocket_manager.set_session(websocket, existing_session)
                             data["sessionId"] = existing_session
-                            print(f"🔄 Switching to existing container session for user {user_id}: {existing_session}")
+                            print(
+                                f"🔄 Switching to existing container session for user {user_id}: {existing_session}"
+                            )
                         else:
                             # Create new unique session ID for new workspace
-                            unique_session_id = create_unique_session_id(workspace_uuid, user_id)
+                            unique_session_id = create_unique_session_id(
+                                workspace_uuid, user_id
+                            )
                             websocket_manager.set_session(websocket, unique_session_id)
-                            print(f"🔄 Created unique session ID for user {user_id}: {workspace_uuid} → {unique_session_id}")
+                            print(
+                                f"🔄 Created unique session ID for user {user_id}: {workspace_uuid} → {unique_session_id}"
+                            )
                             data["sessionId"] = unique_session_id
                 else:
                     # No current session, look for existing session for this workspace
-                    existing_session = container_manager.find_session_by_workspace_id(workspace_uuid)
+                    existing_session = container_manager.find_session_by_workspace_id(
+                        workspace_uuid
+                    )
                     if existing_session:
                         # Use existing session for this workspace
                         websocket_manager.set_session(websocket, existing_session)
                         data["sessionId"] = existing_session
-                        print(f"🔄 Using existing container session for user {user_id}: {existing_session}")
+                        print(
+                            f"🔄 Using existing container session for user {user_id}: {existing_session}"
+                        )
                     else:
                         # Create new unique session ID and associate it with this WebSocket
-                        unique_session_id = create_unique_session_id(workspace_uuid, user_id)
+                        unique_session_id = create_unique_session_id(
+                            workspace_uuid, user_id
+                        )
                         websocket_manager.set_session(websocket, unique_session_id)
-                        print(f"🔄 Created unique session ID for user {user_id}: {workspace_uuid} → {unique_session_id}")
+                        print(
+                            f"🔄 Created unique session ID for user {user_id}: {workspace_uuid} → {unique_session_id}"
+                        )
                         data["sessionId"] = unique_session_id
 
             # Handle the message
@@ -196,13 +220,20 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
         websocket_manager.disconnect(websocket)
 
         # Clean up container if no other connections to this session
-        if session_id != "default" and not websocket_manager.has_other_connections_to_session(session_id):
-            print(f"🧹 No other connections to session {session_id}, cleaning up container...")
+        if (
+            session_id != "default"
+            and not websocket_manager.has_other_connections_to_session(session_id)
+        ):
+            print(
+                f"🧹 No other connections to session {session_id}, cleaning up container..."
+            )
             try:
                 await container_manager.cleanup_session(session_id)
                 print(f"✅ Container cleanup completed for session {session_id}")
             except Exception as cleanup_error:
-                print(f"❌ Error during container cleanup for session {session_id}: {cleanup_error}")
+                print(
+                    f"❌ Error during container cleanup for session {session_id}: {cleanup_error}"
+                )
 
         print("WebSocket client disconnected")
 
@@ -213,13 +244,20 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
         websocket_manager.disconnect(websocket)
 
         # Clean up container if no other connections to this session
-        if session_id != "default" and not websocket_manager.has_other_connections_to_session(session_id):
-            print(f"🧹 WebSocket error cleanup - removing container for session {session_id}")
+        if (
+            session_id != "default"
+            and not websocket_manager.has_other_connections_to_session(session_id)
+        ):
+            print(
+                f"🧹 WebSocket error cleanup - removing container for session {session_id}"
+            )
             try:
                 await container_manager.cleanup_session(session_id)
                 print(f"✅ Container cleanup completed for session {session_id}")
             except Exception as cleanup_error:
-                print(f"❌ Error during container cleanup for session {session_id}: {cleanup_error}")
+                print(
+                    f"❌ Error during container cleanup for session {session_id}: {cleanup_error}"
+                )
 
 
 @app.get("/")
@@ -242,7 +280,7 @@ async def shutdown_workspace(workspace_id: str) -> dict[str, Any]:
             return {
                 "success": True,
                 "message": f"No active session found for workspace {workspace_id}",
-                "workspace_id": workspace_id
+                "workspace_id": workspace_id,
             }
 
         # Check if there are any active WebSocket connections to this session
@@ -257,7 +295,7 @@ async def shutdown_workspace(workspace_id: str) -> dict[str, Any]:
             "workspace_id": workspace_id,
             "session_id": session_id,
             "active_connections": connection_count,
-            "container_cleaned": cleanup_success
+            "container_cleaned": cleanup_success,
         }
 
     except Exception as e:
@@ -265,7 +303,7 @@ async def shutdown_workspace(workspace_id: str) -> dict[str, Any]:
             "success": False,
             "message": f"Error shutting down workspace {workspace_id}: {str(e)}",
             "workspace_id": workspace_id,
-            "error": str(e)
+            "error": str(e),
         }
 
 

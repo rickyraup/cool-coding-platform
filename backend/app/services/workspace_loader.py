@@ -33,7 +33,9 @@ class WorkspaceLoaderService:
                 return True  # Empty workspace is valid
 
             # Find container session by workspace ID (new user-aware session system)
-            active_session_id = container_manager.find_session_by_workspace_id(str(session_id))
+            active_session_id = container_manager.find_session_by_workspace_id(
+                str(session_id)
+            )
             if not active_session_id:
                 # Fallback: create new session (should not normally happen)
                 container_session = await container_manager.get_or_create_session(
@@ -55,7 +57,9 @@ class WorkspaceLoaderService:
             return False
 
     async def _create_workspace_structure(
-        self, workspace_items: list[WorkspaceItem], base_dir: str,
+        self,
+        workspace_items: list[WorkspaceItem],
+        base_dir: str,
     ) -> None:
         """Create the file/folder structure in the container working directory."""
         # Sort items to ensure folders are created before files
@@ -112,7 +116,9 @@ class WorkspaceLoaderService:
                 return False
 
             # Find container session by workspace ID (new user-aware session system)
-            active_session_id = container_manager.find_session_by_workspace_id(str(session_id))
+            active_session_id = container_manager.find_session_by_workspace_id(
+                str(session_id)
+            )
             if not active_session_id:
                 logger.error(f"No active container session for workspace {session_id}")
                 return False
@@ -207,12 +213,16 @@ class WorkspaceLoaderService:
             raise
 
     async def get_workspace_file_content(
-        self, session_id: int, file_path: str,
+        self,
+        session_id: int,
+        file_path: str,
     ) -> Optional[str]:
         """Get content of a specific file from the container workspace."""
         try:
             # Find container session by workspace ID (new user-aware session system)
-            active_session_id = container_manager.find_session_by_workspace_id(str(session_id))
+            active_session_id = container_manager.find_session_by_workspace_id(
+                str(session_id)
+            )
             if not active_session_id:
                 logger.error(f"No active container session for workspace {session_id}")
                 return None
@@ -235,12 +245,17 @@ class WorkspaceLoaderService:
             return None
 
     async def update_workspace_file_content(
-        self, session_id: int, file_path: str, content: str,
+        self,
+        session_id: int,
+        file_path: str,
+        content: str,
     ) -> bool:
         """Update content of a specific file in the container workspace."""
         try:
             # Find container session by workspace ID (new user-aware session system)
-            active_session_id = container_manager.find_session_by_workspace_id(str(session_id))
+            active_session_id = container_manager.find_session_by_workspace_id(
+                str(session_id)
+            )
             if not active_session_id:
                 logger.error(f"No active container session for workspace {session_id}")
                 return False
@@ -266,8 +281,9 @@ class WorkspaceLoaderService:
             )
             return False
 
-
-    async def create_workspace_file(self, session_id: int, file_path: str, content: str = "") -> bool:
+    async def create_workspace_file(
+        self, session_id: int, file_path: str, content: str = ""
+    ) -> bool:
         """Create a new file in the container workspace."""
         try:
             # Get session from database
@@ -293,7 +309,9 @@ class WorkspaceLoaderService:
             return True
 
         except Exception as e:
-            logger.exception(f"Failed to create file {file_path} in session {session_id}: {e}")
+            logger.exception(
+                f"Failed to create file {file_path} in session {session_id}: {e}"
+            )
             return False
 
     async def delete_workspace_file(self, session_id: int, file_path: str) -> bool:
@@ -308,7 +326,9 @@ class WorkspaceLoaderService:
             # Get container session using UUID (sessions are stored by UUID string, not integer ID)
             session_uuid = session.uuid
             if session_uuid not in container_manager.active_sessions:
-                logger.error(f"No active container session for workspace {session_id} (UUID: {session_uuid})")
+                logger.error(
+                    f"No active container session for workspace {session_id} (UUID: {session_uuid})"
+                )
                 return False
 
             container_session = container_manager.active_sessions[session_uuid]
@@ -321,12 +341,16 @@ class WorkspaceLoaderService:
                 if os.path.isfile(full_path):
                     os.remove(full_path)
                     container_deleted = True
-                    logger.info(f"Deleted file {file_path} from container session {session_id}")
+                    logger.info(
+                        f"Deleted file {file_path} from container session {session_id}"
+                    )
                 else:
                     logger.error(f"Path {file_path} is not a file in container")
                     return False
             else:
-                logger.warning(f"File {file_path} not found in container session {session_id}")
+                logger.warning(
+                    f"File {file_path} not found in container session {session_id}"
+                )
 
             # Also delete from the Docker mounted volume (filesystem sync location)
             sessions_dir = "/tmp/coding_platform_sessions"
@@ -338,53 +362,84 @@ class WorkspaceLoaderService:
                 if os.path.isfile(sync_file_path):
                     os.remove(sync_file_path)
                     docker_deleted = True
-                    logger.info(f"Deleted file {file_path} from Docker mounted volume for session {session.uuid}")
+                    logger.info(
+                        f"Deleted file {file_path} from Docker mounted volume for session {session.uuid}"
+                    )
                 else:
-                    logger.error(f"Path {file_path} is not a file in Docker mounted volume")
+                    logger.error(
+                        f"Path {file_path} is not a file in Docker mounted volume"
+                    )
             else:
-                logger.warning(f"File {file_path} not found in Docker mounted volume for session {session.uuid}")
+                logger.warning(
+                    f"File {file_path} not found in Docker mounted volume for session {session.uuid}"
+                )
 
             # CRUCIAL: Also delete from inside the Docker container filesystem
             container_exec_deleted = False
             try:
                 # Execute rm command inside the Docker container to remove the file
                 rm_command = f"rm /app/{file_path}"
-                output, exit_code = await container_manager.execute_command(session_uuid, rm_command)
+                output, exit_code = await container_manager.execute_command(
+                    session_uuid, rm_command
+                )
                 if exit_code == 0:
                     container_exec_deleted = True
-                    logger.info(f"Successfully deleted file {file_path} from Docker container for session {session_uuid}")
+                    logger.info(
+                        f"Successfully deleted file {file_path} from Docker container for session {session_uuid}"
+                    )
                 else:
-                    logger.warning(f"Failed to delete file {file_path} from Docker container: {output}")
+                    logger.warning(
+                        f"Failed to delete file {file_path} from Docker container: {output}"
+                    )
             except Exception as e:
-                logger.error(f"Exception while deleting file {file_path} from Docker container: {e}")
+                logger.error(
+                    f"Exception while deleting file {file_path} from Docker container: {e}"
+                )
 
             # Also delete from the database (WorkspaceItem)
             database_deleted = False
             try:
                 # Find the WorkspaceItem by session_id and full_path
                 from app.models.postgres_models import WorkspaceItem
+
                 workspace_items = WorkspaceItem.get_all_by_session(session_id)
                 for item in workspace_items:
-                    if item.full_path == file_path and item.type == 'file':
+                    if item.full_path == file_path and item.type == "file":
                         if item.delete():
                             database_deleted = True
-                            logger.info(f"Deleted WorkspaceItem from database for file {file_path} in session {session_id}")
+                            logger.info(
+                                f"Deleted WorkspaceItem from database for file {file_path} in session {session_id}"
+                            )
                         break
                 if not database_deleted:
-                    logger.warning(f"WorkspaceItem not found in database for file {file_path} in session {session_id}")
+                    logger.warning(
+                        f"WorkspaceItem not found in database for file {file_path} in session {session_id}"
+                    )
             except Exception as e:
-                logger.error(f"Failed to delete WorkspaceItem from database for file {file_path} in session {session_id}: {e}")
+                logger.error(
+                    f"Failed to delete WorkspaceItem from database for file {file_path} in session {session_id}: {e}"
+                )
 
             # Return success if we deleted from at least one location
-            if container_deleted or docker_deleted or container_exec_deleted or database_deleted:
-                logger.info(f"Successfully deleted file {file_path} from session {session_id} (container: {container_deleted}, docker: {docker_deleted}, container_exec: {container_exec_deleted}, database: {database_deleted})")
+            if (
+                container_deleted
+                or docker_deleted
+                or container_exec_deleted
+                or database_deleted
+            ):
+                logger.info(
+                    f"Successfully deleted file {file_path} from session {session_id} (container: {container_deleted}, docker: {docker_deleted}, container_exec: {container_exec_deleted}, database: {database_deleted})"
+                )
                 return True
-            else:
-                logger.error(f"File {file_path} not found in container, Docker mounted volume, Docker container exec, or database for session {session_id}")
-                return False
+            logger.error(
+                f"File {file_path} not found in container, Docker mounted volume, Docker container exec, or database for session {session_id}"
+            )
+            return False
 
         except Exception as e:
-            logger.exception(f"Failed to delete file {file_path} from session {session_id}: {e}")
+            logger.exception(
+                f"Failed to delete file {file_path} from session {session_id}: {e}"
+            )
             return False
 
 

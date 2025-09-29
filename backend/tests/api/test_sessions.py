@@ -12,14 +12,10 @@ class TestSessionsAPI:
         """Test session creation."""
         # Create test user in mock database
         user_id = test_db_session.execute_insert(
-            "INSERT INTO users",
-            ("testuser", "test@example.com", "hashed_password")
+            "INSERT INTO users", ("testuser", "test@example.com", "hashed_password")
         )
 
-        session_data = {
-            "user_id": user_id,
-            "name": "Test Session"
-        }
+        session_data = {"user_id": user_id, "name": "Test Session"}
 
         response = client.post("/api/postgres_sessions/", json=session_data)
         assert response.status_code == 201
@@ -36,7 +32,7 @@ class TestSessionsAPI:
         user = User(
             username="testuser",
             email="test@example.com",
-            password_hash="hashed_password"
+            password_hash="hashed_password",
         )
         user.save()
 
@@ -45,7 +41,7 @@ class TestSessionsAPI:
             user_id=user.id,
             name="Test Session",
             code="print('test')",
-            language="python"
+            language="python",
         )
         session.save()
         test_db_session.commit()
@@ -64,7 +60,7 @@ class TestSessionsAPI:
         user = User(
             username="testuser",
             email="test@example.com",
-            password_hash="hashed_password"
+            password_hash="hashed_password",
         )
         user.save()
 
@@ -73,7 +69,7 @@ class TestSessionsAPI:
             user_id=user.id,
             name="Specific Test Session",
             code="print('specific test')",
-            language="python"
+            language="python",
         )
         session.save()
         test_db_session.commit()
@@ -92,7 +88,7 @@ class TestSessionsAPI:
         user = User(
             username="testuser",
             email="test@example.com",
-            password_hash="hashed_password"
+            password_hash="hashed_password",
         )
         user.save()
 
@@ -101,18 +97,15 @@ class TestSessionsAPI:
             user_id=user.id,
             name="Original Name",
             code="print('original')",
-            language="python"
+            language="python",
         )
         session.save()
         test_db_session.commit()
 
-        update_data = {
-            "name": "Updated Name"
-        }
+        update_data = {"name": "Updated Name"}
 
         response = client.put(
-            f"/api/postgres_sessions/test-uuid-789?user_id={user.id}",
-            json=update_data
+            f"/api/postgres_sessions/test-uuid-789?user_id={user.id}", json=update_data
         )
         assert response.status_code == 200
 
@@ -126,7 +119,7 @@ class TestSessionsAPI:
         user = User(
             username="testuser",
             email="test@example.com",
-            password_hash="hashed_password"
+            password_hash="hashed_password",
         )
         user.save()
 
@@ -135,12 +128,14 @@ class TestSessionsAPI:
             user_id=user.id,
             name="To Be Deleted",
             code="print('delete me')",
-            language="python"
+            language="python",
         )
         session.save()
         test_db_session.commit()
 
-        response = client.delete(f"/api/postgres_sessions/test-uuid-delete?user_id={user.id}")
+        response = client.delete(
+            f"/api/postgres_sessions/test-uuid-delete?user_id={user.id}"
+        )
         assert response.status_code == 200
 
         data = response.json()
@@ -151,16 +146,12 @@ class TestSessionsAPI:
         """Test accessing session with wrong user_id."""
         # Create two users
         user1 = User(
-            username="user1",
-            email="user1@example.com",
-            password_hash="hashed_password"
+            username="user1", email="user1@example.com", password_hash="hashed_password"
         )
         user1.save()
 
         user2 = User(
-            username="user2",
-            email="user2@example.com",
-            password_hash="hashed_password"
+            username="user2", email="user2@example.com", password_hash="hashed_password"
         )
         user2.save()
 
@@ -170,11 +161,13 @@ class TestSessionsAPI:
             user_id=user1.id,
             name="User1's Session",
             code="print('private')",
-            language="python"
+            language="python",
         )
         session.save()
         test_db_session.commit()
 
         # Try to access with user2's ID
-        response = client.get(f"/api/postgres_sessions/test-uuid-unauth?user_id={user2.id}")
+        response = client.get(
+            f"/api/postgres_sessions/test-uuid-unauth?user_id={user2.id}"
+        )
         assert response.status_code == 403

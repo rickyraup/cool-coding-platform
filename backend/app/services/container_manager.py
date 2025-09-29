@@ -9,14 +9,13 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
-from app.services.docker_client import docker_client_service
+from app.services.kubernetes_client import PodSession, kubernetes_client_service
 from app.utils.datetime_utils import utc_now
 
 
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from docker.models.containers import Container
 
 
 logger = logging.getLogger(__name__)
@@ -24,11 +23,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ContainerSession:
-    """Information about an active container session."""
+    """Information about an active Kubernetes pod session."""
 
     session_id: str
-    container: Container
-    container_id: str
+    pod_session: PodSession
+    pod_name: str
     working_dir: str
     created_at: datetime
     last_activity: datetime
@@ -84,7 +83,10 @@ class ContainerSessionManager:
                 # Try to extract workspace UUID from other formats
                 # Look for UUID patterns in session_id
                 import re
-                uuid_pattern = r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+
+                uuid_pattern = (
+                    r"([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"
+                )
                 match = re.search(uuid_pattern, session_id)
                 if match:
                     return match.group(1)
@@ -104,7 +106,9 @@ class ContainerSessionManager:
         """Enforce per-user container limits."""
         user_id = self._extract_user_id(session_id)
         if not user_id:
-            logger.warning(f"Cannot enforce user limits for session {session_id}: no user_id")
+            logger.warning(
+                f"Cannot enforce user limits for session {session_id}: no user_id"
+            )
             return
 
         # Get current user sessions
@@ -117,7 +121,12 @@ class ContainerSessionManager:
 
             for user_session_id in user_sessions:
                 if user_session_id in self.active_sessions:
-                    oldest_sessions.append((user_session_id, self.active_sessions[user_session_id].created_at))
+                    oldest_sessions.append(
+                        (
+                            user_session_id,
+                            self.active_sessions[user_session_id].created_at,
+                        )
+                    )
 
             # Sort by creation time and remove oldest
             oldest_sessions.sort(key=lambda x: x[1])
@@ -125,9 +134,12 @@ class ContainerSessionManager:
 
             for i in range(sessions_to_remove):
                 old_session_id = oldest_sessions[i][0]
-                logger.info(f"Cleaning up old session {old_session_id} for user {user_id} due to limit")
+                logger.info(
+                    f"Cleaning up old session {old_session_id} for user {user_id} due to limit"
+                )
                 # Use asyncio to run cleanup (will be handled by event loop)
                 import asyncio
+
                 asyncio.create_task(self.cleanup_session(old_session_id))
 
     async def get_or_create_session(self, session_id: str) -> ContainerSession:
@@ -145,7 +157,9 @@ class ContainerSessionManager:
         """Create a new container session, cleaning up existing one if it exists."""
         # If session already exists, clean it up first
         if session_id in self.active_sessions:
-            logger.info(f"Cleaning up existing session {session_id} to create fresh container")
+            logger.info(
+                f"Cleaning up existing session {session_id} to create fresh container"
+            )
             await self.cleanup_session(session_id)
 
         # Create completely fresh session
@@ -174,8 +188,8 @@ class ContainerSessionManager:
 
         if workspace_id:
             try:
+                from app.models.postgres_models import CodeSession, WorkspaceItem
                 from app.services.workspace_loader import workspace_loader
-                from app.models.postgres_models import WorkspaceItem, CodeSession
 
                 # Try to convert workspace_id to int (for database lookup)
                 try:
@@ -184,26 +198,42 @@ class ContainerSessionManager:
                     existing_items = WorkspaceItem.get_all_by_session(workspace_int_id)
                     if existing_items:
                         should_create_defaults = False
-                        logger.info(f"Found {len(existing_items)} existing workspace items for session {workspace_id}, skipping default file creation")
+                        logger.info(
+                            f"Found {len(existing_items)} existing workspace items for session {workspace_id}, skipping default file creation"
+                        )
                 except ValueError:
                     # workspace_id is not numeric (UUID-based), check if session exists in database
-                    logger.debug(f"Workspace ID {workspace_id} is not numeric, checking if UUID-based session exists")
+                    logger.debug(
+                        f"Workspace ID {workspace_id} is not numeric, checking if UUID-based session exists"
+                    )
                     try:
                         session = CodeSession.get_by_uuid(workspace_id)
                         if session and session.id:
                             # Check if this session has any workspace items
-                            existing_items = WorkspaceItem.get_all_by_session(session.id)
+                            existing_items = WorkspaceItem.get_all_by_session(
+                                session.id
+                            )
                             if existing_items:
                                 should_create_defaults = False
-                                logger.info(f"Found {len(existing_items)} existing workspace items for UUID session {workspace_id}, skipping default file creation")
+                                logger.info(
+                                    f"Found {len(existing_items)} existing workspace items for UUID session {workspace_id}, skipping default file creation"
+                                )
                             else:
-                                logger.info(f"UUID session {workspace_id} exists but has no workspace items, will create defaults")
+                                logger.info(
+                                    f"UUID session {workspace_id} exists but has no workspace items, will create defaults"
+                                )
                         else:
-                            logger.debug(f"UUID session {workspace_id} not found in database, treating as new workspace")
+                            logger.debug(
+                                f"UUID session {workspace_id} not found in database, treating as new workspace"
+                            )
                     except Exception as uuid_error:
-                        logger.warning(f"Failed to check UUID session {workspace_id}: {uuid_error}")
+                        logger.warning(
+                            f"Failed to check UUID session {workspace_id}: {uuid_error}"
+                        )
             except Exception as e:
-                logger.warning(f"Failed to check existing workspace items for session {session_id}: {e}")
+                logger.warning(
+                    f"Failed to check existing workspace items for session {session_id}: {e}"
+                )
 
         # Only create a sample Python file if no workspace items exist
         if should_create_defaults:
@@ -213,17 +243,15 @@ class ContainerSessionManager:
             logger.info(f"Created default main.py for new workspace {session_id}")
 
         try:
-            # Create Docker container
-            logger.info(f"Creating container for session {session_id}")
-            container = docker_client_service.create_session_container(
-                session_id, working_dir,
-            )
+            # Create Kubernetes pod
+            logger.info(f"Creating pod for session {session_id}")
+            pod_session = await kubernetes_client_service.create_session_pod(session_id)
 
             # Store session info
             session = ContainerSession(
                 session_id=session_id,
-                container=container,
-                container_id=container.short_id,
+                pod_session=pod_session,
+                pod_name=pod_session.name,
                 working_dir=working_dir,
                 created_at=utc_now(),
                 last_activity=utc_now(),
@@ -240,7 +268,7 @@ class ContainerSessionManager:
                 logger.info(f"Added session {session_id} for user {user_id}")
 
             logger.info(
-                f"Created container session {session_id} with container {container.short_id}",
+                f"Created pod session {session_id} with pod {pod_session.name}",
             )
 
             # Load workspace from database (extract workspace_id from session_id)
@@ -255,18 +283,31 @@ class ContainerSessionManager:
                         await workspace_loader.load_workspace_into_container(
                             workspace_int_id,
                         )
-                        logger.info(f"Loaded workspace {workspace_id} for session {session_id}")
+                        logger.info(
+                            f"Loaded workspace {workspace_id} for session {session_id}"
+                        )
                     except ValueError:
                         # workspace_id is not numeric (UUID-based), sync from database
-                        logger.debug(f"Workspace ID {workspace_id} is not numeric, syncing from database")
+                        logger.debug(
+                            f"Workspace ID {workspace_id} is not numeric, syncing from database"
+                        )
                         try:
-                            from app.api.workspace_files import sync_all_files_to_filesystem
+                            from app.api.workspace_files import (
+                                sync_all_files_to_filesystem,
+                            )
+
                             if sync_all_files_to_filesystem(workspace_id):
-                                logger.info(f"Synced database files to container for UUID workspace {workspace_id}")
+                                logger.info(
+                                    f"Synced database files to container for UUID workspace {workspace_id}"
+                                )
                             else:
-                                logger.warning(f"No files found to sync for UUID workspace {workspace_id}")
+                                logger.warning(
+                                    f"No files found to sync for UUID workspace {workspace_id}"
+                                )
                         except Exception as sync_error:
-                            logger.warning(f"Failed to sync database files for workspace {workspace_id}: {sync_error}")
+                            logger.warning(
+                                f"Failed to sync database files for workspace {workspace_id}: {sync_error}"
+                            )
             except Exception as workspace_error:
                 logger.warning(
                     f"Failed to load workspace for session {session_id}: {workspace_error}",
@@ -280,7 +321,7 @@ class ContainerSessionManager:
                 shutil.rmtree(working_dir, ignore_errors=True)
             logger.exception(f"Failed to create session {session_id}: {e}")
             msg = f"Failed to create container session: {e}"
-            raise RuntimeError(msg)
+            raise RuntimeError(msg) from e
 
     async def execute_command(self, session_id: str, command: str) -> tuple[str, int]:
         """Execute a command in the container session."""
@@ -290,19 +331,19 @@ class ContainerSessionManager:
             # Update last activity
             session.last_activity = utc_now()
 
-            # Check if container is still running
+            # Check if pod is still running
             try:
-                session.container.reload()
-                if session.container.status != "running":
+                pod = kubernetes_client_service.get_pod(session.pod_name)
+                if not pod or pod.status.phase != "Running":
                     logger.warning(
-                        f"Container for session {session_id} is not running: {session.container.status}",
+                        f"Pod for session {session_id} is not running: {pod.status.phase if pod else 'not found'}",
                     )
                     # Try to restart the session
                     await self.cleanup_session(session_id)
                     session = await self.create_session(session_id)
-            except Exception as container_check_error:
+            except Exception as pod_check_error:
                 logger.exception(
-                    f"Container health check failed for session {session_id}: {container_check_error}",
+                    f"Pod health check failed for session {session_id}: {pod_check_error}",
                 )
                 # Try to restart the session
                 await self.cleanup_session(session_id)
@@ -317,8 +358,9 @@ class ContainerSessionManager:
             logger.debug(
                 f"Executing command in session {session_id} from {session.current_dir}: {command}",
             )
-            output, exit_code = docker_client_service.execute_command(
-                session.container, full_command,
+            output, exit_code = kubernetes_client_service.execute_command(
+                session.pod_name,
+                full_command,
             )
 
             return output, exit_code
@@ -331,7 +373,9 @@ class ContainerSessionManager:
             return f"Session error: {e}", 1
 
     async def _handle_cd_command(
-        self, session: ContainerSession, command: str,
+        self,
+        session: ContainerSession,
+        command: str,
     ) -> tuple[str, int]:
         """Handle cd command and update session directory state."""
         parts = command.strip().split()
@@ -362,8 +406,9 @@ class ContainerSessionManager:
 
         # Test if the directory exists
         test_command = f"cd {new_dir} && pwd"
-        output, exit_code = docker_client_service.execute_command(
-            session.container, test_command,
+        output, exit_code = kubernetes_client_service.execute_command(
+            session.pod_name,
+            test_command,
         )
 
         if exit_code == 0:
@@ -382,26 +427,23 @@ class ContainerSessionManager:
             return None
 
         try:
-            # Get container stats
-            stats = docker_client_service.get_container_stats(session.container)
+            # Get pod stats
+            stats = kubernetes_client_service.get_pod_stats(session.pod_name)
 
             return {
                 "session_id": session_id,
-                "container_id": session.container_id,
+                "pod_name": session.pod_name,
                 "status": session.status,
                 "created_at": session.created_at.isoformat(),
                 "last_activity": session.last_activity.isoformat(),
-                "uptime_minutes": (
-                    utc_now() - session.created_at
-                ).total_seconds()
-                / 60,
+                "uptime_minutes": (utc_now() - session.created_at).total_seconds() / 60,
                 "resource_usage": stats,
             }
         except Exception as e:
             logger.exception(f"Failed to get session info for {session_id}: {e}")
             return {
                 "session_id": session_id,
-                "container_id": session.container_id,
+                "pod_name": session.pod_name,
                 "status": "error",
                 "error": str(e),
             }
@@ -435,17 +477,22 @@ class ContainerSessionManager:
                         await workspace_loader.save_workspace_from_container(
                             workspace_int_id,
                         )
-                        logger.info(f"Saved workspace {workspace_id} for session {session_id}")
+                        logger.info(
+                            f"Saved workspace {workspace_id} for session {session_id}"
+                        )
                     except ValueError:
                         # workspace_id is not numeric (UUID-based), skip for now
-                        logger.debug(f"Skipping workspace save for UUID-based workspace {workspace_id}")
+                        logger.debug(
+                            f"Skipping workspace save for UUID-based workspace {workspace_id}"
+                        )
             except Exception as workspace_error:
                 logger.warning(
                     f"Failed to save workspace for session {session_id}: {workspace_error}",
                 )
 
-            # Stop container
-            docker_client_service.stop_container(session.container)
+            # Delete pod
+            kubernetes_client_service.delete_pod(session.pod_name)
+            kubernetes_client_service.delete_pvc(session.pod_session.pvc_name)
 
             # Clean up working directory
             if os.path.exists(session.working_dir):
@@ -496,7 +543,8 @@ class ContainerSessionManager:
         if len(self.active_sessions) >= self.max_total_containers:
             # Clean up oldest sessions
             oldest_sessions = sorted(
-                self.active_sessions.items(), key=lambda x: x[1].last_activity,
+                self.active_sessions.items(),
+                key=lambda x: x[1].last_activity,
             )
 
             sessions_to_remove = (
@@ -547,11 +595,15 @@ class ContainerSessionManager:
                 user_stats[user_id] = {
                     "active_sessions": active_session_count,
                     "session_limit": self.max_containers_per_user,
-                    "usage_percent": round((active_session_count / self.max_containers_per_user) * 100, 1),
+                    "usage_percent": round(
+                        (active_session_count / self.max_containers_per_user) * 100, 1
+                    ),
                     "total_memory_mb": round(total_memory_mb, 1),
                     "total_cpu_percent": round(total_cpu_percent, 1),
                     "avg_memory_mb": round(total_memory_mb / active_session_count, 1),
-                    "avg_cpu_percent": round(total_cpu_percent / active_session_count, 1),
+                    "avg_cpu_percent": round(
+                        total_cpu_percent / active_session_count, 1
+                    ),
                     "sessions": sessions_info,
                 }
 
@@ -575,11 +627,11 @@ class ContainerSessionManager:
             if await self.cleanup_session(session_id):
                 cleanup_count += 1
 
-        # Also cleanup any leftover Docker containers
-        docker_cleanup_count = docker_client_service.cleanup_all_session_containers()
+        # Also cleanup any leftover Kubernetes pods
+        k8s_cleanup_count = kubernetes_client_service.cleanup_session_pods()
 
         logger.info(
-            f"Cleaned up {cleanup_count} sessions and {docker_cleanup_count} containers",
+            f"Cleaned up {cleanup_count} sessions and {k8s_cleanup_count} pods",
         )
         return cleanup_count
 
@@ -591,17 +643,17 @@ class ContainerSessionManager:
             return False
 
         try:
-            # Stop existing container
-            docker_client_service.stop_container(session.container)
+            # Delete existing pod
+            kubernetes_client_service.delete_pod(session.pod_name)
 
-            # Create new container
-            new_container = docker_client_service.create_session_container(
-                session_id, session.working_dir,
+            # Create new pod
+            new_pod_session = await kubernetes_client_service.create_session_pod(
+                session_id
             )
 
             # Update session info
-            session.container = new_container
-            session.container_id = new_container.short_id
+            session.pod_session = new_pod_session
+            session.pod_name = new_pod_session.name
             session.last_activity = utc_now()
 
             logger.info(f"Restarted container for session {session_id}")
@@ -613,9 +665,9 @@ class ContainerSessionManager:
             await self.cleanup_session(session_id)
             return False
 
-    def is_docker_available(self) -> bool:
-        """Check if Docker is available for container operations."""
-        return docker_client_service.is_docker_available()
+    def is_kubernetes_available(self) -> bool:
+        """Check if Kubernetes is available for pod operations."""
+        return kubernetes_client_service.is_kubernetes_available()
 
 
 # Global instance

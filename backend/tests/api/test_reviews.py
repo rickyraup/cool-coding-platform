@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.models.postgres_models import CodeSession, User
-from app.models.reviews import ReviewRequest, ReviewStatus
 
 
 @pytest.mark.api
@@ -17,7 +16,7 @@ class TestReviewsAPI:
         user = User(
             username="testuser",
             email="test@example.com",
-            password_hash="hashed_password"
+            password_hash="hashed_password",
         )
         user.save()
         test_db_session.commit()
@@ -28,20 +27,21 @@ class TestReviewsAPI:
             user_id=user.id,
             name="Test Session",
             code="print('Hello, World!')",
-            language="python"
+            language="python",
         )
         session.save()
         test_db_session.commit()
 
         # Mock the get_current_user_id to return our test user
         from app.api.reviews import get_current_user_id
-        original_func = get_current_user_id
+
 
         def mock_get_current_user_id():
             return user.id
 
         # Override the dependency
         from app.main import app
+
         app.dependency_overrides[get_current_user_id] = mock_get_current_user_id
 
         try:
@@ -50,7 +50,7 @@ class TestReviewsAPI:
                 "session_id": "test-session-uuid-123",
                 "title": "Test Review Request",
                 "description": "This is a test review request",
-                "priority": "medium"
+                "priority": "medium",
             }
 
             response = client.post("/api/reviews/", json=review_data)
@@ -65,20 +65,22 @@ class TestReviewsAPI:
             # Clean up override
             app.dependency_overrides.clear()
 
-    def test_create_review_request_unauthorized(self, client: TestClient, test_db_session):
+    def test_create_review_request_unauthorized(
+        self, client: TestClient, test_db_session
+    ):
         """Test review request creation with unauthorized user."""
         # Create a test user and session
         user = User(
             username="testuser",
             email="test@example.com",
-            password_hash="hashed_password"
+            password_hash="hashed_password",
         )
         user.save()
 
         other_user = User(
             username="otheruser",
             email="other@example.com",
-            password_hash="hashed_password"
+            password_hash="hashed_password",
         )
         other_user.save()
         test_db_session.commit()
@@ -89,7 +91,7 @@ class TestReviewsAPI:
             user_id=user.id,
             name="Test Session",
             code="print('Hello, World!')",
-            language="python"
+            language="python",
         )
         session.save()
         test_db_session.commit()
@@ -98,8 +100,9 @@ class TestReviewsAPI:
         def mock_get_current_user_id():
             return other_user.id
 
-        from app.main import app
         from app.api.reviews import get_current_user_id
+        from app.main import app
+
         app.dependency_overrides[get_current_user_id] = mock_get_current_user_id
 
         try:
@@ -107,7 +110,7 @@ class TestReviewsAPI:
                 "session_id": "test-session-uuid-456",
                 "title": "Unauthorized Review",
                 "description": "This should fail",
-                "priority": "medium"
+                "priority": "medium",
             }
 
             response = client.post("/api/reviews/", json=review_data)
@@ -118,13 +121,15 @@ class TestReviewsAPI:
         finally:
             app.dependency_overrides.clear()
 
-    def test_create_review_request_session_not_found(self, client: TestClient, test_db_session):
+    def test_create_review_request_session_not_found(
+        self, client: TestClient, test_db_session
+    ):
         """Test review request creation with non-existent session."""
         # Create a test user
         user = User(
             username="testuser",
             email="test@example.com",
-            password_hash="hashed_password"
+            password_hash="hashed_password",
         )
         user.save()
         test_db_session.commit()
@@ -132,8 +137,9 @@ class TestReviewsAPI:
         def mock_get_current_user_id():
             return user.id
 
-        from app.main import app
         from app.api.reviews import get_current_user_id
+        from app.main import app
+
         app.dependency_overrides[get_current_user_id] = mock_get_current_user_id
 
         try:
@@ -141,7 +147,7 @@ class TestReviewsAPI:
                 "session_id": "non-existent-uuid",
                 "title": "Test Review",
                 "description": "This should fail",
-                "priority": "medium"
+                "priority": "medium",
             }
 
             response = client.post("/api/reviews/", json=review_data)
@@ -175,7 +181,7 @@ class TestReviewsAPI:
         invalid_data = {
             "session_id": "",  # Empty session_id
             "title": "",  # Empty title
-            "priority": "invalid_priority"
+            "priority": "invalid_priority",
         }
 
         response = client.post("/api/reviews/", json=invalid_data)

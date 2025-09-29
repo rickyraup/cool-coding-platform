@@ -194,7 +194,9 @@ class User:
             for row in results
         ]
 
-    def update_reviewer_status(self, is_reviewer: bool, reviewer_level: int = 1) -> bool:
+    def update_reviewer_status(
+        self, is_reviewer: bool, reviewer_level: int = 1
+    ) -> bool:
         """Update user's reviewer status."""
         if not self.id:
             return False
@@ -229,7 +231,9 @@ class CodeSession:
     updated_at: Optional[datetime] = None
 
     @classmethod
-    def create(cls, user_id: int, name: Optional[str] = None, code: Optional[str] = None) -> "CodeSession":
+    def create(
+        cls, user_id: int, name: Optional[str] = None, code: Optional[str] = None
+    ) -> "CodeSession":
         """Create a new session."""
         db = get_db()
         query = """
@@ -237,7 +241,9 @@ class CodeSession:
             VALUES (%s, %s, %s, %s, %s)
         """
         default_code = code or '# Write your Python code here\nprint("Hello, World!")'
-        session_id = db.execute_insert(query, (user_id, name, default_code, "python", True))
+        session_id = db.execute_insert(
+            query, (user_id, name, default_code, "python", True)
+        )
         return cls.get_by_id(session_id)
 
     @classmethod
@@ -330,8 +336,13 @@ class CodeSession:
             return True
         return False
 
-    def update(self, name: Optional[str] = None, code: Optional[str] = None,
-               language: Optional[str] = None, is_active: Optional[bool] = None) -> bool:
+    def update(
+        self,
+        name: Optional[str] = None,
+        code: Optional[str] = None,
+        language: Optional[str] = None,
+        is_active: Optional[bool] = None,
+    ) -> bool:
         """Update session fields."""
         if not self.id:
             return False
@@ -441,7 +452,8 @@ class WorkspaceItem:
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         item_id = db.execute_insert(
-            query, (session_id, parent_id, name, item_type, content, full_path, session.uuid),
+            query,
+            (session_id, parent_id, name, item_type, content, full_path, session.uuid),
         )
         return cls.get_by_id(item_id)
 
@@ -472,7 +484,9 @@ class WorkspaceItem:
 
     @classmethod
     def get_by_session_and_parent(
-        cls, session_id: int, parent_id: Optional[int] = None,
+        cls,
+        session_id: int,
+        parent_id: Optional[int] = None,
     ) -> list["WorkspaceItem"]:
         """Get all items in a session/folder."""
         db = get_db()

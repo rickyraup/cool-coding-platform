@@ -23,8 +23,8 @@ pre-commit==4.0.1
 # For Python code execution
 subprocess32==3.5.4; sys_platform != "win32"
 
-# For secure code execution with Docker
-docker==7.1.0
+# For secure code execution with Kubernetes
+kubernetes==29.0.0
 
 # Additional utilities
 pandas==2.1.3

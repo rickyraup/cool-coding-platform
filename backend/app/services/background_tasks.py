@@ -5,7 +5,6 @@ import logging
 from typing import Any
 
 from app.services.container_manager import container_manager
-from app.services.docker_client import docker_client_service
 
 
 logger = logging.getLogger(__name__)
@@ -72,22 +71,9 @@ class BackgroundTaskManager:
         try:
             logger.info("Running startup cleanup...")
 
-            # Clean up any leftover containers from previous runs
-            cleanup_count = docker_client_service.cleanup_all_session_containers()
-            logger.info("Startup cleanup: removed %s leftover containers", cleanup_count)
-
-            # Ensure Docker image exists
-            if docker_client_service.is_docker_available():
-                if not docker_client_service.ensure_image_exists():
-                    logger.warning(
-                        "Docker image 'coding-platform:python311' not found. Please build it first.",
-                    )
-                else:
-                    logger.info("Docker image verified successfully")
-            else:
-                logger.warning(
-                    "Docker not available - will use subprocess fallback mode",
-                )
+            # Clean up any leftover Kubernetes pods from previous runs
+            cleanup_count = await container_manager.cleanup_all_sessions()
+            logger.info("Startup cleanup: cleaned up %s sessions", cleanup_count)
 
         except Exception as e:
             logger.exception("Error in startup cleanup: %s", e)
@@ -119,7 +105,7 @@ class BackgroundTaskManager:
                 await asyncio.sleep(10)  # Wait before retrying
 
     async def _health_check_task(self) -> None:
-        """Periodic health check of Docker and containers."""
+        """Periodic health check of Kubernetes pods."""
         while self.running:
             try:
                 await asyncio.sleep(self.health_check_interval)
@@ -127,36 +113,33 @@ class BackgroundTaskManager:
                 if not self.running:
                     break
 
-                # Check Docker daemon health
-                docker_available = docker_client_service.is_docker_available()
-
-                if not docker_available:
-                    logger.warning(
-                        "Docker daemon not responding - using subprocess fallback",
-                    )
+                # Check Kubernetes availability
+                if not container_manager.is_kubernetes_available():
+                    logger.warning("Kubernetes not available")
                     continue
 
-                # Check individual container health
+                # Get all active sessions
                 all_sessions = await container_manager.get_all_sessions_info()
-                active_sessions = all_sessions.get("active_sessions", {})
+                active_sessions: dict[str, Any] = all_sessions.get("active_sessions", {})
 
                 unhealthy_sessions = []
 
+                # Check individual pod health
                 for session_id, session_info in active_sessions.items():
                     try:
-                        container_id = session_info.get("container_id")
-                        if container_id:
-                            container = docker_client_service.get_container(
-                                container_id,
+                        pod_status = session_info.get("status")
+                        if pod_status and pod_status != "active":
+                            unhealthy_sessions.append(session_id)
+                            logger.warning(
+                                "Unhealthy pod detected for session %s (status: %s)",
+                                session_id,
+                                pod_status,
                             )
-                            if not container or container.status != "running":
-                                unhealthy_sessions.append(session_id)
-                                logger.warning(
-                                    "Unhealthy container detected for session %s", session_id,
-                                )
                     except Exception as e:
                         logger.exception(
-                            "Error checking health of session %s: %s", session_id, e,
+                            "Error checking health of session %s: %s",
+                            session_id,
+                            e,
                         )
                         unhealthy_sessions.append(session_id)
 
@@ -167,12 +150,15 @@ class BackgroundTaskManager:
                         logger.info("Cleaned up unhealthy session %s", session_id)
                     except Exception as e:
                         logger.exception(
-                            "Failed to cleanup unhealthy session %s: %s", session_id, e,
+                            "Failed to cleanup unhealthy session %s: %s",
+                            session_id,
+                            e,
                         )
 
                 if len(unhealthy_sessions) > 0:
                     logger.info(
-                        "Health check: cleaned up %s unhealthy sessions", len(unhealthy_sessions),
+                        "Health check: cleaned up %s unhealthy sessions",
+                        len(unhealthy_sessions),
                     )
 
             except Exception as e:
@@ -180,7 +166,7 @@ class BackgroundTaskManager:
                 await asyncio.sleep(30)  # Wait before retrying
 
     async def _resource_monitor_task(self) -> None:
-        """Periodic monitoring of system resources and container usage."""
+        """Periodic monitoring of system resources and pod usage."""
         while self.running:
             try:
                 await asyncio.sleep(self.resource_monitor_interval)
@@ -188,12 +174,12 @@ class BackgroundTaskManager:
                 if not self.running:
                     break
 
-                if not docker_client_service.is_docker_available():
+                if not container_manager.is_kubernetes_available():
                     continue
 
                 # Get all active sessions info
                 all_sessions = await container_manager.get_all_sessions_info()
-                active_sessions = all_sessions.get("active_sessions", {})
+                active_sessions: dict[str, Any] = all_sessions.get("active_sessions", {})
 
                 if not active_sessions:
                     continue
@@ -225,7 +211,7 @@ class BackgroundTaskManager:
 
                 # Get user-level statistics
                 user_sessions_info = await container_manager.get_user_sessions_info()
-                user_stats = user_sessions_info.get("user_stats", {})
+                user_stats: dict[str, Any] = user_sessions_info.get("user_stats", {})
                 total_users = user_sessions_info.get("total_users", 0)
 
                 logger.info(
@@ -236,7 +222,9 @@ class BackgroundTaskManager:
                 # Log per-user resource usage for users with high usage or near limits
                 for user_id, stats in user_stats.items():
                     usage_percent = stats.get("usage_percent", 0)
-                    if usage_percent >= 80 or stats.get("avg_memory_mb", 0) > 300:  # 80% of limit or high memory
+                    if (
+                        usage_percent >= 80 or stats.get("avg_memory_mb", 0) > 300
+                    ):  # 80% of limit or high memory
                         logger.info(
                             f"User {user_id}: {stats['active_sessions']}/{stats['session_limit']} sessions "
                             f"({usage_percent}%), avg memory: {stats['avg_memory_mb']:.1f}MB, "
@@ -271,9 +259,9 @@ class BackgroundTaskManager:
             status["tasks"][task_name] = {
                 "running": not task.done(),
                 "cancelled": task.cancelled(),
-                "exception": str(task.exception())
-                if task.done() and task.exception()
-                else None,
+                "exception": (
+                    str(task.exception()) if task.done() and task.exception() else None
+                ),
             }
 
         return status

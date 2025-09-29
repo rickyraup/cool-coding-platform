@@ -17,7 +17,7 @@ class TestReviewUUIDFix:
             "session_id": "test-uuid-123e4567-e89b-12d3-a456-426614174000",  # UUID string
             "title": "Test Review with UUID",
             "description": "Testing UUID session_id fix",
-            "priority": "medium"
+            "priority": "medium",
         }
 
         # This should NOT return a validation error about "Input should be a valid integer"
@@ -28,14 +28,18 @@ class TestReviewUUIDFix:
         # - 404 if session doesn't exist
         # - NOT 422 for validation errors (which was the bug we fixed)
 
-        assert response.status_code != 422, f"Should not get validation error. Response: {response.text}"
+        assert (
+            response.status_code != 422
+        ), f"Should not get validation error. Response: {response.text}"
 
         # The specific error we fixed was: "Input should be a valid integer"
         # So if we get any other error, the UUID type fix is working
         if response.status_code in [400, 401, 403, 404, 500]:
             # These are expected errors in test environment, not validation errors
             assert "Input should be a valid integer" not in response.text
-            print(f"✅ UUID type fix working. Got expected error: {response.status_code}")
+            print(
+                f"✅ UUID type fix working. Got expected error: {response.status_code}"
+            )
         else:
             # If we somehow got a success response, that's also fine
             print(f"✅ Review creation succeeded: {response.status_code}")
@@ -46,7 +50,7 @@ class TestReviewUUIDFix:
             "session_id": "valid-uuid-123e4567-e89b-12d3-a456-426614174000",
             "title": "",  # Empty title should fail validation
             "description": "Test description",
-            "priority": "invalid_priority"  # Invalid priority should fail
+            "priority": "invalid_priority",  # Invalid priority should fail
         }
 
         response = client.post("/api/reviews/", json=invalid_data)

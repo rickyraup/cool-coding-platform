@@ -10,6 +10,7 @@ from app.core.postgres import get_db
 
 class ReviewStatus(str, Enum):
     """Review request status options."""
+
     PENDING = "pending"
     IN_REVIEW = "in_review"
     APPROVED = "approved"
@@ -18,6 +19,7 @@ class ReviewStatus(str, Enum):
 
 class ReviewPriority(str, Enum):
     """Review priority levels."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -26,6 +28,7 @@ class ReviewPriority(str, Enum):
 
 class CommentType(str, Enum):
     """Comment type options."""
+
     GENERAL = "general"
     SUGGESTION = "suggestion"
     ISSUE = "issue"
@@ -35,6 +38,7 @@ class CommentType(str, Enum):
 
 class AssignmentStatus(str, Enum):
     """Assignment status options."""
+
     ASSIGNED = "assigned"
     ACCEPTED = "accepted"
     DECLINED = "declined"
@@ -69,7 +73,7 @@ class ReviewRequest:
         assigned_to: Optional[int] = None,
     ) -> "ReviewRequest":
         """Create a new review request."""
-        print(f"🔍 ReviewRequest.create called with:")
+        print("🔍 ReviewRequest.create called with:")
         print(f"  session_id: {session_id} (type: {type(session_id)})")
         print(f"  submitted_by: {submitted_by} (type: {type(submitted_by)})")
         print(f"  assigned_to: {assigned_to} (type: {type(assigned_to)})")
@@ -83,7 +87,15 @@ class ReviewRequest:
             (session_id, submitted_by, assigned_to, title, description, priority, status)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
-        params = (session_id, submitted_by, assigned_to, title, description, priority.value, ReviewStatus.PENDING.value)
+        params = (
+            session_id,
+            submitted_by,
+            assigned_to,
+            title,
+            description,
+            priority.value,
+            ReviewStatus.PENDING.value,
+        )
         print(f"🔍 Query parameters: {params}")
 
         request_id = db.execute_insert(query, params)
@@ -118,7 +130,9 @@ class ReviewRequest:
         return None
 
     @classmethod
-    def get_by_user(cls, user_id: int, status: Optional[ReviewStatus] = None) -> list["ReviewRequest"]:
+    def get_by_user(
+        cls, user_id: int, status: Optional[ReviewStatus] = None
+    ) -> list["ReviewRequest"]:
         """Get review requests submitted by a user."""
         db = get_db()
         if status:
@@ -159,7 +173,9 @@ class ReviewRequest:
         ]
 
     @classmethod
-    def get_assigned_to_reviewer(cls, reviewer_id: int, status: Optional[ReviewStatus] = None) -> list["ReviewRequest"]:
+    def get_assigned_to_reviewer(
+        cls, reviewer_id: int, status: Optional[ReviewStatus] = None
+    ) -> list["ReviewRequest"]:
         """Get review requests assigned to a reviewer."""
         db = get_db()
         if status:
@@ -230,20 +246,28 @@ class ReviewRequest:
             for row in results
         ]
 
-    def update_status(self, new_status: ReviewStatus, reviewer_id: Optional[int] = None) -> bool:
+    def update_status(
+        self, new_status: ReviewStatus, reviewer_id: Optional[int] = None
+    ) -> bool:
         """Update review request status."""
         if not self.id:
             return False
 
         db = get_db()
-        reviewed_at = datetime.now() if new_status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED] else None
+        reviewed_at = (
+            datetime.now()
+            if new_status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED]
+            else None
+        )
 
         query = """
             UPDATE code_editor_project.review_requests
             SET status = %s, reviewed_at = %s, updated_by = %s, updated_at = NOW()
             WHERE id = %s
         """
-        affected = db.execute_update(query, (new_status.value, reviewed_at, reviewer_id, self.id))
+        affected = db.execute_update(
+            query, (new_status.value, reviewed_at, reviewer_id, self.id)
+        )
 
         if affected > 0:
             self.status = new_status
@@ -262,7 +286,9 @@ class ReviewRequest:
             SET assigned_to = %s, status = %s, updated_by = %s, updated_at = NOW()
             WHERE id = %s
         """
-        affected = db.execute_update(query, (reviewer_id, ReviewStatus.IN_REVIEW.value, reviewer_id, self.id))
+        affected = db.execute_update(
+            query, (reviewer_id, ReviewStatus.IN_REVIEW.value, reviewer_id, self.id)
+        )
 
         if affected > 0:
             self.assigned_to = reviewer_id
@@ -317,7 +343,15 @@ class ReviewComment:
             VALUES (%s, %s, %s, %s, %s, %s)
         """
         comment_id = db.execute_insert(
-            query, (review_request_id, commenter_id, workspace_item_id, line_number, comment_text, comment_type.value),
+            query,
+            (
+                review_request_id,
+                commenter_id,
+                workspace_item_id,
+                line_number,
+                comment_text,
+                comment_type.value,
+            ),
         )
         return cls.get_by_id(comment_id)
 

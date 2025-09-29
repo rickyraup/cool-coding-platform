@@ -36,7 +36,7 @@ class TestReviewsAPISimple:
         invalid_data = {
             "session_id": "",  # Empty session_id
             "title": "",  # Empty title
-            "priority": "invalid_priority"
+            "priority": "invalid_priority",
         }
 
         response = client.post("/api/reviews/", json=invalid_data)

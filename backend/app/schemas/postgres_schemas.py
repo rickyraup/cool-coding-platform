@@ -136,7 +136,8 @@ class WorkspaceItemDetailResponse(BaseResponse):
 # File operations schemas
 class FileOperationRequest(BaseModel):
     action: str = Field(
-        ..., pattern="^(create_file|create_folder|read|write|rename|delete|list)$",
+        ...,
+        pattern="^(create_file|create_folder|read|write|rename|delete|list)$",
     )
     path: str
     content: Optional[str] = None

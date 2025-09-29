@@ -62,40 +62,6 @@ interface SessionUpdate {
   name?: string;
 }
 
-// Workspace types
-interface WorkspaceItem {
-  id: number;
-  session_id: number;
-  parent_id?: number;
-  name: string;
-  type: 'file' | 'folder';
-  content?: string;
-  created_at: string;
-  updated_at: string;
-  full_path?: string;
-}
-
-interface WorkspaceItemCreate {
-  session_id: number;
-  parent_id?: number;
-  name: string;
-  type: 'file' | 'folder';
-  content?: string;
-}
-
-interface WorkspaceItemUpdate {
-  name?: string;
-  content?: string;
-}
-
-interface WorkspaceTreeItem {
-  id: number;
-  name: string;
-  type: 'file' | 'folder';
-  full_path: string;
-  children?: WorkspaceTreeItem[];
-}
-
 // Review types
 interface ReviewRequest {
   id: number;
@@ -145,22 +111,13 @@ interface SessionListResponse extends BaseResponse {
 
 interface SessionWithWorkspaceResponse extends BaseResponse {
   session: CodeSession;
-  workspace_items: WorkspaceItem[];
-  workspace_tree: WorkspaceTreeItem[];
-}
-
-interface WorkspaceItemListResponse extends BaseResponse {
-  data: WorkspaceItem[];
-  count: number;
+  workspace_items: any[];
+  workspace_tree: any[];
 }
 
 interface ReviewRequestListResponse extends BaseResponse {
   data: ReviewRequest[];
   count: number;
-}
-
-interface WorkspaceTreeResponse extends BaseResponse {
-  data: WorkspaceTreeItem[];
 }
 
 class ApiService {
@@ -269,48 +226,6 @@ class ApiService {
     const queryString = params.toString() ? `?${params.toString()}` : '';
     return await this.fetchWithErrorHandling<SessionWithWorkspaceResponse>(
       `/api/postgres_sessions/${sessionUuid}/workspace${queryString}`
-    );
-  }
-
-  // Workspace Item Management
-  async createWorkspaceItem(itemData: WorkspaceItemCreate): Promise<ApiResponse<WorkspaceItem>> {
-    return await this.fetchWithErrorHandling<ApiResponse<WorkspaceItem>>('/api/workspace/', {
-      method: 'POST',
-      body: JSON.stringify(itemData),
-    });
-  }
-
-  async getWorkspaceItem(itemId: number): Promise<ApiResponse<WorkspaceItem>> {
-    return await this.fetchWithErrorHandling<ApiResponse<WorkspaceItem>>(`/api/workspace/${itemId}`);
-  }
-
-  async updateWorkspaceItem(itemId: number, itemData: WorkspaceItemUpdate): Promise<ApiResponse<WorkspaceItem>> {
-    return await this.fetchWithErrorHandling<ApiResponse<WorkspaceItem>>(`/api/workspace/${itemId}`, {
-      method: 'PUT',
-      body: JSON.stringify(itemData),
-    });
-  }
-
-  async deleteWorkspaceItem(itemId: number): Promise<BaseResponse> {
-    return await this.fetchWithErrorHandling<BaseResponse>(`/api/workspace/${itemId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getSessionWorkspaceItems(sessionId: number, parentId?: number): Promise<WorkspaceItemListResponse> {
-    const params = new URLSearchParams();
-    if (parentId) {
-      params.append('parent_id', parentId.toString());
-    }
-    const queryString = params.toString();
-    return await this.fetchWithErrorHandling<WorkspaceItemListResponse>(
-      `/api/workspace/session/${sessionId}${queryString ? `?${queryString}` : ''}`
-    );
-  }
-
-  async getSessionWorkspaceTree(sessionId: number): Promise<WorkspaceTreeResponse> {
-    return await this.fetchWithErrorHandling<WorkspaceTreeResponse>(
-      `/api/workspace/session/${sessionId}/tree`
     );
   }
 
@@ -497,34 +412,26 @@ class ApiService {
 export const apiService = new ApiService();
 
 // Export types for use in components
-export type { 
+export type {
   // User types
   User,
   UserCreate,
   UserLogin,
   AuthResponse,
-  
+
   // Session types
   CodeSession,
   SessionCreate,
   SessionUpdate,
   SessionListResponse,
   SessionWithWorkspaceResponse,
-  
-  // Workspace types
-  WorkspaceItem,
-  WorkspaceItemCreate,
-  WorkspaceItemUpdate,
-  WorkspaceTreeItem,
-  WorkspaceItemListResponse,
-  WorkspaceTreeResponse,
-  
+
   // Review types
   ReviewRequest,
   ReviewRequestCreate,
   ReviewRequestUpdate,
   ReviewRequestListResponse,
-  
+
   // Response types
   BaseResponse,
   ApiResponse

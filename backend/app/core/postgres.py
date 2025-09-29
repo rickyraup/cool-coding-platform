@@ -94,7 +94,8 @@ class PostgreSQLDatabase:
 
     @contextmanager
     def get_cursor(
-        self, connection: psycopg2.extensions.connection,
+        self,
+        connection: psycopg2.extensions.connection,
     ) -> Generator[psycopg2.extras.DictCursor, None, None]:
         """Get a cursor with automatic cleanup."""
         cursor = None
@@ -108,7 +109,9 @@ class PostgreSQLDatabase:
                 cursor.close()
 
     def execute_query(
-        self, query: str, params: Optional[tuple] = None,
+        self,
+        query: str,
+        params: Optional[tuple] = None,
     ) -> list[dict[str, Any]]:
         """Execute a SELECT query and return results."""
         with self.get_connection() as conn, self.get_cursor(conn) as cursor:
@@ -116,7 +119,9 @@ class PostgreSQLDatabase:
             return [dict(row) for row in cursor.fetchall()]
 
     def execute_one(
-        self, query: str, params: Optional[tuple] = None,
+        self,
+        query: str,
+        params: Optional[tuple] = None,
     ) -> Optional[dict[str, Any]]:
         """Execute a SELECT query and return the first result."""
         with self.get_connection() as conn, self.get_cursor(conn) as cursor:
@@ -125,7 +130,9 @@ class PostgreSQLDatabase:
             return dict(result) if result else None
 
     def execute_insert(
-        self, query: str, params: Optional[tuple] = None,
+        self,
+        query: str,
+        params: Optional[tuple] = None,
     ) -> Optional[int]:
         """Execute an INSERT query and return the new ID."""
         with self.get_connection() as conn, self.get_cursor(conn) as cursor:

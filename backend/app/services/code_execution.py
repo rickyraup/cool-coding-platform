@@ -16,16 +16,17 @@ class CodeExecutor:
 
     def _get_execution_command(self, filename: str) -> str:
         """Determine the execution command based on file extension."""
-        if filename.endswith('.py'):
-            return 'python'
-        elif filename.endswith('.js'):
-            return 'node'
-        else:
-            # Default to python for backward compatibility
-            return 'python'
+        if filename.endswith(".py"):
+            return "python"
+        if filename.endswith(".js"):
+            return "node"
+        # Default to python for backward compatibility
+        return "python"
 
     async def execute_code(
-        self, code: str, filename: str = "main.py",
+        self,
+        code: str,
+        filename: str = "main.py",
     ) -> dict[str, Any]:
         """Execute code and return the result. Supports Python (.py) and JavaScript (.js) files."""
         try:
@@ -52,7 +53,8 @@ class CodeExecutor:
             # Execute the file with appropriate command
             command = self._get_execution_command(filename)
             output, return_code = await container_manager.execute_command(
-                self.session_id, f"{command} {filename}",
+                self.session_id,
+                f"{command} {filename}",
             )
 
             return {
@@ -73,9 +75,16 @@ class CodeExecutor:
         try:
             # Create a temporary file with the code
             # Determine file suffix based on filename
-            suffix = ".py" if filename.endswith('.py') else ".js" if filename.endswith('.js') else ".py"
+            suffix = (
+                ".py"
+                if filename.endswith(".py")
+                else ".js" if filename.endswith(".js") else ".py"
+            )
             with tempfile.NamedTemporaryFile(
-                mode="w", suffix=suffix, delete=False, encoding="utf-8",
+                mode="w",
+                suffix=suffix,
+                delete=False,
+                encoding="utf-8",
             ) as temp_file:
                 temp_file.write(code)
                 temp_file_path = temp_file.name
@@ -95,7 +104,8 @@ class CodeExecutor:
                 # Wait for completion with timeout
                 try:
                     stdout, _ = await asyncio.wait_for(
-                        process.communicate(), timeout=30.0,
+                        process.communicate(),
+                        timeout=30.0,
                     )
                     output = stdout.decode("utf-8") if stdout else ""
                     return_code = process.returncode or 0
@@ -137,7 +147,8 @@ class CodeExecutor:
                 # Execute the file in the container with appropriate command
                 command = self._get_execution_command(file_path)
                 output, return_code = await container_manager.execute_command(
-                    self.session_id, f"{command} {file_path}",
+                    self.session_id,
+                    f"{command} {file_path}",
                 )
 
                 return {

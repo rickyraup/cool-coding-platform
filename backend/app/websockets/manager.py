@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
 from fastapi import WebSocket
+
 
 if TYPE_CHECKING:
     pass
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class WebSocketManager:
     """Manages WebSocket connections and message broadcasting."""
+
     def __init__(self) -> None:
         """Initialize the WebSocket manager."""
         self.active_connections: list[WebSocket] = []
@@ -43,7 +44,9 @@ class WebSocketManager:
         )
 
     async def send_personal_message(
-        self, websocket: WebSocket, message: dict[str, Any],
+        self,
+        websocket: WebSocket,
+        message: dict[str, Any],
     ) -> None:
         """Send a message to a specific WebSocket connection."""
         try:
@@ -51,20 +54,6 @@ class WebSocketManager:
         except Exception as e:
             print(f"Error sending message to WebSocket: {e}")
             self.disconnect(websocket)
-
-    async def send_to_session(self, session_id: str, message: dict[str, Any]) -> None:
-        """Send message to all WebSockets connected to a specific session."""
-        for websocket, ws_session_id in self.connection_sessions.items():
-            if ws_session_id == session_id:
-                await self.send_personal_message(websocket, message)
-
-    async def broadcast(self, message: dict[str, Any]) -> None:
-        """Send message to all connected WebSockets."""
-        if self.active_connections:
-            tasks = []
-            for connection in self.active_connections.copy():
-                tasks.append(self.send_personal_message(connection, message))
-            await asyncio.gather(*tasks, return_exceptions=True)
 
     def set_session(self, websocket: WebSocket, session_id: str) -> None:
         """Associate a WebSocket connection with a session ID."""
@@ -74,10 +63,9 @@ class WebSocketManager:
         """Get the session ID for a WebSocket connection."""
         return self.connection_sessions.get(websocket, "default")
 
-    def get_active_connections_count(self) -> int:
-        return len(self.active_connections)
-
-    def has_other_connections_to_session(self, session_id: str, exclude_websocket: Optional[WebSocket] = None) -> bool:
+    def has_other_connections_to_session(
+        self, session_id: str, exclude_websocket: Optional[WebSocket] = None
+    ) -> bool:
         """Check if there are other WebSocket connections to the same session."""
         for websocket, ws_session_id in self.connection_sessions.items():
             if ws_session_id == session_id and websocket != exclude_websocket:

@@ -19,32 +19,44 @@ from app.models.reviews import (
 # Pydantic models for API
 class ReviewRequestCreate(BaseModel):
     """Create review request payload."""
+
     session_id: str = Field(..., description="Session UUID to review")
     title: str = Field(..., min_length=1, max_length=255, description="Review title")
     description: Optional[str] = Field(None, description="Review description")
-    priority: ReviewPriority = Field(ReviewPriority.MEDIUM, description="Review priority")
-    reviewer_ids: list[int] = Field(default_factory=list, description="List of reviewer user IDs")
+    priority: ReviewPriority = Field(
+        ReviewPriority.MEDIUM, description="Review priority"
+    )
+    reviewer_ids: list[int] = Field(
+        default_factory=list, description="List of reviewer user IDs"
+    )
 
 
 class ReviewRequestUpdate(BaseModel):
     """Update review request payload."""
+
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     priority: Optional[ReviewPriority] = None
     status: Optional[ReviewStatus] = None
-    reviewer_ids: Optional[list[int]] = Field(None, description="List of reviewer user IDs")
+    reviewer_ids: Optional[list[int]] = Field(
+        None, description="List of reviewer user IDs"
+    )
 
 
 class ReviewCommentCreate(BaseModel):
     """Create review comment payload."""
+
     comment_text: str = Field(..., min_length=1, description="Comment text")
     comment_type: CommentType = Field(CommentType.GENERAL, description="Comment type")
     workspace_item_id: Optional[int] = Field(None, description="File/folder ID")
-    line_number: Optional[int] = Field(None, description="Line number for code comments")
+    line_number: Optional[int] = Field(
+        None, description="Line number for code comments"
+    )
 
 
 class ReviewRequestResponse(BaseModel):
     """Review request response model."""
+
     id: int
     session_id: str
     submitted_by: int
@@ -66,6 +78,7 @@ class ReviewRequestResponse(BaseModel):
 
 class ReviewCommentResponse(BaseModel):
     """Review comment response model."""
+
     id: int
     review_request_id: int
     commenter_id: int
@@ -83,6 +96,7 @@ class ReviewCommentResponse(BaseModel):
 
 class ReviewStatsResponse(BaseModel):
     """Review statistics response."""
+
     total_pending: int
     total_in_review: int
     total_approved: int
@@ -113,12 +127,18 @@ async def create_review_request(
             raise HTTPException(status_code=404, detail="Session not found")
 
         if session.user_id != current_user_id:
-            raise HTTPException(status_code=403, detail="Not authorized to submit this session for review")
+            raise HTTPException(
+                status_code=403,
+                detail="Not authorized to submit this session for review",
+            )
 
         # Check if there's already a pending/in-review request for this session
         existing_requests = ReviewRequest.get_by_user(current_user_id)
         for req in existing_requests:
-            if req.session_id == review_data.session_id and req.status in [ReviewStatus.PENDING, ReviewStatus.IN_REVIEW]:
+            if req.session_id == review_data.session_id and req.status in [
+                ReviewStatus.PENDING,
+                ReviewStatus.IN_REVIEW,
+            ]:
                 raise HTTPException(
                     status_code=400,
                     detail="This session already has a pending or in-review request",
@@ -129,12 +149,17 @@ async def create_review_request(
             for reviewer_id in review_data.reviewer_ids:
                 reviewer = User.get_by_id(reviewer_id)
                 if not reviewer:
-                    raise HTTPException(status_code=404, detail=f"Reviewer with ID {reviewer_id} not found")
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Reviewer with ID {reviewer_id} not found",
+                    )
                 # TODO: Check if user is actually a reviewer (reviewer_level > 0)
 
         # Create review request
-        print(f"🔍 API: About to call ReviewRequest.create with:")
-        print(f"  session_id: {review_data.session_id} (type: {type(review_data.session_id)})")
+        print("🔍 API: About to call ReviewRequest.create with:")
+        print(
+            f"  session_id: {review_data.session_id} (type: {type(review_data.session_id)})"
+        )
         print(f"  submitted_by: {current_user_id} (type: {type(current_user_id)})")
         print(f"  title: {review_data.title}")
         print(f"  description: {review_data.description}")
@@ -163,15 +188,23 @@ async def create_review_request(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create review request: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create review request: {e!s}"
+        )
 
 
 @router.get("/", response_model=list[ReviewRequestResponse])
 async def get_review_requests(
     current_user_id: Annotated[int, Depends(get_current_user_id)],
-    status: Annotated[Optional[ReviewStatus], Query(description="Filter by status")] = None,
-    assigned_to_me: Annotated[bool, Query(description="Show only requests assigned to me")] = False,
-    my_requests: Annotated[bool, Query(description="Show only my submitted requests")] = False,
+    status: Annotated[
+        Optional[ReviewStatus], Query(description="Filter by status")
+    ] = None,
+    assigned_to_me: Annotated[
+        bool, Query(description="Show only requests assigned to me")
+    ] = False,
+    my_requests: Annotated[
+        bool, Query(description="Show only my submitted requests")
+    ] = False,
 ) -> list[dict[str, Any]]:
     """Get review requests based on filters."""
     try:
@@ -184,7 +217,9 @@ async def get_review_requests(
             # Users should only see their own reviews or reviews assigned to them
             # Combine both user's submitted reviews and assigned reviews
             user_requests = ReviewRequest.get_by_user(current_user_id, status)
-            assigned_requests = ReviewRequest.get_assigned_to_reviewer(current_user_id, status)
+            assigned_requests = ReviewRequest.get_assigned_to_reviewer(
+                current_user_id, status
+            )
 
             # Combine and deduplicate (in case a user is assigned their own review)
             seen_ids = set()
@@ -197,7 +232,9 @@ async def get_review_requests(
         return [_format_review_request_response(req) for req in requests]
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch review requests: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch review requests: {e!s}"
+        )
 
 
 @router.get("/{request_id}", response_model=ReviewRequestResponse)
@@ -212,16 +249,23 @@ async def get_review_request(
             raise HTTPException(status_code=404, detail="Review request not found")
 
         # Check permissions - submitter, assigned reviewer, or admin can view
-        if (current_user_id not in (review_request.submitted_by, review_request.assigned_to)):
+        if current_user_id not in (
+            review_request.submitted_by,
+            review_request.assigned_to,
+        ):
             # TODO: Add admin check
-            raise HTTPException(status_code=403, detail="Not authorized to view this review")
+            raise HTTPException(
+                status_code=403, detail="Not authorized to view this review"
+            )
 
         return _format_review_request_response(review_request)
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch review request: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch review request: {e!s}"
+        )
 
 
 @router.put("/{request_id}", response_model=ReviewRequestResponse)
@@ -242,16 +286,23 @@ async def update_review_request(
 
         if not (is_submitter or is_reviewer):
             # TODO: Add admin check
-            raise HTTPException(status_code=403, detail="Not authorized to update this review")
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this review"
+            )
 
         # Status updates only allowed by reviewer
         if update_data.status and not is_reviewer:
-            raise HTTPException(status_code=403, detail="Only assigned reviewer can update status")
+            raise HTTPException(
+                status_code=403, detail="Only assigned reviewer can update status"
+            )
 
         # Update status if provided - handle proper status progression
         if update_data.status:
             # Automatically transition to in_review if status is pending and reviewer is taking action
-            if review_request.status == ReviewStatus.PENDING and update_data.status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED]:
+            if (
+                review_request.status == ReviewStatus.PENDING
+                and update_data.status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED]
+            ):
                 # First transition to in_review
                 review_request.update_status(ReviewStatus.IN_REVIEW, current_user_id)
 
@@ -267,7 +318,9 @@ async def update_review_request(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update review request: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update review request: {e!s}"
+        )
 
 
 @router.post("/{request_id}/assign")
@@ -298,7 +351,7 @@ async def assign_reviewer(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to assign reviewer: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to assign reviewer: {e!s}") from e
 
 
 @router.get("/{request_id}/comments", response_model=list[ReviewCommentResponse])
@@ -313,8 +366,13 @@ async def get_review_comments(
         if not review_request:
             raise HTTPException(status_code=404, detail="Review request not found")
 
-        if (current_user_id not in (review_request.submitted_by, review_request.assigned_to)):
-            raise HTTPException(status_code=403, detail="Not authorized to view comments")
+        if current_user_id not in (
+            review_request.submitted_by,
+            review_request.assigned_to,
+        ):
+            raise HTTPException(
+                status_code=403, detail="Not authorized to view comments"
+            )
 
         comments = ReviewComment.get_by_review_request(request_id)
         return [_format_review_comment_response(comment) for comment in comments]
@@ -322,7 +380,7 @@ async def get_review_comments(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch comments: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch comments: {e!s}") from e
 
 
 @router.post("/{request_id}/comments", response_model=ReviewCommentResponse)
@@ -338,8 +396,13 @@ async def create_review_comment(
         if not review_request:
             raise HTTPException(status_code=404, detail="Review request not found")
 
-        if (current_user_id not in (review_request.submitted_by, review_request.assigned_to)):
-            raise HTTPException(status_code=403, detail="Not authorized to comment on this review")
+        if current_user_id not in (
+            review_request.submitted_by,
+            review_request.assigned_to,
+        ):
+            raise HTTPException(
+                status_code=403, detail="Not authorized to comment on this review"
+            )
 
         # Create comment
         comment = ReviewComment.create(
@@ -356,7 +419,7 @@ async def create_review_comment(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create comment: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to create comment: {e!s}") from e
 
 
 @router.put("/comments/{comment_id}/resolve")
@@ -376,8 +439,14 @@ async def resolve_comment(
         if not review_request:
             raise HTTPException(status_code=404, detail="Review request not found")
 
-        if (current_user_id not in (review_request.submitted_by, review_request.assigned_to, comment.commenter_id)):
-            raise HTTPException(status_code=403, detail="Not authorized to resolve this comment")
+        if current_user_id not in (
+            review_request.submitted_by,
+            review_request.assigned_to,
+            comment.commenter_id,
+        ):
+            raise HTTPException(
+                status_code=403, detail="Not authorized to resolve this comment"
+            )
 
         if comment.mark_resolved(resolved):
             updated_comment = ReviewComment.get_by_id(comment_id)
@@ -387,7 +456,7 @@ async def resolve_comment(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to resolve comment: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to resolve comment: {e!s}") from e
 
 
 @router.get("/{request_id}/history")
@@ -402,8 +471,13 @@ async def get_review_history(
         if not review_request:
             raise HTTPException(status_code=404, detail="Review request not found")
 
-        if (current_user_id not in (review_request.submitted_by, review_request.assigned_to)):
-            raise HTTPException(status_code=403, detail="Not authorized to view history")
+        if current_user_id not in (
+            review_request.submitted_by,
+            review_request.assigned_to,
+        ):
+            raise HTTPException(
+                status_code=403, detail="Not authorized to view history"
+            )
 
         history = ReviewHistory.get_by_review_request(request_id)
         return [
@@ -422,7 +496,7 @@ async def get_review_history(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch history: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch history: {e!s}") from e
 
 
 @router.get("/session/{session_id}/status")
@@ -449,13 +523,17 @@ async def get_review_status_for_session(
         is_reviewer = review_request and review_request.assigned_to == current_user_id
 
         # Check if current user can submit this session for review
-        can_submit_for_review = (
-            session.user_id == current_user_id and
-            (not review_request or review_request.status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED])
+        can_submit_for_review = session.user_id == current_user_id and (
+            not review_request
+            or review_request.status in [ReviewStatus.APPROVED, ReviewStatus.REJECTED]
         )
 
         return {
-            "reviewRequest": _format_review_request_response(review_request) if review_request else None,
+            "reviewRequest": (
+                _format_review_request_response(review_request)
+                if review_request
+                else None
+            ),
             "isReviewer": is_reviewer,
             "canSubmitForReview": can_submit_for_review,
         }
@@ -463,7 +541,9 @@ async def get_review_status_for_session(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch review status: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch review status: {e!s}"
+        )
 
 
 @router.get("/stats/overview", response_model=ReviewStatsResponse)
@@ -478,13 +558,29 @@ async def get_review_stats(
         assigned_to_me = ReviewRequest.get_assigned_to_reviewer(current_user_id)
 
         # Count by status
-        total_pending = len([r for r in pending_reviews if r.status == ReviewStatus.PENDING])
-        total_in_review = len([r for r in assigned_to_me if r.status == ReviewStatus.IN_REVIEW])
-        total_approved = len([r for r in my_requests if r.status == ReviewStatus.APPROVED])
-        total_rejected = len([r for r in my_requests if r.status == ReviewStatus.REJECTED])
+        total_pending = len(
+            [r for r in pending_reviews if r.status == ReviewStatus.PENDING]
+        )
+        total_in_review = len(
+            [r for r in assigned_to_me if r.status == ReviewStatus.IN_REVIEW]
+        )
+        total_approved = len(
+            [r for r in my_requests if r.status == ReviewStatus.APPROVED]
+        )
+        total_rejected = len(
+            [r for r in my_requests if r.status == ReviewStatus.REJECTED]
+        )
 
-        my_pending_reviews = len([r for r in my_requests if r.status == ReviewStatus.PENDING])
-        my_assigned_reviews = len([r for r in assigned_to_me if r.status in [ReviewStatus.PENDING, ReviewStatus.IN_REVIEW]])
+        my_pending_reviews = len(
+            [r for r in my_requests if r.status == ReviewStatus.PENDING]
+        )
+        my_assigned_reviews = len(
+            [
+                r
+                for r in assigned_to_me
+                if r.status in [ReviewStatus.PENDING, ReviewStatus.IN_REVIEW]
+            ]
+        )
 
         return {
             "total_pending": total_pending,
@@ -496,7 +592,7 @@ async def get_review_stats(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {e!s}") from e
 
 
 # Helper functions
@@ -504,7 +600,11 @@ def _format_review_request_response(review_request: ReviewRequest) -> dict[str, 
     """Format review request for API response."""
     # Get additional info
     submitter = User.get_by_id(review_request.submitted_by)
-    reviewer = User.get_by_id(review_request.assigned_to) if review_request.assigned_to else None
+    reviewer = (
+        User.get_by_id(review_request.assigned_to)
+        if review_request.assigned_to
+        else None
+    )
     session = CodeSession.get_by_uuid(review_request.session_id)
 
     return {
@@ -516,10 +616,22 @@ def _format_review_request_response(review_request: ReviewRequest) -> dict[str, 
         "description": review_request.description,
         "status": review_request.status,
         "priority": review_request.priority,
-        "submitted_at": review_request.submitted_at.isoformat() if review_request.submitted_at else None,
-        "reviewed_at": review_request.reviewed_at.isoformat() if review_request.reviewed_at else None,
-        "created_at": review_request.created_at.isoformat() if review_request.created_at else None,
-        "updated_at": review_request.updated_at.isoformat() if review_request.updated_at else None,
+        "submitted_at": (
+            review_request.submitted_at.isoformat()
+            if review_request.submitted_at
+            else None
+        ),
+        "reviewed_at": (
+            review_request.reviewed_at.isoformat()
+            if review_request.reviewed_at
+            else None
+        ),
+        "created_at": (
+            review_request.created_at.isoformat() if review_request.created_at else None
+        ),
+        "updated_at": (
+            review_request.updated_at.isoformat() if review_request.updated_at else None
+        ),
         "submitter_username": submitter.username if submitter else None,
         "reviewer_username": reviewer.username if reviewer else None,
         "session_name": session.name if session else None,

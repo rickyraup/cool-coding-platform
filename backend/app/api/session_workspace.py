@@ -21,7 +21,8 @@ async def load_session_workspace(session_uuid: str) -> BaseResponse:
         session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found",
             )
 
         # Load workspace into container using numeric ID
@@ -54,7 +55,8 @@ async def save_session_workspace(session_uuid: str) -> BaseResponse:
         session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found",
             )
 
         # Save workspace from container using numeric ID
@@ -80,19 +82,23 @@ async def save_session_workspace(session_uuid: str) -> BaseResponse:
 
 
 @router.get("/{session_uuid}/file/{file_path:path}")
-async def get_workspace_file_content(session_uuid: str, file_path: str) -> dict[str, Any]:
+async def get_workspace_file_content(
+    session_uuid: str, file_path: str
+) -> dict[str, Any]:
     """Get content of a specific file from the container workspace."""
     try:
         # Verify session exists using UUID
         session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found",
             )
 
         # Get file content using numeric ID
         content = await workspace_loader.get_workspace_file_content(
-            session.id, file_path,
+            session.id,
+            file_path,
         )
         if content is None:
             raise HTTPException(
@@ -117,7 +123,9 @@ async def get_workspace_file_content(session_uuid: str, file_path: str) -> dict[
 
 @router.put("/{session_uuid}/file/{file_path:path}")
 async def update_workspace_file_content(
-    session_uuid: str, file_path: str, request_body: dict,
+    session_uuid: str,
+    file_path: str,
+    request_body: dict,
 ) -> BaseResponse:
     """Update content of a specific file in the container workspace."""
     try:
@@ -125,7 +133,8 @@ async def update_workspace_file_content(
         session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found",
             )
 
         # Extract content from request body
@@ -133,7 +142,9 @@ async def update_workspace_file_content(
 
         # Update file content using numeric ID
         success = await workspace_loader.update_workspace_file_content(
-            session.id, file_path, content,
+            session.id,
+            file_path,
+            content,
         )
         if not success:
             raise HTTPException(
@@ -142,7 +153,8 @@ async def update_workspace_file_content(
             )
 
         return BaseResponse(
-            success=True, message=f"File {file_path} updated successfully",
+            success=True,
+            message=f"File {file_path} updated successfully",
         )
 
     except HTTPException:
@@ -162,7 +174,8 @@ async def get_container_session_status(session_uuid: str) -> dict[str, Any]:
         session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found",
             )
 
         # Check if container session exists using numeric ID
@@ -213,7 +226,8 @@ async def start_container_session(session_uuid: str) -> BaseResponse:
         session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found",
             )
 
         # Create or get container session using numeric ID
@@ -242,7 +256,9 @@ async def start_container_session(session_uuid: str) -> BaseResponse:
 
 @router.post("/{session_uuid}/file/{file_path:path}")
 async def create_workspace_file(
-    session_uuid: str, file_path: str, request_body: dict,
+    session_uuid: str,
+    file_path: str,
+    request_body: dict,
 ) -> BaseResponse:
     """Create a new file in the container workspace."""
     try:
@@ -250,7 +266,8 @@ async def create_workspace_file(
         session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found",
             )
 
         # Extract content from request body (optional)
@@ -258,7 +275,9 @@ async def create_workspace_file(
 
         # Create file using numeric ID
         success = await workspace_loader.create_workspace_file(
-            session.id, file_path, content,
+            session.id,
+            file_path,
+            content,
         )
         if not success:
             raise HTTPException(
@@ -267,7 +286,8 @@ async def create_workspace_file(
             )
 
         return BaseResponse(
-            success=True, message=f"File {file_path} created successfully",
+            success=True,
+            message=f"File {file_path} created successfully",
         )
 
     except HTTPException:
@@ -287,12 +307,14 @@ async def delete_workspace_file(session_uuid: str, file_path: str) -> BaseRespon
         session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found",
             )
 
         # Delete file using numeric ID
         success = await workspace_loader.delete_workspace_file(
-            session.id, file_path,
+            session.id,
+            file_path,
         )
         if not success:
             raise HTTPException(
@@ -301,7 +323,8 @@ async def delete_workspace_file(session_uuid: str, file_path: str) -> BaseRespon
             )
 
         return BaseResponse(
-            success=True, message=f"File {file_path} deleted successfully",
+            success=True,
+            message=f"File {file_path} deleted successfully",
         )
 
     except HTTPException:
@@ -321,7 +344,8 @@ async def get_workspace_tree(session_uuid: str) -> dict[str, Any]:
         session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found",
             )
 
         # Get all workspace items for this session using numeric ID
@@ -354,7 +378,8 @@ async def cleanup_container_session(session_uuid: str) -> BaseResponse:
         session = CodeSession.get_by_uuid(session_uuid)
         if not session:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Session not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Session not found",
             )
 
         # Find active container session

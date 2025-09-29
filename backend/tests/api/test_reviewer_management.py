@@ -33,10 +33,10 @@ class TestReviewerManagementAPI:
     def test_toggle_reviewer_status_become_reviewer(self, client: TestClient):
         """Test becoming a reviewer."""
         # Become a junior reviewer
-        response = client.put("/api/users/me/reviewer-status", json={
-            "is_reviewer": True,
-            "reviewer_level": 1
-        })
+        response = client.put(
+            "/api/users/me/reviewer-status",
+            json={"is_reviewer": True, "reviewer_level": 1},
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -48,16 +48,16 @@ class TestReviewerManagementAPI:
     def test_toggle_reviewer_status_upgrade_to_senior(self, client: TestClient):
         """Test upgrading to senior reviewer."""
         # First become a junior reviewer
-        client.put("/api/users/me/reviewer-status", json={
-            "is_reviewer": True,
-            "reviewer_level": 1
-        })
+        client.put(
+            "/api/users/me/reviewer-status",
+            json={"is_reviewer": True, "reviewer_level": 1},
+        )
 
         # Then upgrade to senior
-        response = client.put("/api/users/me/reviewer-status", json={
-            "is_reviewer": True,
-            "reviewer_level": 2
-        })
+        response = client.put(
+            "/api/users/me/reviewer-status",
+            json={"is_reviewer": True, "reviewer_level": 2},
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -69,16 +69,16 @@ class TestReviewerManagementAPI:
     def test_toggle_reviewer_status_stop_being_reviewer(self, client: TestClient):
         """Test stopping being a reviewer."""
         # First become a reviewer
-        client.put("/api/users/me/reviewer-status", json={
-            "is_reviewer": True,
-            "reviewer_level": 1
-        })
+        client.put(
+            "/api/users/me/reviewer-status",
+            json={"is_reviewer": True, "reviewer_level": 1},
+        )
 
         # Then stop being a reviewer
-        response = client.put("/api/users/me/reviewer-status", json={
-            "is_reviewer": False,
-            "reviewer_level": 0
-        })
+        response = client.put(
+            "/api/users/me/reviewer-status",
+            json={"is_reviewer": False, "reviewer_level": 0},
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -90,18 +90,18 @@ class TestReviewerManagementAPI:
     def test_invalid_reviewer_level(self, client: TestClient):
         """Test validation of reviewer level."""
         # Try invalid reviewer level
-        response = client.put("/api/users/me/reviewer-status", json={
-            "is_reviewer": True,
-            "reviewer_level": 5  # Invalid level
-        })
+        response = client.put(
+            "/api/users/me/reviewer-status",
+            json={"is_reviewer": True, "reviewer_level": 5},  # Invalid level
+        )
 
         assert response.status_code == 422  # Validation error
 
     def test_missing_fields(self, client: TestClient):
         """Test validation of required fields."""
         # Missing is_reviewer field
-        response = client.put("/api/users/me/reviewer-status", json={
-            "reviewer_level": 1
-        })
+        response = client.put(
+            "/api/users/me/reviewer-status", json={"reviewer_level": 1}
+        )
 
         assert response.status_code == 422  # Validation error

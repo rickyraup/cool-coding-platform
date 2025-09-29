@@ -1,7 +1,8 @@
 """User management API endpoints."""
 
-import bcrypt
 from typing import Annotated, Any
+
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, ValidationError
 
@@ -31,7 +32,8 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 @router.post(
-    "/register", status_code=status.HTTP_201_CREATED,
+    "/register",
+    status_code=status.HTTP_201_CREATED,
 )
 async def register_user(user_data: UserCreate) -> AuthResponse:
     """Register a new user with comprehensive validation."""
@@ -164,23 +166,23 @@ async def search_users(q: str = "") -> dict[str, Any]:
 
         user_data = []
         for user in users:
-            user_data.append({
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "is_reviewer": user.is_reviewer,
-                "reviewer_level": user.reviewer_level,
-                "created_at": user.created_at.isoformat() if user.created_at else None,
-            })
+            user_data.append(
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "is_reviewer": user.is_reviewer,
+                    "reviewer_level": user.reviewer_level,
+                    "created_at": (
+                        user.created_at.isoformat() if user.created_at else None
+                    ),
+                }
+            )
 
-        return {
-            "success": True,
-            "data": user_data,
-            "total": len(user_data)
-        }
+        return {"success": True, "data": user_data, "total": len(user_data)}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to search users: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to search users: {e!s}") from e
 
 
 @router.get("/{user_id}")
@@ -190,7 +192,8 @@ async def get_user(user_id: int) -> AuthResponse:
         user = User.get_by_id(user_id)
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="User not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
             )
 
         user_response = UserResponse(
@@ -202,7 +205,9 @@ async def get_user(user_id: int) -> AuthResponse:
         )
 
         return AuthResponse(
-            success=True, message="User retrieved successfully", user=user_response,
+            success=True,
+            message="User retrieved successfully",
+            user=user_response,
         )
 
     except HTTPException:
@@ -221,7 +226,8 @@ async def get_user_by_username(username: str) -> AuthResponse:
         user = User.get_by_username(username)
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="User not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
             )
 
         user_response = UserResponse(
@@ -233,7 +239,9 @@ async def get_user_by_username(username: str) -> AuthResponse:
         )
 
         return AuthResponse(
-            success=True, message="User retrieved successfully", user=user_response,
+            success=True,
+            message="User retrieved successfully",
+            user=user_response,
         )
 
     except HTTPException:
@@ -244,15 +252,20 @@ async def get_user_by_username(username: str) -> AuthResponse:
             detail=f"Failed to get user: {e!s}",
         )
 
+
 # Reviewer management endpoints
 class ReviewerStatusUpdate(BaseModel):
     """Update reviewer status payload."""
+
     is_reviewer: bool = Field(..., description="Whether user should be a reviewer")
-    reviewer_level: int = Field(1, ge=0, le=2, description="Reviewer level (0=regular, 1=junior, 2=senior)")
+    reviewer_level: int = Field(
+        1, ge=0, le=2, description="Reviewer level (0=regular, 1=junior, 2=senior)"
+    )
 
 
 class UserListResponse(BaseModel):
     """User list response model."""
+
     success: bool
     data: list[UserResponse]
     total: int
@@ -263,7 +276,6 @@ def get_current_user_id() -> int:
     """Get current user ID from session/token."""
     # Hardcoded for development - replace with actual auth
     return 5
-
 
 
 @router.get("/me")
@@ -289,7 +301,7 @@ async def get_current_user(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch user: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch user: {e!s}") from e
 
 
 @router.put("/me/reviewer-status")
@@ -304,15 +316,18 @@ async def toggle_my_reviewer_status(
             raise HTTPException(status_code=404, detail="User not found")
 
         success = user.update_reviewer_status(
-            status_update.is_reviewer,
-            status_update.reviewer_level
+            status_update.is_reviewer, status_update.reviewer_level
         )
 
         if not success:
-            raise HTTPException(status_code=500, detail="Failed to update reviewer status")
+            raise HTTPException(
+                status_code=500, detail="Failed to update reviewer status"
+            )
 
         action = "You are now a" if status_update.is_reviewer else "You are no longer a"
-        level_text = ["regular user", "junior reviewer", "senior reviewer"][status_update.reviewer_level]
+        level_text = ["regular user", "junior reviewer", "senior reviewer"][
+            status_update.reviewer_level
+        ]
 
         return {
             "success": True,
@@ -323,10 +338,12 @@ async def toggle_my_reviewer_status(
                 "email": user.email,
                 "is_reviewer": user.is_reviewer,
                 "reviewer_level": user.reviewer_level,
-            }
+            },
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update reviewer status: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update reviewer status: {e!s}"
+        )
