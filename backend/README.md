@@ -64,14 +64,14 @@ setup.bat
    python -m app.main
    ```
 
-   The server will start on `http://localhost:8000`
+   The server will start on `http://localhost:8001`
 
 ## API Documentation
 
 Once the server is running, you can access:
-- **Interactive API Docs**: http://localhost:8000/docs
-- **Alternative API Docs**: http://localhost:8000/redoc
-- **Health Check**: http://localhost:8000/api/health
+- **Interactive API Docs**: http://localhost:8001/docs
+- **Alternative API Docs**: http://localhost:8001/redoc
+- **Health Check**: http://localhost:8001/api/health
 
 ## Project Structure
 
@@ -136,9 +136,9 @@ backend/
 Copy `.env.example` to `.env` and configure:
 
 ```env
-PORT=8000
+PORT=8001
 ENVIRONMENT=development
-DATABASE_URL=sqlite:///./coding_platform.db
+DATABASE_URL=postgresql://username:password@localhost/coolcoding
 CORS_ORIGIN=http://localhost:3000
 PYTHON_TIMEOUT=30
 MAX_CODE_SIZE=1048576
@@ -161,7 +161,7 @@ pip freeze > requirements.txt
 ```
 
 ### Database Migrations
-The SQLite database is created automatically when the server starts. For production use, consider switching to PostgreSQL.
+The PostgreSQL database schema is created automatically when the server starts. Ensure PostgreSQL is running and the database exists.
 
 ## Troubleshooting
 
@@ -170,11 +170,11 @@ The SQLite database is created automatically when the server starts. For product
 1. **Python not found**: Make sure Python 3.8+ is installed and in your PATH
 2. **Permission denied**: On Linux/macOS, make sure setup.sh is executable: `chmod +x setup.sh`
 3. **Module not found**: Make sure virtual environment is activated and dependencies are installed
-4. **Port already in use**: Change the PORT in `.env` file or kill the process using port 8000
+4. **Port already in use**: Change the PORT in `.env` file or kill the process using port 8001
 
 ### Logs
 The server logs all requests and errors to the console. Check the terminal output for debugging information.
 
 ## Testing
 
-The WebSocket connection can be tested using the frontend application or any WebSocket client by connecting to `ws://localhost:8000/ws`.
+The WebSocket connection can be tested using the frontend application or any WebSocket client by connecting to `ws://localhost:8001/ws`.

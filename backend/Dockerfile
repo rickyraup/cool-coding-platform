@@ -9,11 +9,13 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
+# Install system dependencies and Node.js
 RUN apt-get update && apt-get install -y \
     bash \
     curl \
     git \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -29,8 +31,8 @@ RUN pip install --no-cache-dir \
     jupyter==1.0.0 \
     ipython==8.17.2
 
-# Create app directory and set ownership
-RUN mkdir -p /app && chown -R codeuser:codeuser /app
+# Create app directory and home directory with proper ownership
+RUN mkdir -p /app /home/codeuser && chown -R codeuser:codeuser /app /home/codeuser
 
 # Switch to non-root user
 USER codeuser

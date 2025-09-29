@@ -26,7 +26,7 @@ interface RegisterRequest {
 }
 
 class AuthService {
-  private baseUrl = 'http://localhost:8001/api/users';
+  private readonly baseUrl = 'http://localhost:8002/api/users';
 
   async login(data: LoginRequest): Promise<AuthResponse> {
     const response = await fetch(`${this.baseUrl}/login`, {
@@ -39,7 +39,7 @@ class AuthService {
 
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.detail || 'Login failed');
+      throw new Error(errorData.detail ?? 'Login failed');
     }
 
     const result = await response.json();
@@ -64,7 +64,7 @@ class AuthService {
 
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.detail || 'Registration failed');
+      throw new Error(errorData.detail ?? 'Registration failed');
     }
 
     const result = await response.json();

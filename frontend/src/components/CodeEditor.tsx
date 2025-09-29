@@ -4,13 +4,17 @@ import { useCallback, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import { useApp } from '../context/AppContext';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWorkspaceApi } from '../hooks/useWorkspaceApi';
 
-export function CodeEditor(): JSX.Element {
-  const { state, updateCode } = useApp();
-  const { saveCurrentFile } = useWebSocket();
+interface CodeEditorProps {
+  readOnly?: boolean;
+  reviewMode?: boolean;
+}
+
+export function CodeEditor({ readOnly = false, reviewMode = false }: CodeEditorProps): JSX.Element {
+  const { state, updateCode, markSaved, cacheCurrentFileContent } = useApp();
+  const { manualSave } = useWorkspaceApi();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleEditorDidMount = useCallback((editorInstance: editor.IStandaloneCodeEditor): void => {
     editorRef.current = editorInstance;
@@ -18,39 +22,26 @@ export function CodeEditor(): JSX.Element {
     // Add keyboard shortcuts
     editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
       // Trigger code execution (we'll implement this later)
-      console.log('Execute code shortcut triggered');
+      // Execute code shortcut triggered
     });
     
     editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      // Save code (prevent browser default)
-      console.log('Save code shortcut triggered');
+      // Save code manually with Ctrl+S/Cmd+S
+      if (state.currentFile) {
+        manualSave();
+      }
     });
   }, []);
 
   const handleEditorChange = useCallback((value: string | undefined): void => {
+    if (readOnly) return; // Prevent changes in read-only mode
+
     const newCode = value ?? '';
     updateCode(newCode);
-    
-    // Auto-save with debounce (save 2 seconds after user stops typing)
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-    
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      if (newCode.trim() && state.currentSession) {
-        saveCurrentFile(newCode);
-      }
-    }, 2000);
-  }, [updateCode, saveCurrentFile, state.currentSession]);
+    // Cache the content locally for unsaved changes tracking
+    cacheCurrentFileContent();
+  }, [updateCode, cacheCurrentFileContent, readOnly]);
 
-  // Cleanup auto-save timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     // Configure Monaco editor options
@@ -64,32 +55,42 @@ export function CodeEditor(): JSX.Element {
         
         // Configure Python intellisense
         monaco.languages.registerCompletionItemProvider('python', {
-          provideCompletionItems: (model, position) => {
-            const suggestions: monaco.languages.CompletionItem[] = [
+          provideCompletionItems: (_model, position) => {
+            const range = {
+              startLineNumber: position.lineNumber,
+              endLineNumber: position.lineNumber,
+              startColumn: position.column,
+              endColumn: position.column
+            };
+            const suggestions: import('monaco-editor').languages.CompletionItem[] = [
               {
                 label: 'print',
                 kind: monaco.languages.CompletionItemKind.Function,
                 insertText: 'print(${1:})',
                 insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                documentation: 'Print function'
+                documentation: 'Print function',
+                range
               },
               {
                 label: 'import pandas as pd',
                 kind: monaco.languages.CompletionItemKind.Module,
                 insertText: 'import pandas as pd',
-                documentation: 'Import pandas library'
+                documentation: 'Import pandas library',
+                range
               },
               {
                 label: 'import numpy as np',
                 kind: monaco.languages.CompletionItemKind.Module,
                 insertText: 'import numpy as np',
-                documentation: 'Import numpy library'
+                documentation: 'Import numpy library',
+                range
               },
               {
                 label: 'import matplotlib.pyplot as plt',
                 kind: monaco.languages.CompletionItemKind.Module,
                 insertText: 'import matplotlib.pyplot as plt',
-                documentation: 'Import matplotlib pyplot'
+                documentation: 'Import matplotlib pyplot',
+                range
               }
             ];
             return { suggestions };
@@ -111,7 +112,16 @@ export function CodeEditor(): JSX.Element {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-1">
+      <div className="flex-1 relative">
+        {!state.currentFile && (
+          <div className="absolute inset-0 bg-gray-900/95 z-10 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-6xl mb-4">📁</div>
+              <div className="text-xl text-white mb-2">No file selected</div>
+              <div className="text-gray-400">Click a file in the explorer to start editing</div>
+            </div>
+          </div>
+        )}
         <Editor
           height="100%"
           defaultLanguage="python"
@@ -127,7 +137,7 @@ export function CodeEditor(): JSX.Element {
             renderLineHighlight: 'all',
             selectOnLineNumbers: true,
             roundedSelection: false,
-            readOnly: false,
+            readOnly: readOnly,
             cursorStyle: 'line',
             automaticLayout: true,
             wordWrap: 'on',
@@ -146,7 +156,6 @@ export function CodeEditor(): JSX.Element {
               highlightActiveIndentation: true,
             },
             suggest: {
-              enabled: true,
               showWords: true,
               showSnippets: true,
             },
@@ -165,8 +174,23 @@ export function CodeEditor(): JSX.Element {
         />
       </div>
       
+      {/* Editor Toolbar */}
       <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-4 text-sm text-gray-400">
+          {state.currentFile && (
+            <>
+              <span className="text-blue-400 font-medium flex items-center">
+                📄 {state.currentFile}
+                {state.hasUnsavedChanges && (
+                  <span className="ml-1 w-2 h-2 bg-white rounded-full" title="Unsaved changes"></span>
+                )}
+              </span>
+              <span>•</span>
+            </>
+          )}
+          
+          <span className="text-gray-400 text-xs">Press Cmd+S to save</span>
+          <span>•</span>
           <span>Python</span>
           <span>•</span>
           <span>UTF-8</span>
@@ -180,12 +204,12 @@ export function CodeEditor(): JSX.Element {
           )}
         </div>
         
-        <div className="flex items-center space-x-4 text-sm text-gray-400">
+        <div className="flex items-center space-x-4 text-sm">
           {state.error && (
             <span className="text-red-400">Error: {state.error}</span>
           )}
-          <span>{state.code.length} characters</span>
-          <span>Monaco Editor</span>
+          <span className="text-gray-400">{state.code.length} chars</span>
+          <span className="text-gray-400">Monaco Editor</span>
         </div>
       </div>
     </div>

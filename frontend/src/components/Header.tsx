@@ -4,18 +4,35 @@ import { useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAuth, useUserId } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { apiService } from '../services/api';
+import { apiService, type ReviewRequestCreate } from '../services/api';
 import { Auth } from './Auth';
+import { ReviewSubmissionModal } from './ReviewSubmissionModal';
+import WorkspaceShutdownLoader from './WorkspaceShutdownLoader';
+import { useRouter, usePathname } from 'next/navigation';
 
-export function Header(): JSX.Element {
-  const { state, setSession, setLoading, setError, clearTerminal, setFiles, setCurrentFile, updateCode } = useApp();
+interface HeaderProps {
+  reviewStatus?: {
+    isUnderReview: boolean;
+    isReviewer?: boolean;
+    reviewRequest?: any;
+  };
+  onReviewStatusChange?: () => void;
+}
+
+export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {}): JSX.Element {
+  const { state, setSession, setLoading, setError, clearTerminal, setFiles, setCurrentFile, updateCode, resetAllState } = useApp();
   const { user, isAuthenticated, logout } = useAuth();
   const userId = useUserId();
-  const { isConnected, executeCode } = useWebSocket();
+  const { isConnected, manualSave } = useWebSocket();
   const [showAuth, setShowAuth] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [isShuttingDown, setIsShuttingDown] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
 
-  const handleNewSession = useCallback(async (): Promise<void> => {
+   
+  const _handleNewSession = useCallback(async (): Promise<void> => {
     if (!isAuthenticated || !userId) {
       setShowAuth(true);
       return;
@@ -40,16 +57,15 @@ export function Header(): JSX.Element {
       const sessionData = {
         id: response.data.id.toString(), // Convert to string for compatibility
         userId: response.data.user_id.toString(),
-        code: '# Write your Python code here\nprint("Hello, World!")',
+        code: '', // Empty code - let workspace handle file loading
         language: 'python' as const,
         createdAt: new Date(response.data.created_at),
         updatedAt: new Date(response.data.updated_at),
         isActive: true,
       };
-      
-      // Set the new session and update code
+
+      // Set the new session - don't set code here, let workspace page handle it
       setSession(sessionData);
-      updateCode(sessionData.code);
       
       console.log('New PostgreSQL session created:', sessionData.id);
       
@@ -70,76 +86,132 @@ export function Header(): JSX.Element {
     }
   }, [isAuthenticated, userId, setSession, setLoading, setError, clearTerminal, setFiles, setCurrentFile, updateCode]);
 
-  const handleRunCode = useCallback((): void => {
-    if (state.code.trim()) {
-      executeCode(state.code, 'main.py');
-    }
-  }, [state.code, executeCode]);
 
-  const handleSave = useCallback(async (): Promise<void> => {
-    if (!state.currentSession || !isAuthenticated) {
-      console.warn('No session to save or not authenticated');
+  const handleSave = useCallback((): void => {
+    if (!state.currentSession || !state.currentFile) {
+      console.warn('No session or file selected');
       return;
+    }
+    
+    // Use WebSocket-based manual save for consistency with autosave
+    manualSave();
+  }, [state.currentSession, state.currentFile, manualSave]);
+
+  const handleLogout = useCallback(() => {
+    logout();
+    setShowUserMenu(false);
+    // Reset all app state on logout
+    resetAllState();
+  }, [logout, resetAllState]);
+
+  const handleWorkspaceShutdown = useCallback(async (): Promise<void> => {
+    if (!pathname?.startsWith('/workspace/')) return;
+
+    const workspaceId = pathname.split('/workspace/')[1];
+    if (!workspaceId) return;
+
+    try {
+      setIsShuttingDown(true);
+
+      // Call the shutdown endpoint
+      const result = await apiService.shutdownWorkspace(workspaceId);
+
+      if (result.success) {
+        console.log('Workspace shutdown successful:', result);
+
+        // Reset all app state completely to ensure clean workspace switching
+        resetAllState();
+
+        // Navigate to dashboard only after successful shutdown
+        router.push('/dashboard');
+      } else {
+        console.error('Workspace shutdown failed:', result);
+        // Still navigate but show error
+        resetAllState();
+        setError(`Shutdown warning: ${result.message}`);
+        router.push('/dashboard');
+      }
+    } catch (error) {
+      console.error('Error during workspace shutdown:', error);
+      // Still navigate to prevent being stuck
+      resetAllState();
+      setError(`Shutdown error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      router.push('/dashboard');
+    } finally {
+      setIsShuttingDown(false);
+    }
+  }, [pathname, router, resetAllState, setError]);
+
+  const handleSubmitReview = useCallback(async (reviewData: { title: string; description?: string; priority: string; reviewer_ids: number[] }): Promise<void> => {
+    if (!state.currentSession || !isAuthenticated || !userId) {
+      throw new Error('No active session or not authenticated');
     }
 
     try {
       setLoading(true);
       setError(null);
-      
-      // For now, use legacy session update
-      // TODO: Implement PostgreSQL session content updates
-      const updatedSession = await apiService.updateLegacySession(state.currentSession.id, {
-        code: state.code,
-        is_active: true,
-      });
-      
-      // Convert API response to internal format
-      const sessionData = {
-        id: updatedSession.id,
-        userId: updatedSession.user_id,
-        code: updatedSession.code,
-        language: 'python' as const,
-        createdAt: new Date(updatedSession.created_at),
-        updatedAt: new Date(updatedSession.updated_at),
-        isActive: updatedSession.is_active,
+
+      const reviewRequest: ReviewRequestCreate = {
+        session_id: state.currentSession.id, // Fixed: Use UUID string instead of integer
+        title: reviewData.title,
+        description: reviewData.description,
+        priority: reviewData.priority as 'low' | 'medium' | 'high' | 'urgent',
+        reviewer_ids: reviewData.reviewer_ids,
       };
+
+      const response = await apiService.createReviewRequest(reviewRequest);
+      console.log('Review request created:', response.data);
       
-      setSession(sessionData);
-      console.log('Session saved:', sessionData.id);
+      // Show success message or redirect
+      alert('Review request submitted successfully!');
+
+      // Refresh review status in parent component
+      if (onReviewStatusChange) {
+        onReviewStatusChange();
+      }
+      
     } catch (error) {
-      console.error('Failed to save session:', error);
-      setError(error instanceof Error ? error.message : 'Failed to save session');
+      console.error('Failed to submit review request:', error);
+      throw error;
     } finally {
       setLoading(false);
     }
-  }, [state.currentSession, state.code, isAuthenticated, setSession, setLoading, setError]);
-
-  const handleLogout = useCallback(() => {
-    logout();
-    setShowUserMenu(false);
-    // Clear current session
-    setSession(null);
-    clearTerminal();
-    setFiles([]);
-    setCurrentFile(null);
-    updateCode('# Write your Python code here\nprint("Hello, World!")');
-  }, [logout, setSession, clearTerminal, setFiles, setCurrentFile, updateCode]);
+  }, [state.currentSession, isAuthenticated, userId, setLoading, setError]);
 
   return (
     <>
       <header className="bg-gradient-to-r from-gray-800 to-gray-750 border-b border-gray-600 px-6 py-4 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-6">
-            <h1 className="text-xl font-bold text-white tracking-tight">
-              Code Execution Platform
-            </h1>
-            
-            <div className="flex items-center space-x-3 bg-gray-700/50 px-3 py-1.5 rounded-lg">
-              <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-red-400 shadow-sm shadow-red-400/50'}`} />
-              <span className={`text-sm font-medium ${isConnected ? 'text-emerald-300' : 'text-red-300'}`}>
-                {isConnected ? 'Connected' : 'Disconnected'}
-              </span>
+            <div className="flex items-center space-x-4">
+              <h1 className="text-xl font-bold text-white tracking-tight">
+                Code Execution Platform
+              </h1>
+              
+              {/* Navigation Buttons */}
+              {isAuthenticated && (
+                <div className="flex items-center space-x-2">
+                  {(pathname?.startsWith('/workspace/') || pathname?.startsWith('/reviews') || pathname?.startsWith('/review/')) && (
+                    <button
+                      onClick={pathname?.startsWith('/workspace/') ? handleWorkspaceShutdown : () => router.push(pathname?.startsWith('/review/') ? '/reviews' : '/dashboard')}
+                      disabled={isShuttingDown}
+                      className="px-3 py-1.5 text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-200 hover:text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isShuttingDown ? 'Shutting down...' : pathname?.startsWith('/review/') ? '← Reviews' : '← Dashboard'}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
+            
+            {!pathname?.startsWith('/reviews') && !pathname?.startsWith('/review/') && (
+              <div className="flex items-center space-x-3 bg-gray-700/50 px-3 py-1.5 rounded-lg">
+                <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-red-400 shadow-sm shadow-red-400/50'}`} />
+                <span className={`text-sm font-medium ${isConnected ? 'text-emerald-300' : 'text-red-300'}`}>
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+            )}
             
             {state.currentSession && (
               <div className="bg-blue-500/20 px-3 py-1.5 rounded-lg border border-blue-400/30">
@@ -192,29 +264,39 @@ export function Header(): JSX.Element {
             )}
 
             {/* Action Buttons */}
-            <button 
-              onClick={handleNewSession}
-              className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-              disabled={state.isLoading}
-            >
-              New Session
-            </button>
             
-            <button 
-              onClick={handleRunCode}
-              className="px-4 py-2 text-sm font-medium bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-              disabled={!isConnected || state.isLoading || !state.code.trim()}
-            >
-              ▶ Run Code
-            </button>
 
-            <button 
-              onClick={handleSave}
-              className="px-4 py-2 text-sm font-medium bg-gray-600 hover:bg-gray-500 active:bg-gray-700 text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-              disabled={state.isLoading || !isAuthenticated}
-            >
-              💾 Save
-            </button>
+            {/* Save Button - only show in workspace for non-reviewers */}
+            {pathname?.startsWith('/workspace/') && !reviewStatus?.isReviewer && (
+              <button
+                onClick={handleSave}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm ${
+                  state.isAutosaveEnabled || !state.hasUnsavedChanges || !state.currentFile
+                    ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                    : 'bg-gray-600 hover:bg-gray-500 active:bg-gray-700 text-white'
+                }`}
+                disabled={state.isAutosaveEnabled || !state.hasUnsavedChanges || !state.currentFile || state.isLoading}
+                title={state.isAutosaveEnabled ? 'Autosave is enabled' : 'Save file (Ctrl+S)'}
+              >
+                💾 Save
+              </button>
+            )}
+
+            {/* Review Submission Button - temporarily disabled */}
+            {pathname?.startsWith('/workspace/') && state.currentSession && isAuthenticated && !reviewStatus?.isReviewer && (
+              <div className="flex items-center space-x-2">
+                <button
+                  disabled
+                  className="px-4 py-2 text-sm font-medium bg-gray-600 text-gray-400 rounded-lg cursor-not-allowed opacity-60 shadow-sm"
+                  title="Review submission feature is temporarily disabled"
+                >
+                  📝 Submit for Review
+                </button>
+                <span className="px-2 py-1 bg-yellow-600/20 text-yellow-400 text-xs font-medium rounded-md border border-yellow-500/30">
+                  🚧 WIP - Coming Soon
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -224,13 +306,26 @@ export function Header(): JSX.Element {
         <Auth onClose={() => setShowAuth(false)} />
       )}
 
+      {/* Review Submission Modal */}
+      {showReviewModal && state.currentSession && (
+        <ReviewSubmissionModal
+          sessionId={state.currentSession.id}
+          isOpen={showReviewModal}
+          onClose={() => setShowReviewModal(false)}
+          onSubmit={handleSubmitReview}
+        />
+      )}
+
       {/* Click outside to close user menu */}
       {showUserMenu && (
-        <div 
-          className="fixed inset-0 z-40" 
+        <div
+          className="fixed inset-0 z-40"
           onClick={() => setShowUserMenu(false)}
         />
       )}
+
+      {/* Workspace Shutdown Loader */}
+      <WorkspaceShutdownLoader isVisible={isShuttingDown} />
     </>
   );
 }

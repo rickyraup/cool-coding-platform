@@ -5,10 +5,12 @@ import { Terminal } from '../../../components/Terminal';
 import { Header } from '../../../components/Header';
 import { FileExplorer } from '../../../components/FileExplorer';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState, use, useCallback } from 'react';
 import { useApp } from '../../../context/AppContext';
-import { apiService } from '../../../services/api';
-import { useAuth } from '../../../contexts/AuthContext';
+import { apiService, type ReviewRequest } from '../../../services/api';
+import { getWorkspaceFiles, getFileContent, getWorkspaceStatus, ensureDefaultFiles } from '../../../services/workspaceApi';
+import WorkspaceStartupLoader from '../../../components/WorkspaceStartupLoader';
+import { useAuth, useUserId } from '../../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
 interface WorkspacePageProps {
@@ -17,10 +19,15 @@ interface WorkspacePageProps {
 
 export default function WorkspacePage({ params: paramsPromise }: WorkspacePageProps) {
   const params = use(paramsPromise);
-  const { state, setSession, setLoading, setError } = useApp();
+  const { state, setSession, setLoading, updateCode, setCurrentFile, setFiles, clearTerminal } = useApp();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const userId = useUserId();
   const router = useRouter();
   const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
+  const [fastLoading, setFastLoading] = useState(false); // Show content as soon as session loads
+  const [workspaceInitialized, setWorkspaceInitialized] = useState(false);
+  const [showStartupLoader, setShowStartupLoader] = useState(true);
+  const [reviewStatus, setReviewStatus] = useState<{ isUnderReview: boolean; reviewRequest?: ReviewRequest; isReviewer?: boolean }>({ isUnderReview: false });
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -29,48 +36,143 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
     }
   }, [isAuthenticated, authLoading, router]);
 
+  // Check workspace initialization status
+  useEffect(() => {
+    const checkWorkspaceStatus = async () => {
+      if (!isAuthenticated || authLoading || !userId) return;
+
+      const sessionUuid = params.id;
+      if (!sessionUuid || sessionUuid.trim() === '') return;
+
+      try {
+        // Check workspace status periodically until it's ready
+        const checkStatus = async (): Promise<boolean> => {
+          const status = await getWorkspaceStatus(sessionUuid);
+
+          if (status.status === 'ready' && status.initialized) {
+            setWorkspaceInitialized(true);
+            setShowStartupLoader(false);
+            return true;
+          } else if (status.status === 'empty') {
+            // Initialize workspace with default files
+            await ensureDefaultFiles(sessionUuid);
+            // Check again after initialization
+            return false;
+          } else if (status.status === 'error' || status.status === 'not_found') {
+            setSessionLoadError(status.message);
+            setShowStartupLoader(false);
+            return true;
+          }
+
+          return false;
+        };
+
+        const isReady = await checkStatus();
+
+        if (!isReady) {
+          let pollCount = 0;
+          const maxPolls = 30; // Max 30 seconds of polling
+
+          // Poll with increasing intervals to reduce load
+          const poll = async () => {
+            pollCount++;
+            const ready = await checkStatus();
+            if (ready || pollCount >= maxPolls) {
+              return;
+            }
+
+            // Use exponential backoff: start with 1s, then 2s, then 3s, max 5s
+            const delay = Math.min(1000 + (pollCount * 500), 5000);
+            setTimeout(poll, delay);
+          };
+
+          setTimeout(poll, 1000);
+        }
+      } catch (error) {
+        console.error('Failed to check workspace status:', error);
+        setSessionLoadError('Failed to initialize workspace');
+        setShowStartupLoader(false);
+      }
+    };
+
+    checkWorkspaceStatus();
+  }, [params.id, isAuthenticated, authLoading, userId]);
+
   // Load session data
   useEffect(() => {
     const loadSession = async () => {
-      if (!isAuthenticated || authLoading) return;
+      if (!isAuthenticated || authLoading || !userId || !workspaceInitialized) return;
       
       try {
         setLoading(true);
         setSessionLoadError(null);
         
-        // Parse session ID
-        const sessionId = parseInt(params.id, 10);
-        if (isNaN(sessionId) || sessionId <= 0) {
-          throw new Error(`Invalid session ID: ${params.id}`);
+        // Clear terminal state when loading a new workspace
+        // This ensures each workspace starts with a fresh terminal
+        clearTerminal();
+        
+        // Use session UUID directly (no parsing needed)
+        const sessionUuid = params.id;
+        if (!sessionUuid || sessionUuid.trim() === '') {
+          throw new Error(`Invalid session UUID: ${params.id}`);
         }
         
-        // Load session from API
-        const response = await apiService.getSession(sessionId);
-        
+        // Load session metadata from API
+        const sessionResponse = await apiService.getSession(sessionUuid, userId);
+
         // Convert API session to AppContext session format
         const session = {
-          id: response.data.id.toString(),
-          userId: response.data.user_id.toString(),
-          code: '', // Will be loaded from workspace files
+          id: sessionResponse.data.id.toString(),
+          userId: sessionResponse.data.user_id.toString(),
+          code: '', // Will be loaded from workspace API
           language: 'python' as const,
-          createdAt: new Date(response.data.created_at),
-          updatedAt: new Date(response.data.updated_at),
+          createdAt: new Date(sessionResponse.data.created_at),
+          updatedAt: new Date(sessionResponse.data.updated_at),
           isActive: true
         };
-        
+
         // Set session in context
         setSession(session);
-        
-        // Try to load workspace files and start container (non-blocking)
-        Promise.all([
-          apiService.loadSessionWorkspace(sessionId),
-          apiService.startContainerSession(sessionId)
-        ]).then(() => {
-          console.log('Workspace initialized successfully');
-        }).catch(workspaceError => {
-          console.warn('Could not initialize workspace:', workspaceError);
-          // Continue anyway - workspace might not exist yet or container might be starting
-        });
+
+        // Load workspace files using new clean API
+        try {
+          console.log('Loading workspace files for UUID:', sessionUuid);
+
+          // Get all files in workspace
+          let files = await getWorkspaceFiles(sessionUuid);
+          console.log('Files loaded:', files);
+
+          // Note: Default file creation is handled by the backend automatically
+          console.log(`Loaded ${files.length} files from workspace`);
+          if (files.length === 0) {
+            console.log('No files found in workspace - backend will handle default creation if needed');
+          }
+
+          // Set files in context
+          setFiles(files);
+
+          // Auto-select main.py if it exists
+          const mainFile = files.find(file => file.name === 'main.py');
+          if (mainFile) {
+            console.log('Auto-selecting main.py');
+            setCurrentFile(mainFile.path);
+
+            // Load main.py content only if we don't have it in context already
+            if (!state.code || state.code.trim() === '') {
+              const fileContent = await getFileContent(sessionUuid, mainFile.name);
+              updateCode(fileContent.content);
+              console.log('Main.py content loaded:', fileContent.content.length, 'characters');
+            }
+          }
+
+        } catch (fileError) {
+          console.error('Failed to load workspace files:', fileError);
+          setSessionLoadError('Failed to load workspace files');
+        }
+
+        setFastLoading(true); // Enable fast loading to show UI immediately
+
+        console.log('Workspace loaded successfully using new API');
         
       } catch (error) {
         console.error('Failed to load session:', error);
@@ -81,10 +183,35 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
     };
 
     loadSession();
-  }, [params.id, isAuthenticated, authLoading]); // Remove function dependencies to prevent infinite loops
+  }, [params.id, isAuthenticated, authLoading, userId, workspaceInitialized, clearTerminal]); // clearTerminal is stable from useCallback
 
-  // Loading state
-  if (authLoading || state.isLoading) {
+  // Load review status for this session (for UI control only, not reviewer functionality)
+  const loadReviewStatus = useCallback(async () => {
+    if (!isAuthenticated || authLoading || !params.id) return;
+
+    try {
+      const status = await apiService.getReviewStatusForSession(params.id);
+      setReviewStatus(status);
+      console.log('Review status loaded for UI control:', status);
+    } catch (error) {
+      console.error('Failed to load review status:', error);
+      // Don't show error for review status loading - it's optional
+    }
+  }, [params.id, isAuthenticated, authLoading]);
+
+  useEffect(() => {
+    loadReviewStatus();
+  }, [loadReviewStatus]);
+
+
+
+  // Show startup loader while workspace is initializing
+  if (showStartupLoader) {
+    return <WorkspaceStartupLoader isVisible={true} message="Starting up workspace..." />;
+  }
+
+  // Loading state - only show spinner if we don't have basic session data
+  if (authLoading || (state.isLoading && !fastLoading && !state.currentSession)) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-gray-900 text-white">
         <div className="text-center">
@@ -120,8 +247,9 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-900 text-white overflow-hidden">
-      <Header />
-      
+      <Header reviewStatus={reviewStatus} onReviewStatusChange={loadReviewStatus} />
+
+
       <div className="flex-1 overflow-hidden">
         <PanelGroup direction="horizontal" className="h-full">
           {/* File Explorer Sidebar */}
@@ -137,9 +265,11 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
               {/* Editor Section */}
               <Panel defaultSize={60} minSize={30} className="border-r border-gray-700">
                 <div className="h-full flex flex-col">
-                  <div className="bg-gray-800 px-4 py-3 border-b border-gray-600 flex-shrink-0 flex items-center gap-2">
-                    <span className="text-lg">📝</span>
-                    <h2 className="text-sm font-semibold text-gray-200">Code Editor</h2>
+                  <div className="bg-gray-800 px-4 py-3 border-b border-gray-700/50 flex-shrink-0 flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                      <h2 className="text-sm font-medium text-gray-100">Editor</h2>
+                    </div>
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <CodeEditor />
@@ -152,9 +282,11 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
               {/* Terminal Section */}
               <Panel defaultSize={40} minSize={25}>
                 <div className="h-full flex flex-col">
-                  <div className="bg-gray-800 px-4 py-3 border-b border-gray-600 flex-shrink-0 flex items-center gap-2">
-                    <span className="text-lg">💻</span>
-                    <h2 className="text-sm font-semibold text-gray-200">Terminal</h2>
+                  <div className="bg-gray-800 px-4 py-3 border-b border-gray-700/50 flex-shrink-0 flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                      <h2 className="text-sm font-medium text-gray-100">Terminal</h2>
+                    </div>
                   </div>
                   <div className="flex-1 overflow-hidden">
                     <Terminal />
@@ -165,6 +297,7 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
           </Panel>
         </PanelGroup>
       </div>
+
     </div>
   );
 }

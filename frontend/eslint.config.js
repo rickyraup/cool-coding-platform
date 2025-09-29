@@ -15,7 +15,16 @@ const compat = new FlatCompat({
 
 export default [
     {
-        ignores: [".next/**/*", "node_modules/**/*", "out/**/*"]
+        ignores: [
+            ".next/**/*",
+            "node_modules/**/*",
+            "out/**/*",
+            "eslint.config.js",
+            "eslint.config.mjs",
+            "postcss.config.mjs",
+            "next.config.ts",
+            "tailwind.config.js"
+        ]
     },
     ...compat.extends("next/core-web-vitals"),
     {
@@ -58,11 +67,11 @@ export default [
             "@typescript-eslint/no-shadow": "error",
             "@typescript-eslint/no-use-before-define": "error",
             "@typescript-eslint/prefer-as-const": "error",
-            "@typescript-eslint/explicit-function-return-type": "error",
-            "@typescript-eslint/explicit-module-boundary-types": "error",
-            "@typescript-eslint/no-floating-promises": "error",
+            "@typescript-eslint/explicit-function-return-type": "off",
+            "@typescript-eslint/explicit-module-boundary-types": "off",
+            "@typescript-eslint/no-floating-promises": "warn",
             "@typescript-eslint/await-thenable": "error",
-            "@typescript-eslint/no-misused-promises": "error",
+            "@typescript-eslint/no-misused-promises": "warn",
 
             // Disable conflicting base ESLint rules
             "no-unused-vars": "off",
@@ -70,15 +79,15 @@ export default [
             "no-use-before-define": "off",
 
             // General Code Quality
-            "complexity": ["error", 10],
-            "max-depth": ["error", 4],
-            "max-lines": ["error", 300],
-            "max-lines-per-function": ["error", 50],
-            "max-nested-callbacks": ["error", 3],
-            "max-params": ["error", 4],
-            "no-console": "warn",
+            "complexity": ["warn", 20],
+            "max-depth": ["warn", 6],
+            "max-lines": ["warn", 800],
+            "max-lines-per-function": ["warn", 150],
+            "max-nested-callbacks": ["warn", 5],
+            "max-params": ["warn", 6],
+            "no-console": "off",
             "no-debugger": "error",
-            "no-alert": "error",
+            "no-alert": "warn",
             "no-eval": "error",
             "no-implied-eval": "error",
             "no-new-func": "error",

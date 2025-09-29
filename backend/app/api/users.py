@@ -1,183 +1,332 @@
 """User management API endpoints."""
 
-import hashlib
-from fastapi import APIRouter, HTTPException, status
+import bcrypt
+from typing import Annotated, Any
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field, ValidationError
+
 from app.models.postgres_models import User
 from app.schemas.postgres_schemas import (
-    UserCreate, 
-    UserResponse, 
-    UserLogin,
     AuthResponse,
-    BaseResponse
+    UserCreate,
+    UserLogin,
+    UserResponse,
 )
+
 
 router = APIRouter()
 
+
 def hash_password(password: str) -> str:
-    """Hash password using SHA256 (simple implementation)."""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Hash password using bcrypt with salt."""
+    # Generate a salt and hash the password
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
+
 
 def verify_password(password: str, hashed: str) -> bool:
-    """Verify password against hash."""
-    return hash_password(password) == hashed
+    """Verify password against bcrypt hash."""
+    return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
-@router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def register_user(user_data: UserCreate):
-    """Register a new user."""
+
+@router.post(
+    "/register", status_code=status.HTTP_201_CREATED,
+)
+async def register_user(user_data: UserCreate) -> AuthResponse:
+    """Register a new user with comprehensive validation."""
     try:
-        # Check if username already exists
-        existing_user = User.get_by_username(user_data.username)
+        # Check if username already exists (case-insensitive)
+        existing_user = User.get_by_username(user_data.username.lower())
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already exists"
+                detail="Username already exists",
             )
-        
+
         # Check if email already exists
-        existing_email = User.get_by_email(user_data.email)
+        existing_email = User.get_by_email(str(user_data.email))
         if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already exists"
+                detail="Email already exists",
             )
-        
+
         # Hash password and create user
         hashed_password = hash_password(user_data.password)
         new_user = User.create(
-            username=user_data.username,
-            email=user_data.email,
-            password_hash=hashed_password
+            username=user_data.username.lower(),  # Store username in lowercase
+            email=str(user_data.email),
+            password_hash=hashed_password,
         )
-        
+
         # Convert to response format
         user_response = UserResponse(
             id=new_user.id,
             username=new_user.username,
             email=new_user.email,
             created_at=new_user.created_at,
-            updated_at=new_user.updated_at
+            updated_at=new_user.updated_at,
         )
-        
+
         return AuthResponse(
             success=True,
             message="User registered successfully",
             user=user_response,
-            data={"user_id": new_user.id}
+            data={"user_id": new_user.id},
         )
-        
+
+    except ValidationError as e:
+        # Handle Pydantic validation errors
+        error_messages = []
+        for error in e.errors():
+            field = error["loc"][-1] if error["loc"] else "field"
+            message = error["msg"]
+            error_messages.append(f"{field}: {message}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="; ".join(error_messages),
+        )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create user: {str(e)}"
+            detail=f"Failed to create user: {e!s}",
         )
 
-@router.post("/login", response_model=AuthResponse)
-async def login_user(login_data: UserLogin):
-    """Login user and return user info."""
+
+@router.post("/login")
+async def login_user(login_data: UserLogin) -> AuthResponse:
+    """Login user and return user info. Supports both username and email login."""
     try:
-        # Find user by username
-        user = User.get_by_username(login_data.username)
+        # Try to find user by username first, then by email
+        user = None
+        identifier = login_data.username
+
+        # Check if the identifier looks like an email
+        if "@" in identifier:
+            user = User.get_by_email(identifier)
+        else:
+            user = User.get_by_username(identifier)
+
+        # If not found by email, try username (in case user typed username with @)
+        if not user and "@" in identifier:
+            user = User.get_by_username(identifier)
+
+        # If not found by username, try email (in case user typed email without @)
+        if not user and "@" not in identifier:
+            user = User.get_by_email(identifier)
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password"
+                detail="Invalid username/email or password",
             )
-        
+
         # Verify password
         if not verify_password(login_data.password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password"
+                detail="Invalid username/email or password",
             )
-        
+
         # Convert to response format
         user_response = UserResponse(
             id=user.id,
             username=user.username,
             email=user.email,
             created_at=user.created_at,
-            updated_at=user.updated_at
+            updated_at=user.updated_at,
         )
-        
+
         return AuthResponse(
             success=True,
             message="Login successful",
             user=user_response,
-            data={"user_id": user.id}
+            data={"user_id": user.id},
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login failed: {str(e)}"
+            detail=f"Login failed: {e!s}",
         )
 
-@router.get("/{user_id}", response_model=AuthResponse)
-async def get_user(user_id: int):
+
+@router.get("/search")
+async def search_users(q: str = "") -> dict[str, Any]:
+    """Search users by username or email for reviewer selection."""
+    try:
+        users = User.search_users(q)
+
+        user_data = []
+        for user in users:
+            user_data.append({
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "is_reviewer": user.is_reviewer,
+                "reviewer_level": user.reviewer_level,
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+            })
+
+        return {
+            "success": True,
+            "data": user_data,
+            "total": len(user_data)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to search users: {e!s}")
+
+
+@router.get("/{user_id}")
+async def get_user(user_id: int) -> AuthResponse:
     """Get user by ID."""
     try:
         user = User.get_by_id(user_id)
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found",
             )
-        
+
         user_response = UserResponse(
             id=user.id,
             username=user.username,
             email=user.email,
             created_at=user.created_at,
-            updated_at=user.updated_at
+            updated_at=user.updated_at,
         )
-        
+
         return AuthResponse(
-            success=True,
-            message="User retrieved successfully",
-            user=user_response
+            success=True, message="User retrieved successfully", user=user_response,
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get user: {str(e)}"
+            detail=f"Failed to get user: {e!s}",
         )
 
-@router.get("/username/{username}", response_model=AuthResponse)
-async def get_user_by_username(username: str):
+
+@router.get("/username/{username}")
+async def get_user_by_username(username: str) -> AuthResponse:
     """Get user by username."""
     try:
         user = User.get_by_username(username)
         if not user:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found",
             )
-        
+
         user_response = UserResponse(
             id=user.id,
             username=user.username,
             email=user.email,
             created_at=user.created_at,
-            updated_at=user.updated_at
+            updated_at=user.updated_at,
         )
-        
+
         return AuthResponse(
-            success=True,
-            message="User retrieved successfully",
-            user=user_response
+            success=True, message="User retrieved successfully", user=user_response,
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get user: {str(e)}"
+            detail=f"Failed to get user: {e!s}",
         )
+
+# Reviewer management endpoints
+class ReviewerStatusUpdate(BaseModel):
+    """Update reviewer status payload."""
+    is_reviewer: bool = Field(..., description="Whether user should be a reviewer")
+    reviewer_level: int = Field(1, ge=0, le=2, description="Reviewer level (0=regular, 1=junior, 2=senior)")
+
+
+class UserListResponse(BaseModel):
+    """User list response model."""
+    success: bool
+    data: list[UserResponse]
+    total: int
+
+
+# TODO: Add proper authentication and authorization checks
+def get_current_user_id() -> int:
+    """Get current user ID from session/token."""
+    # Hardcoded for development - replace with actual auth
+    return 5
+
+
+
+@router.get("/me")
+async def get_current_user(
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+) -> dict[str, Any]:
+    """Get current user info."""
+    try:
+        user = User.get_by_id(current_user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "is_reviewer": user.is_reviewer,
+            "reviewer_level": user.reviewer_level,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch user: {e!s}")
+
+
+@router.put("/me/reviewer-status")
+async def toggle_my_reviewer_status(
+    status_update: ReviewerStatusUpdate,
+    current_user_id: Annotated[int, Depends(get_current_user_id)],
+) -> dict[str, Any]:
+    """Toggle current user's reviewer status - anyone can become a reviewer."""
+    try:
+        user = User.get_by_id(current_user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        success = user.update_reviewer_status(
+            status_update.is_reviewer,
+            status_update.reviewer_level
+        )
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update reviewer status")
+
+        action = "You are now a" if status_update.is_reviewer else "You are no longer a"
+        level_text = ["regular user", "junior reviewer", "senior reviewer"][status_update.reviewer_level]
+
+        return {
+            "success": True,
+            "message": f"{action} {level_text}",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "is_reviewer": user.is_reviewer,
+                "reviewer_level": user.reviewer_level,
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update reviewer status: {e!s}")

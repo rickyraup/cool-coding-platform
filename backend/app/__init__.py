@@ -1,1 +1,1 @@
-# FastAPI Code Execution Platform Backend
+"""FastAPI Code Execution Platform Backend."""
