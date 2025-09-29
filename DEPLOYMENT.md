@@ -28,8 +28,8 @@ git push origin main
 **B. Deploy to Railway**
 1. Go to [railway.app](https://railway.app) and sign in
 2. Click "New Project" → "Deploy from GitHub repo"
-3. Select your repository and choose the `backend` folder
-4. Railway will automatically detect the `Dockerfile.api`
+3. Select your repository (whole repo, not just backend folder)
+4. Railway will use the `railway.json` config to build with `backend/Dockerfile.api`
 
 **C. Set Environment Variables in Railway**
 ```
