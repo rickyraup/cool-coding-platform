@@ -4,11 +4,20 @@ This directory contains the complete API documentation for the Code Execution Pl
 
 ## API Overview
 
-The Code Execution Platform provides a RESTful API built with FastAPI, offering comprehensive backend services for a web-based development environment with integrated terminal functionality, user management, and code review systems.
+The Code Execution Platform provides a RESTful API built with FastAPI, offering comprehensive backend services for a web-based development environment with integrated terminal functionality, user management, and code review systems. The platform is deployed on Kubernetes with horizontal pod autoscaling for high availability and scalability.
 
-**Base URL**: `http://localhost:8001` (development)
+**Base URL (Development)**: `http://localhost:8002`
+**Base URL (Production)**: `http://<loadbalancer-ip>` (DigitalOcean Kubernetes)
 
-**API Documentation**: Available at `/docs` (Swagger UI) and `/redoc` (ReDoc)
+**API Documentation**:
+- Swagger UI: `/docs`
+- ReDoc: `/redoc`
+
+**Infrastructure**:
+- **Backend Pods**: 2-10 replicas (horizontally scaled based on load)
+- **Execution Pods**: 1 per active user session (isolated Kubernetes pods)
+- **Database**: PostgreSQL (DigitalOcean Managed Database)
+- **Container Registry**: Docker Hub (rraup12/coding-platform-backend)
 
 ## API Structure
 
@@ -101,7 +110,7 @@ Error responses include appropriate HTTP status codes and detailed error message
 - `POST /workspace/{workspace_id}/shutdown` - Shutdown workspace
 
 ### WebSocket
-- `WS /ws` - WebSocket endpoint for real-time terminal communication
+- `WS /api/terminal/ws/{session_id}` - WebSocket endpoint for real-time terminal communication
 
 ## Rate Limiting
 
@@ -135,9 +144,36 @@ Use the interactive API documentation at `/docs` to test endpoints directly, or 
 Example with curl:
 ```bash
 # Health check
-curl -X GET "http://localhost:8001/api/health/"
+curl -X GET "http://localhost:8002/api/health/"
 
 # Get current user (requires authentication)
-curl -X GET "http://localhost:8001/api/users/me" \
+curl -X GET "http://localhost:8002/api/users/me" \
   -H "Content-Type: application/json"
+```
+
+## Load Balancing & High Availability
+
+The API backend is deployed with horizontal pod autoscaling:
+- **Minimum Replicas**: 2 (always running for redundancy)
+- **Maximum Replicas**: 10 (scales up based on CPU/memory usage)
+- **Load Balancing**: Kubernetes LoadBalancer Service distributes traffic
+- **Auto-Scaling Triggers**:
+  - CPU utilization > 70%
+  - Memory utilization > 80%
+
+### Scaling Behavior
+- **Scale-Up**: Immediate (doubles pods or adds 2, whichever is more)
+- **Scale-Down**: Gradual (5-minute stabilization window, removes 50% or 1 pod)
+- **Session Affinity**: Not required (WebSocket connections can reconnect to any pod)
+
+### Monitoring
+```bash
+# Check backend pod status
+kubectl get pods -n coding-platform -l app=backend
+
+# Check HPA metrics
+kubectl get hpa -n coding-platform
+
+# View real-time scaling
+kubectl top pods -n coding-platform
 ```

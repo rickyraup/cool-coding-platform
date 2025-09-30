@@ -138,10 +138,15 @@ Authentication is session-based. After successful login, the user session is mai
 
 ## Reviewer Levels
 
+The platform supports 5 reviewer levels (0-4):
+
+- **Level 0**: Regular user (not a reviewer)
 - **Level 1**: Basic reviewer - can review simple code changes
 - **Level 2**: Intermediate reviewer - can review moderate complexity changes
-- **Level 3**: Senior reviewer - can review complex architectural changes
-- **Level 4**: Lead reviewer - can review critical system changes
+- **Level 3**: Advanced reviewer - can review complex architectural changes
+- **Level 4**: Expert reviewer - can review critical system changes with full access
+
+Users can self-promote to any reviewer level using the `PUT /api/users/me/reviewer-status` endpoint.
 
 ## Error Responses
 

@@ -382,7 +382,33 @@ async def delete_file(session_uuid: str, filename: str) -> dict[str, str]:
                 detail=f"File {filename} not found in workspace",
             )
 
+        # Delete from database
         file_item.delete()
+
+        # Also delete from pod using rm command to keep things in sync
+        try:
+            from app.services.container_manager import container_manager
+            session_id = container_manager.find_session_by_workspace_id(session_uuid)
+            if session_id and session_id in container_manager.active_sessions:
+                # Execute rm command in the pod
+                await container_manager.execute_command(
+                    session_id, f"rm -f /app/{filename}"
+                )
+                print(f"Deleted {filename} from pod using rm command")
+        except Exception as e:
+            print(f"Warning: Failed to delete {filename} from pod: {str(e)}")
+            # Don't raise - database deletion is the source of truth
+
+        # Delete from filesystem
+        try:
+            sessions_dir = "/tmp/coding_platform_sessions"
+            workspace_dir = os.path.join(sessions_dir, f"workspace_{session_uuid}")
+            file_path = os.path.join(workspace_dir, filename)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"Deleted {filename} from filesystem")
+        except Exception as e:
+            print(f"Warning: Failed to delete {filename} from filesystem: {str(e)}")
 
         return {"message": f"File {filename} deleted successfully"}
 

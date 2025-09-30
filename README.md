@@ -1,32 +1,38 @@
 # Code Execution Platform
 
-A modern web-based development environment that provides users with an isolated Python development environment featuring a code editor, terminal interface, file management, and collaborative code review system.
+A modern web-based development environment that provides users with isolated Python and Node.js development environments featuring a code editor, terminal interface, file management, and collaborative code review system. Built on Kubernetes with horizontal autoscaling to support multiple concurrent users.
 
 ![Platform Demo](https://img.shields.io/badge/Status-Production%20Ready-green)
 ![Tech Stack](https://img.shields.io/badge/Stack-Next.js%20%2B%20FastAPI-blue)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-brightgreen)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-Enabled-326CE5)
+![Node.js](https://img.shields.io/badge/Node.js-20-339933)
 
 ## 🚀 Features
 
 ### Core Development Environment
-- **🖥️ Monaco Code Editor**: Full-featured editor with Python syntax highlighting, IntelliSense, and autocomplete
+- **🖥️ Monaco Code Editor**: Full-featured editor with syntax highlighting, IntelliSense, and autocomplete
 - **📟 Interactive Terminal**: Real-time terminal emulation with xterm.js supporting all standard commands
 - **📁 File Management**: Create, edit, and organize files in a hierarchical workspace structure
-- **💾 Session Persistence**: Multiple isolated sessions per user with automatic workspace saving
-- **🔒 Secure Execution**: Docker-containerized Python environment with resource limits
+- **💾 Session Persistence**: Multiple isolated sessions per user with PostgreSQL-backed storage
+- **🔒 Secure Execution**: Kubernetes pod-based isolation with dedicated resources per session
+- **🐍 Python 3.11+**: Pre-installed with pandas, scipy, numpy, and pip package management
+- **📦 Node.js 20**: Full npm ecosystem with package installation support
 
 ### Advanced Features
 - **👥 User Management**: Registration, authentication, and profile management
 - **📝 Code Review System**: Submit code for review with priority levels and reviewer assignment
-- **🏆 Reviewer Levels**: Self-service promotion to Junior or Senior reviewer status
-- **🔄 Real-time Sync**: WebSocket-based live updates between editor and terminal
-- **🐍 Python Environment**: Pre-installed with pandas, scipy, numpy, and pip package management
+- **🏆 Reviewer Levels**: Five-level reviewer system (0-4) with self-service promotion
+- **🔄 Real-time Sync**: WebSocket-based live updates and bidirectional file synchronization
+- **☸️ Kubernetes Pods**: Dedicated execution pod per active session with 1Gi storage
 
 ### Security & Performance
-- **🛡️ Sandboxed Execution**: Each session runs in an isolated Docker container
-- **⚡ Resource Management**: Memory, CPU, and time limits to prevent abuse
-- **🔐 Input Validation**: Comprehensive validation and sanitization
-- **📊 Monitoring**: Real-time resource usage and session management
+- **🛡️ Sandboxed Execution**: Each session runs in an isolated Kubernetes pod
+- **⚡ Horizontal Autoscaling**: 2-10 backend pods scale based on CPU (70%) and memory (80%)
+- **📈 Cluster Autoscaling**: 3-7 nodes added automatically based on demand
+- **🔐 Resource Limits**: CPU (500m), memory (512Mi) per execution pod
+- **📊 High Availability**: Load-balanced backend with zero-downtime deployments
+- **🚀 Scalability**: Supports 10-40+ concurrent users with current configuration
 
 ## 🏗️ Architecture
 
@@ -38,19 +44,29 @@ A modern web-based development environment that provides users with an isolated 
 - **Terminal**: xterm.js with full TTY support
 - **State**: React Context + custom hooks
 
-### Backend (FastAPI)
+### Backend (FastAPI on Kubernetes)
 - **Framework**: FastAPI with async/await
 - **Language**: Python 3.9+ with type hints
-- **Database**: PostgreSQL with custom ORM
-- **Containers**: Docker for secure code execution
-- **WebSocket**: Real-time terminal communication
-- **Background Tasks**: Container lifecycle management
+- **Database**: PostgreSQL (DigitalOcean Managed Database)
+- **Orchestration**: Kubernetes (DOKS) with kubectl integration
+- **WebSocket**: Real-time terminal communication via kubectl exec
+- **Scaling**: Horizontal Pod Autoscaler (HPA) for backend pods
+- **Load Balancing**: Kubernetes LoadBalancer service
+
+### Infrastructure
+- **Kubernetes Cluster**: DigitalOcean Kubernetes (DOKS)
+- **Backend Pods**: 2-10 replicas (horizontally scaled)
+- **Execution Pods**: 1 per active user session
+- **Storage**: PersistentVolumeClaims (1Gi per session)
+- **Container Registry**: Docker Hub
+- **Database**: Managed PostgreSQL with connection pooling
 
 ### Database Schema
-- **Users**: Authentication + reviewer system
+- **Users**: Authentication + 5-level reviewer system
 - **Sessions**: UUID-based workspace management
-- **Workspace Items**: Hierarchical file storage
-- **Review Requests**: Code review workflow
+- **Workspace Items**: Hierarchical file storage with bidirectional sync
+- **Review Requests**: Code review workflow with comments
+- **Review History**: Audit trail for review changes
 
 ## 🛠️ Tech Stack
 
@@ -58,12 +74,16 @@ A modern web-based development environment that provides users with an isolated 
 |-------|------------|---------|
 | **Frontend** | Next.js 15 + React 19 | Modern web framework with SSR |
 | **Backend** | FastAPI + Python 3.11 | High-performance async API |
-| **Database** | PostgreSQL | Reliable relational database |
+| **Database** | PostgreSQL (Managed) | Reliable relational database |
+| **Orchestration** | Kubernetes (DOKS) | Container orchestration & scaling |
 | **Editor** | Monaco Editor | VS Code-like editing experience |
 | **Terminal** | xterm.js | Full terminal emulation |
 | **Styling** | TailwindCSS v4 | Utility-first CSS framework |
-| **Containers** | Docker | Secure code execution isolation |
-| **Real-time** | WebSocket | Live terminal communication |
+| **Isolation** | Kubernetes Pods | Per-session execution environments |
+| **Real-time** | WebSocket + kubectl exec | Live terminal communication |
+| **Storage** | PersistentVolumeClaims | Persistent workspace storage |
+| **Scaling** | HPA + Cluster Autoscaler | Automatic horizontal scaling |
+| **Registry** | Docker Hub | Container image hosting |
 
 ## 📁 Project Structure
 
@@ -84,10 +104,18 @@ A modern web-based development environment that provides users with an isolated 
 │   │   ├── models/             # Database models
 │   │   ├── schemas/            # Pydantic request/response schemas
 │   │   ├── services/           # Business logic services
+│   │   │   ├── kubernetes_client.py  # K8s pod management
+│   │   │   └── file_sync.py          # DB ↔ Pod file sync
 │   │   ├── websockets/         # WebSocket handlers
 │   │   └── main.py             # FastAPI application entry point
+│   ├── k8s/                    # Kubernetes manifests
+│   │   ├── 00-namespace.yaml  # Namespace definition
+│   │   ├── 01-secrets.yaml    # Database credentials
+│   │   ├── 02-configmap.yaml  # Configuration
+│   │   ├── 03-backend.yaml    # Backend deployment & service
+│   │   └── 04-hpa.yaml        # Horizontal Pod Autoscaler
+│   ├── execution-image/        # Execution pod Dockerfile
 │   ├── tests/                  # Comprehensive test suite
-│   ├── migrations/             # Database migrations
 │   └── requirements.txt        # Python dependencies
 ├── docs/                        # Project documentation
 │   ├── SETUP.md                # Complete setup guide
@@ -109,11 +137,16 @@ A modern web-based development environment that provides users with an isolated 
 
 ## 🚦 Quick Start
 
-### Prerequisites
+### Local Development Prerequisites
 - **Node.js** 18+ (for frontend)
 - **Python** 3.9+ (for backend)
 - **PostgreSQL** 14+ (database)
-- **Docker** 20+ (for code execution)
+
+### Kubernetes Deployment Prerequisites
+- **kubectl** (Kubernetes CLI)
+- **Docker** with buildx (for multi-platform builds)
+- **Kubernetes Cluster** (DigitalOcean, AWS EKS, GCP GKE, etc.)
+- **Managed PostgreSQL** (recommended for production)
 
 ### 1. Backend Setup
 ```bash
@@ -151,8 +184,49 @@ npm run dev
 
 ### 3. Access the Application
 - **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8001
-- **API Documentation**: http://localhost:8001/docs
+- **Backend API**: http://localhost:8002
+- **API Documentation**: http://localhost:8002/docs
+- **WebSocket**: ws://localhost:8002/api/terminal/ws/{session_id}
+
+## ☸️ Kubernetes Deployment
+
+### Quick Deploy to Kubernetes
+```bash
+# 1. Build and push images
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t your-username/coding-platform-backend:latest --push backend/
+
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t your-username/code-execution:latest --push backend/execution-image/
+
+# 2. Update Kubernetes manifests with your values
+# Edit backend/k8s/01-secrets.yaml (database URL)
+# Edit backend/k8s/02-configmap.yaml (execution image)
+# Edit backend/k8s/03-backend.yaml (backend image)
+
+# 3. Deploy to cluster
+kubectl apply -f backend/k8s/
+
+# 4. Wait for deployment
+kubectl rollout status deployment/backend -n coding-platform
+
+# 5. Get LoadBalancer IP
+kubectl get svc backend -n coding-platform
+```
+
+### Monitoring Deployment
+```bash
+# Check HPA status
+kubectl get hpa -n coding-platform
+
+# Watch pod scaling
+kubectl get pods -n coding-platform --watch
+
+# View logs
+kubectl logs -l app=backend -n coding-platform --tail=50
+```
+
+See **[Complete Setup Guide](docs/SETUP.md)** for detailed deployment instructions.
 
 ## 📚 Documentation
 
@@ -198,49 +272,73 @@ python -m app.main
 
 ## 🔒 Security Features
 
-- **Container Isolation**: Each session runs in a separate Docker container
-- **Resource Limits**: Memory, CPU, and execution time constraints
+- **Pod Isolation**: Each session runs in a separate Kubernetes pod with dedicated resources
+- **Resource Limits**: CPU (500m), memory (512Mi) per execution pod
+- **RBAC**: Backend uses service account with limited Kubernetes API permissions
 - **Input Validation**: Comprehensive sanitization of all inputs
 - **Path Protection**: Prevention of directory traversal attacks
-- **Session Isolation**: User data completely separated
-- **Rate Limiting**: Protection against abuse and DoS attacks
+- **Session Isolation**: User data completely separated in database and pods
+- **File System Isolation**: Each pod has dedicated PVC, no host access
+- **Network Security**: Kubernetes network policies (configurable)
 
 ## 🌟 Key Workflows
 
 ### Basic Development Session
-1. User registers/logs in
-2. Creates a new coding session
-3. Writes Python code in Monaco editor
-4. Executes code in interactive terminal
-5. Files are automatically saved to database
-6. Session state persists between visits
+1. User registers/logs in to the platform
+2. Creates a new workspace session
+3. Backend creates dedicated Kubernetes pod for the session
+4. Files from PostgreSQL are synced to pod filesystem
+5. User writes Python/Node.js code in Monaco editor
+6. Executes commands in terminal (runs in pod via kubectl exec)
+7. File changes automatically synced back to database
+8. Session state persists in PostgreSQL
+9. Pod is cleaned up when session ends
 
 ### Code Review Process
 1. Developer completes code in session
 2. Submits code for review with description and priority
 3. Available reviewers can claim and review submissions
-4. Reviewers provide feedback and approve/reject code
-5. Developers receive notifications and can iterate
+4. Reviewers examine workspace files and provide line-level feedback
+5. Developers receive review comments and can iterate
+6. Code is approved or rejected with documented history
 
 ### Reviewer System
-1. Any user can self-promote to reviewer status
-2. Choose between Junior Reviewer (Level 1) or Senior Reviewer (Level 2)
-3. Reviewers are listed and available for selection
-4. Senior reviewers can mentor and guide development standards
+1. Any user can self-promote to reviewer status (Levels 1-4)
+2. Five reviewer levels: 0 (regular), 1 (basic), 2 (intermediate), 3 (advanced), 4 (expert)
+3. Reviewers are listed and discoverable
+4. Higher-level reviewers can handle more complex reviews
+5. Review statistics tracked for accountability
 
 ## 🚀 Deployment
 
-### Production Deployment
-- **Frontend**: Deploy to Vercel, Netlify, or similar
-- **Backend**: Deploy to Railway, Render, or cloud provider
-- **Database**: Use managed PostgreSQL (Supabase, AWS RDS)
-- **Containers**: Ensure Docker is available on backend host
+### Production Architecture
+The platform is designed for Kubernetes deployment with the following components:
+
+**Infrastructure**:
+- **Kubernetes Cluster**: DigitalOcean Kubernetes (DOKS), AWS EKS, or GCP GKE
+- **Backend**: 2-10 FastAPI pods with horizontal autoscaling
+- **Execution Pods**: 1 per active user session (on-demand)
+- **Database**: Managed PostgreSQL (DigitalOcean, AWS RDS, Supabase)
+- **Load Balancer**: Kubernetes LoadBalancer service
+- **Container Registry**: Docker Hub or private registry
+
+**Deployment Targets**:
+- **Frontend**: Vercel, Netlify, or Cloudflare Pages
+- **Backend**: Kubernetes cluster with HPA
+- **Database**: Managed PostgreSQL service
+
+### Scaling Configuration
+- **Backend Pods**: Auto-scale 2-10 based on CPU (70%) and memory (80%)
+- **Cluster Nodes**: Auto-scale 3-7 based on pod scheduling needs
+- **Execution Pods**: Created on-demand, 1 per active session
+- **Capacity**: Current config supports 10-40+ concurrent users
 
 ### Environment Configuration
-- Configure production database URLs
+- Configure managed database connection string
 - Set up CORS for frontend domain
-- Enable HTTPS for secure WebSocket connections
-- Configure container resource limits
+- Configure Kubernetes secrets for sensitive data
+- Update execution pod image in ConfigMap
+- Set resource limits in pod specifications
 
 ## 📄 License
 

@@ -16,12 +16,12 @@ from app.services.file_sync import get_file_sync_service
 
 async def sync_pod_changes_to_database(session_id: str, command: str) -> None:
     """Sync changes from pod filesystem back to database after commands that might modify files."""
-    # Only sync for commands that are likely to create/modify files
+    # Only sync for commands that are likely to create/modify/delete files
     command_lower = command.lower().strip()
     file_modifying_commands = [
         "touch", "echo", "cat", "cp", "mv", "nano", "vim", "vi",
         "python", "pip", "git", "wget", "curl", "unzip", "tar",
-        ">", ">>", "tee"
+        ">", ">>", "tee", "rm", "rmdir", "unlink"
     ]
 
     # Check if command might modify files
@@ -113,6 +113,17 @@ async def sync_pod_changes_to_database(session_id: str, command: str) -> None:
 
                 except Exception as file_error:
                     print(f"Failed to sync file {filename}: {file_error}")
+
+        # Handle file deletions: remove files from DB that no longer exist in pod
+        pod_filenames = {file_path[5:] for file_path in file_paths if file_path.startswith('/app/')}
+        pod_filenames = {name for name in pod_filenames if name and '/' not in name and not name.startswith('.')}
+
+        existing_items = WorkspaceItem.get_all_by_session(session_db.id)
+        for item in existing_items:
+            if item.type == "file" and item.name not in pod_filenames:
+                # File was deleted from pod, remove from database
+                item.delete()
+                print(f"Deleted {item.name} from database (removed from pod)")
 
     except Exception as e:
         print(f"Failed to sync pod changes to database: {e}")

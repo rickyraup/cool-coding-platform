@@ -23,32 +23,36 @@ A comprehensive web-based Python development environment with code editing, term
 ### 🔧 Terminal Interface
 - **Interactive Terminal**
   - Full xterm.js terminal emulation
-  - Real-time command execution
+  - Real-time command execution via WebSocket
   - Persistent session state
   - Copy/paste support
   - Terminal resizing
+  - Command history
 
-- **Python Environment**
-  - Python 3.11+ runtime
-  - Pre-installed packages: pandas, scipy, numpy
-  - Package installation via pip
-  - Virtual environment isolation
-  - Secure execution sandboxing
+- **Execution Environment**
+  - **Python 3.11+** runtime with pandas, scipy, numpy
+  - **Node.js 20** runtime with npm
+  - Package installation via pip and npm
+  - Isolated Kubernetes pod per session
+  - Resource limits (500m CPU, 512Mi memory)
+  - 1Gi persistent storage per workspace
 
 ### 📁 Workspace Management
 - **Session-Based Workspaces**
   - Multiple isolated sessions per user
   - UUID-based session identification
-  - Persistent file storage
+  - Persistent file storage in PostgreSQL
   - Session switching capability
   - Automatic workspace loading
+  - Dedicated Kubernetes pod per session
 
 - **File Operations**
-  - Database-backed file storage
+  - Database-backed file storage (PostgreSQL)
   - Hierarchical directory structure
-  - File content versioning
-  - Workspace synchronization
-  - Container file system integration
+  - Bidirectional file synchronization (DB ↔ Pod)
+  - Real-time file updates
+  - Automatic sync after file-modifying commands
+  - Full path support for nested directories
 
 ### 👥 User System
 - **Authentication**
@@ -59,11 +63,14 @@ A comprehensive web-based Python development environment with code editing, term
 
 - **Reviewer System**
   - Self-service reviewer promotion
-  - Three reviewer levels:
-    - Regular User (Level 0)
-    - Junior Reviewer (Level 1)
-    - Senior Reviewer (Level 2)
+  - Five reviewer levels (0-4):
+    - Level 0: Regular User (not a reviewer)
+    - Level 1: Basic reviewer
+    - Level 2: Intermediate reviewer
+    - Level 3: Advanced reviewer
+    - Level 4: Expert reviewer
   - Reviewer discovery and listing
+  - Reviewer statistics and metrics
 
 ### 📝 Code Review System
 - **Review Requests**
@@ -127,16 +134,18 @@ A comprehensive web-based Python development environment with code editing, term
 
 ### 🔒 Security
 - **Sandboxed Execution**
-  - Docker container isolation
-  - Resource limitations
-  - Network restrictions
-  - File system isolation
+  - Kubernetes pod isolation (production)
+  - Docker container isolation (development)
+  - Resource limitations (CPU: 500m, Memory: 512Mi)
+  - File system isolation via PVCs
+  - RBAC-controlled backend access
 
 - **Input Validation**
   - SQL injection prevention
   - XSS protection
   - CSRF protection
   - Input sanitization
+  - Command execution in isolated pods
 
 ### ⚡ Performance
 - **Optimized Loading**
@@ -145,11 +154,19 @@ A comprehensive web-based Python development environment with code editing, term
   - Efficient bundling
   - CDN integration ready
 
+- **Horizontal Scaling**
+  - Backend pods: 2-10 replicas (auto-scaled)
+  - Load balancing via Kubernetes Service
+  - Cluster autoscaling (3-7 nodes)
+  - Scales based on CPU (70%) and memory (80%)
+  - Supports 10-40+ concurrent users
+
 - **Resource Management**
   - Memory optimization
-  - Container lifecycle management
-  - Connection pooling
+  - Pod lifecycle management
+  - Database connection pooling
   - Background task processing
+  - Efficient file synchronization
 
 ### 🛠️ Developer Experience
 - **Development Tools**
@@ -157,23 +174,45 @@ A comprehensive web-based Python development environment with code editing, term
   - TypeScript support
   - ESLint integration
   - Comprehensive testing
+  - pytest for backend tests
 
 - **API Documentation**
-  - Interactive API docs
+  - Interactive API docs (Swagger/ReDoc)
   - Request/response examples
   - Authentication guides
   - Error handling documentation
+  - WebSocket documentation
+
+### ☸️ Infrastructure
+- **Kubernetes Deployment**
+  - DigitalOcean Kubernetes (DOKS)
+  - Managed PostgreSQL database
+  - Docker Hub container registry
+  - Horizontal Pod Autoscaler (HPA)
+  - Cluster Autoscaler
+  - LoadBalancer service
+  - PersistentVolumeClaims for storage
+
+- **Monitoring & Observability**
+  - Kubernetes metrics server
+  - Pod resource monitoring
+  - Node resource monitoring
+  - HPA metrics tracking
+  - Backend pod health checks
 
 ## Workflow Examples
 
 ### Basic Coding Session
 1. User logs in to the platform
-2. Creates or selects a session
-3. Opens the code editor
-4. Writes Python code with syntax highlighting
-5. Executes code in the terminal
-6. Files are automatically saved
-7. Session state is preserved
+2. Creates or selects a workspace session
+3. Backend creates dedicated Kubernetes pod for session
+4. Files from database are synced to pod
+5. User opens code editor and terminal
+6. Writes Python/JavaScript code with syntax highlighting
+7. Executes commands in terminal (runs in pod via kubectl exec)
+8. File changes automatically synced back to database
+9. Session state is preserved in PostgreSQL
+10. Pod is cleaned up when session ends
 
 ### Code Review Process
 1. Developer completes code in session

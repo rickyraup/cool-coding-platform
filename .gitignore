@@ -60,6 +60,15 @@ wheels/
 *.egg
 MANIFEST
 
+# Python tool caches
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.mypy_cache/
+backend/.coverage
+backend/htmlcov/
+backend/.tox/
+backend/.hypothesis/
+
 # Virtual environments
 venv/
 ENV/

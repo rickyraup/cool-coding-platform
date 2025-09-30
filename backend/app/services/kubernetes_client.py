@@ -134,7 +134,7 @@ class KubernetesClientService:
                             {"name": "NODE_ENV", "value": "development"},
                         ],
                         "resources": {
-                            "requests": {"memory": "256Mi", "cpu": "200m"},
+                            "requests": {"memory": "192Mi", "cpu": "150m"},
                             "limits": {"memory": "512Mi", "cpu": "500m"},
                         },
                         "securityContext": security_config,
