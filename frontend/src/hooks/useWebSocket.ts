@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { useApp } from '../context/AppContext';
+import { useApp } from '../contexts/AppContext';
 
 // Global WebSocket singleton with proper cleanup
 class WebSocketManager {
@@ -178,7 +178,7 @@ interface WebSocketMessage {
 }
 
 export function useWebSocket() {
-  const { state, setConnected, addTerminalLine, setError, setFiles, updateCode, markSaved, clearTerminal, setCurrentFile, setFileContent, cacheCurrentFileContent } = useApp();
+  const { state, setConnected, addTerminalLine, setError, setFiles, updateCode, markSaved, clearTerminal, setCurrentFile, setFileContent } = useApp();
   const pathname = usePathname();
   
   // Import useUserId hook to get current user ID

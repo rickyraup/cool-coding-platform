@@ -3,7 +3,7 @@
 import { Header } from '../../../components/Header';
 import { ReviewerWorkspace } from '../../../components/ReviewerWorkspace';
 import { useEffect, useState, use } from 'react';
-import { useApp } from '../../../context/AppContext';
+import { useApp } from '../../../contexts/AppContext';
 import { apiService, type ReviewRequest } from '../../../services/api';
 import { getWorkspaceFiles, getFileContent, getWorkspaceStatus, ensureDefaultFiles } from '../../../services/workspaceApi';
 import WorkspaceStartupLoader from '../../../components/WorkspaceStartupLoader';

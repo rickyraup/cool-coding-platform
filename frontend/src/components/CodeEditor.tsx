@@ -3,8 +3,8 @@
 import { useCallback, useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
-import { useApp } from '../context/AppContext';
-import { useWorkspaceApi } from '../hooks/useWorkspaceApi';
+import { useApp } from '../contexts/AppContext';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 interface CodeEditorProps {
   readOnly?: boolean;
@@ -13,7 +13,7 @@ interface CodeEditorProps {
 
 export function CodeEditor({ readOnly = false, reviewMode = false }: CodeEditorProps): JSX.Element {
   const { state, updateCode, markSaved, cacheCurrentFileContent } = useApp();
-  const { manualSave } = useWorkspaceApi();
+  const { manualSave } = useWebSocket();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
   const handleEditorDidMount = useCallback((editorInstance: editor.IStandaloneCodeEditor): void => {
@@ -21,8 +21,7 @@ export function CodeEditor({ readOnly = false, reviewMode = false }: CodeEditorP
     
     // Add keyboard shortcuts
     editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-      // Trigger code execution (we'll implement this later)
-      // Execute code shortcut triggered
+      // Code execution via keyboard shortcut not currently supported
     });
     
     editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {

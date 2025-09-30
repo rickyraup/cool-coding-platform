@@ -33,17 +33,6 @@ interface AuthResponse {
   data: { user_id: number };
 }
 
-// Legacy Session type for backwards compatibility
-interface LegacySession {
-  id: string;
-  user_id?: string;
-  code?: string;
-  language?: string;
-  is_active?: boolean;
-  created_at?: string;
-  updated_at?: string;
-}
-
 // Session types (PostgreSQL schema)
 interface CodeSession {
   id: string;  // UUID string - changed from number to string for security
@@ -167,14 +156,6 @@ class ApiService {
     });
   }
 
-  async getUser(userId: number): Promise<AuthResponse> {
-    return await this.fetchWithErrorHandling<AuthResponse>(`/api/users/${userId}`);
-  }
-
-  async getUserByUsername(username: string): Promise<AuthResponse> {
-    return await this.fetchWithErrorHandling<AuthResponse>(`/api/users/username/${username}`);
-  }
-
   // PostgreSQL Session Management
   async createSession(sessionData: SessionCreate): Promise<ApiResponse<CodeSession>> {
     return await this.fetchWithErrorHandling<ApiResponse<CodeSession>>('/api/postgres_sessions/', {
@@ -192,19 +173,6 @@ class ApiService {
     return await this.fetchWithErrorHandling<ApiResponse<CodeSession>>(`/api/postgres_sessions/${sessionUuid}${queryString}`);
   }
 
-  async updateSession(sessionId: number, sessionData: SessionUpdate): Promise<ApiResponse<CodeSession>> {
-    return await this.fetchWithErrorHandling<ApiResponse<CodeSession>>(`/api/postgres_sessions/${sessionId}`, {
-      method: 'PUT',
-      body: JSON.stringify(sessionData),
-    });
-  }
-
-  async deleteSession(sessionId: number): Promise<BaseResponse> {
-    return await this.fetchWithErrorHandling<BaseResponse>(`/api/postgres_sessions/${sessionId}`, {
-      method: 'DELETE',
-    });
-  }
-
   async getSessions(userId?: number, skip = 0, limit = 100): Promise<SessionListResponse> {
     const params = new URLSearchParams({
       skip: skip.toString(),
@@ -218,112 +186,11 @@ class ApiService {
     );
   }
 
-  async getSessionWithWorkspace(sessionUuid: string, userId?: number): Promise<SessionWithWorkspaceResponse> {
-    const params = new URLSearchParams();
-    if (userId) {
-      params.append('user_id', userId.toString());
-    }
-    const queryString = params.toString() ? `?${params.toString()}` : '';
-    return await this.fetchWithErrorHandling<SessionWithWorkspaceResponse>(
-      `/api/postgres_sessions/${sessionUuid}/workspace${queryString}`
-    );
-  }
-
-  // Session-Container Workspace Integration
-  async loadSessionWorkspace(sessionUuid: string): Promise<BaseResponse> {
-    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionUuid}/load`, {
-      method: 'POST',
-    });
-  }
-
-  async saveSessionWorkspace(sessionUuid: string): Promise<BaseResponse> {
-    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionUuid}/save`, {
-      method: 'POST',
-    });
-  }
-
-  async getWorkspaceFileContent(sessionUuid: string, filePath: string): Promise<{ success: boolean; message: string; data: { file_path: string; content: string } }> {
-    return await this.fetchWithErrorHandling(`/api/session_workspace/${sessionUuid}/file/${filePath}`);
-  }
-
-  async updateWorkspaceFileContent(sessionUuid: string, filePath: string, content: string): Promise<BaseResponse> {
-    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionUuid}/file/${filePath}`, {
-      method: 'PUT',
-      body: JSON.stringify({ content }),
-    });
-  }
-
-  async getContainerSessionStatus(sessionUuid: string): Promise<{ 
-    success: boolean; 
-    message: string; 
-    data: {
-      session_id: number;
-      session_uuid: string;
-      container_active: boolean;
-      container_id?: string;
-      working_dir?: string;
-      status: string;
-      created_at?: string;
-      last_activity?: string;
-    }
-  }> {
-    return await this.fetchWithErrorHandling(`/api/session_workspace/${sessionUuid}/container/status`);
-  }
-
-  async startContainerSession(sessionUuid: string): Promise<BaseResponse> {
-    return await this.fetchWithErrorHandling<BaseResponse>(`/api/session_workspace/${sessionUuid}/container/start`, {
-      method: 'POST',
-    });
-  }
-
-  // Legacy Session Management (keep for backwards compatibility)
-  async createLegacySession(sessionData?: { user_id?: string; code?: string; language?: string }): Promise<LegacySession> {
-    return await this.fetchWithErrorHandling('/api/sessions', {
-      method: 'POST',
-      body: JSON.stringify(sessionData ?? {}),
-    });
-  }
-
-  async getLegacySession(sessionId: string): Promise<LegacySession> {
-    return await this.fetchWithErrorHandling(`/api/sessions/${sessionId}`);
-  }
-
-  async updateLegacySession(sessionId: string, sessionData: { code?: string; language?: string; is_active?: boolean }): Promise<LegacySession> {
-    return await this.fetchWithErrorHandling(`/api/sessions/${sessionId}`, {
-      method: 'PUT',
-      body: JSON.stringify(sessionData),
-    });
-  }
-
-  async deleteLegacySession(sessionId: string): Promise<void> {
-    await this.fetchWithErrorHandling(`/api/sessions/${sessionId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getLegacySessions(skip = 0, limit = 100): Promise<LegacySession[]> {
-    const response = await this.fetchWithErrorHandling<{ success: boolean; data: LegacySession[] }>(
-      `/api/sessions?skip=${skip}&limit=${limit}`
-    );
-    return response.data;
-  }
-
   // Review Management
   async createReviewRequest(reviewData: ReviewRequestCreate): Promise<ApiResponse<ReviewRequest>> {
     return await this.fetchWithErrorHandling<ApiResponse<ReviewRequest>>('/api/reviews/', {
       method: 'POST',
       body: JSON.stringify(reviewData),
-    });
-  }
-
-  async getReviewRequest(reviewId: number): Promise<ApiResponse<ReviewRequest>> {
-    return await this.fetchWithErrorHandling<ApiResponse<ReviewRequest>>(`/api/reviews/${reviewId}`);
-  }
-
-  async updateReviewRequest(reviewId: number, updateData: ReviewRequestUpdate): Promise<ApiResponse<ReviewRequest>> {
-    return await this.fetchWithErrorHandling<ApiResponse<ReviewRequest>>(`/api/reviews/${reviewId}`, {
-      method: 'PUT',
-      body: JSON.stringify(updateData),
     });
   }
 
@@ -366,28 +233,27 @@ class ApiService {
     });
   }
 
-  // Health Check
-  async healthCheck(): Promise<{ status: string; timestamp: string }> {
-    return await this.fetchWithErrorHandling('/api/health/');
-  }
-
   // Reviewer Management
   async getReviewers(): Promise<{ success: boolean; data: User[]; total: number }> {
     return await this.fetchWithErrorHandling<{ success: boolean; data: User[]; total: number }>('/api/users/reviewers');
   }
 
-  async getCurrentUser(): Promise<User> {
-    return await this.fetchWithErrorHandling<User>('/api/users/me');
-  }
-
-  async toggleReviewerStatus(isReviewer: boolean, reviewerLevel: number = 1): Promise<{ success: boolean; message: string; user: User }> {
-    return await this.fetchWithErrorHandling<{ success: boolean; message: string; user: User }>('/api/users/me/reviewer-status', {
-      method: 'PUT',
-      body: JSON.stringify({
-        is_reviewer: isReviewer,
-        reviewer_level: reviewerLevel
-      }),
-    });
+  async searchUsers(query: string): Promise<{ success: boolean; data: User[]; total: number }> {
+    // For now, get all reviewers and filter client-side
+    // TODO: Implement server-side search endpoint for better performance
+    const result = await this.getReviewers();
+    if (query.trim() === '') {
+      return result;
+    }
+    const filtered = result.data.filter(user =>
+      user.username.toLowerCase().includes(query.toLowerCase()) ||
+      (user.email && user.email.toLowerCase().includes(query.toLowerCase()))
+    );
+    return {
+      success: true,
+      data: filtered,
+      total: filtered.length
+    };
   }
 
   // Workspace Shutdown

@@ -114,7 +114,7 @@ export default function HomePage() {
       // If password changed during signup, also re-validate confirm password
       if (!isLogin && name === 'password' && newFormData.confirmPassword && newFormData.confirmPassword.length > 0) {
         const confirmPasswordError = validateConfirmPassword(value, newFormData.confirmPassword);
-        newValidation.confirmPassword = confirmPasswordError ? 'invalid' : 'valid';
+        newValidation['confirmPassword'] = confirmPasswordError ? 'invalid' : 'valid';
       }
 
       return newValidation;
@@ -148,13 +148,13 @@ export default function HomePage() {
       const errors: {[key: string]: string} = {};
       
       if (!formData.username.trim()) {
-        errors.username = 'Username is required';
+        errors['username'] = 'Username is required';
       }
       if (!formData.email.trim()) {
-        errors.email = 'Email is required';
+        errors['email'] = 'Email is required';
       }
       if (!formData.password) {
-        errors.password = 'Password is required';
+        errors['password'] = 'Password is required';
       }
       
       if (Object.keys(errors).length > 0) {

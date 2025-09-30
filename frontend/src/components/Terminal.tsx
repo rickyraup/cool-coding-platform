@@ -2,7 +2,7 @@
 
 import type { JSX } from 'react';
 import { useCallback, useRef, useEffect, useState } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp } from '../contexts/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import '@xterm/xterm/css/xterm.css';
 

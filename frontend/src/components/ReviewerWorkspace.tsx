@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { CodeEditor } from './CodeEditor';
 import { FileExplorer } from './FileExplorer';
-import { useApp } from '../context/AppContext';
+import { useApp } from '../contexts/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 interface ReviewerWorkspaceProps {

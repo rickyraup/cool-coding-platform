@@ -1,12 +1,11 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { useApp } from '../context/AppContext';
+import { useApp } from '../contexts/AppContext';
 import { useAuth, useUserId } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
-import { apiService, type ReviewRequestCreate } from '../services/api';
+import { apiService } from '../services/api';
 import { Auth } from './Auth';
-import { ReviewSubmissionModal } from './ReviewSubmissionModal';
 import WorkspaceShutdownLoader from './WorkspaceShutdownLoader';
 import { useRouter, usePathname } from 'next/navigation';
 
@@ -20,71 +19,15 @@ interface HeaderProps {
 }
 
 export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {}): JSX.Element {
-  const { state, setSession, setLoading, setError, clearTerminal, setFiles, setCurrentFile, updateCode, resetAllState } = useApp();
+  const { state, setSession, setLoading, setError, setCurrentFile, resetAllState } = useApp();
   const { user, isAuthenticated, logout } = useAuth();
   const userId = useUserId();
   const { isConnected, manualSave } = useWebSocket();
   const [showAuth, setShowAuth] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showReviewModal, setShowReviewModal] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
-
-   
-  const _handleNewSession = useCallback(async (): Promise<void> => {
-    if (!isAuthenticated || !userId) {
-      setShowAuth(true);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Clear current environment
-      clearTerminal();
-      setFiles([]);
-      setCurrentFile(null);
-      
-      // Create new PostgreSQL session
-      const response = await apiService.createSession({
-        user_id: userId,
-        name: `Session ${new Date().toLocaleString()}`
-      });
-      
-      // Convert API response to internal format
-      const sessionData = {
-        id: response.data.id.toString(), // Convert to string for compatibility
-        userId: response.data.user_id.toString(),
-        code: '', // Empty code - let workspace handle file loading
-        language: 'python' as const,
-        createdAt: new Date(response.data.created_at),
-        updatedAt: new Date(response.data.updated_at),
-        isActive: true,
-      };
-
-      // Set the new session - don't set code here, let workspace page handle it
-      setSession(sessionData);
-      
-      console.log('New PostgreSQL session created:', sessionData.id);
-      
-      // Start container session and load workspace
-      try {
-        await apiService.startContainerSession(response.data.id);
-        console.log('Container session started');
-      } catch (containerError) {
-        console.warn('Failed to start container session:', containerError);
-        // Continue anyway - container integration is optional
-      }
-      
-    } catch (error) {
-      console.error('Failed to create session:', error);
-      setError(error instanceof Error ? error.message : 'Failed to create session');
-    } finally {
-      setLoading(false);
-    }
-  }, [isAuthenticated, userId, setSession, setLoading, setError, clearTerminal, setFiles, setCurrentFile, updateCode]);
 
 
   const handleSave = useCallback((): void => {
@@ -142,41 +85,6 @@ export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {})
     }
   }, [pathname, router, resetAllState, setError]);
 
-  const handleSubmitReview = useCallback(async (reviewData: { title: string; description?: string; priority: string; reviewer_ids: number[] }): Promise<void> => {
-    if (!state.currentSession || !isAuthenticated || !userId) {
-      throw new Error('No active session or not authenticated');
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      const reviewRequest: ReviewRequestCreate = {
-        session_id: state.currentSession.id, // Fixed: Use UUID string instead of integer
-        title: reviewData.title,
-        description: reviewData.description,
-        priority: reviewData.priority as 'low' | 'medium' | 'high' | 'urgent',
-        reviewer_ids: reviewData.reviewer_ids,
-      };
-
-      const response = await apiService.createReviewRequest(reviewRequest);
-      console.log('Review request created:', response.data);
-      
-      // Show success message or redirect
-      alert('Review request submitted successfully!');
-
-      // Refresh review status in parent component
-      if (onReviewStatusChange) {
-        onReviewStatusChange();
-      }
-      
-    } catch (error) {
-      console.error('Failed to submit review request:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  }, [state.currentSession, isAuthenticated, userId, setLoading, setError]);
 
   return (
     <>
@@ -282,21 +190,6 @@ export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {})
               </button>
             )}
 
-            {/* Review Submission Button - temporarily disabled */}
-            {pathname?.startsWith('/workspace/') && state.currentSession && isAuthenticated && !reviewStatus?.isReviewer && (
-              <div className="flex items-center space-x-2">
-                <button
-                  disabled
-                  className="px-4 py-2 text-sm font-medium bg-gray-600 text-gray-400 rounded-lg cursor-not-allowed opacity-60 shadow-sm"
-                  title="Review submission feature is temporarily disabled"
-                >
-                  📝 Submit for Review
-                </button>
-                <span className="px-2 py-1 bg-yellow-600/20 text-yellow-400 text-xs font-medium rounded-md border border-yellow-500/30">
-                  🚧 WIP - Coming Soon
-                </span>
-              </div>
-            )}
           </div>
         </div>
       </header>
@@ -306,15 +199,6 @@ export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {})
         <Auth onClose={() => setShowAuth(false)} />
       )}
 
-      {/* Review Submission Modal */}
-      {showReviewModal && state.currentSession && (
-        <ReviewSubmissionModal
-          sessionId={state.currentSession.id}
-          isOpen={showReviewModal}
-          onClose={() => setShowReviewModal(false)}
-          onSubmit={handleSubmitReview}
-        />
-      )}
 
       {/* Click outside to close user menu */}
       {showUserMenu && (

@@ -4,14 +4,14 @@
 
 import { useCallback } from 'react';
 import { saveFileContent, getFileContent, getWorkspaceFiles } from '../services/workspaceApi';
-import { useApp } from '../context/AppContext';
+import { useApp } from '../contexts/AppContext';
 import { useParams } from 'next/navigation';
 
 export function useWorkspaceApi() {
   const { state, markSaved, updateCode, setFiles, setCurrentFile } = useApp();
   const params = useParams();
   // Support both workspace pages (/workspace/[id]) and review pages (/review/[sessionId])
-  const sessionUuid = (params?.id || params?.sessionId) as string;
+  const sessionUuid = (params?.['id'] || params?.['sessionId']) as string;
 
   // Save current file using the new API
   const manualSave = useCallback(async (content?: string, filename?: string): Promise<boolean> => {

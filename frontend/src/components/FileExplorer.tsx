@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState, useRef } from 'react';
-import type { FileItem } from '../context/AppContext';
-import { useApp } from '../context/AppContext';
+import type { FileItem } from '../contexts/AppContext';
+import { useApp } from '../contexts/AppContext';
 import { useWorkspaceApi } from '../hooks/useWorkspaceApi';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { deleteFile } from '../services/workspaceApi';
@@ -24,8 +24,6 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
   const [currentDirectory, setCurrentDirectory] = useState('');
   const [allFiles, setAllFiles] = useState<{[key: string]: FileItem[]}>({});
   const hasLoadedInitialFiles = useRef(false);
-  const fileContentCache = useRef<{[key: string]: string}>({});
-  const lastFileReadTime = useRef<{[key: string]: number}>({});
   const lastDirectoryListTime = useRef<{[key: string]: number}>({});
 
   // Delete file handler
@@ -42,7 +40,6 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
     }
 
     try {
-      console.log('🗑️ Deleting file:', filename);
       await deleteFile(sessionUuid, filename);
 
       // Clear current file if it was the deleted file
@@ -52,7 +49,6 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
 
       // Refresh file list to reflect changes
       await refreshFiles();
-      console.log('✅ File deleted successfully:', filename);
     } catch (error) {
       console.error('Failed to delete file:', error);
       // You could show a toast notification here
@@ -74,14 +70,12 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
     const DEBOUNCE_DELAY = 1000; // 1 second
 
     if (timeSinceLastList < DEBOUNCE_DELAY) {
-      console.log('🚫 [FileExplorer] Debouncing directory list request for:', path);
       return;
     }
 
     lastDirectoryListTime.current[path] = now;
     setLoading(true);
     try {
-      console.log('🔄 [FileExplorer] Loading files via new API');
       const success = await refreshFiles();
       if (!success && showErrors) {
         console.error('Failed to refresh files');
@@ -117,40 +111,6 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
   }, [state.files, currentDirectory]);
 
    
-  const _handleFileClick = useCallback((file: FileItem) => {
-    if (file.type === 'directory') {
-      // Toggle directory expansion
-      setExpandedDirs(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(file.path)) {
-          newSet.delete(file.path);
-        } else {
-          newSet.add(file.path);
-          // Load directory contents for expansion
-          loadDirectoryContents(file.path);
-        }
-        return newSet;
-      });
-    } else {
-      // Always fetch fresh content from backend when switching files
-      console.log('🔄 [FileExplorer] Switching to file and fetching fresh content:', file.path);
-      setCurrentFile(file.path);
-
-      // Load file content using new API
-      loadFileContent(file.name);
-    }
-  }, [loadDirectoryContents, setCurrentFile, loadFileContent]);
-
-   
-  const _handleDirectoryDoubleClick = useCallback((file: FileItem) => {
-    if (file.type === 'directory') {
-      // Navigate into directory on double-click
-      setCurrentDirectory(file.path);
-      setExpandedDirs(new Set()); // Reset expanded dirs when navigating
-      loadFiles(file.path, true); // Show errors for user-initiated actions
-    }
-  }, [loadFiles]);
-
   const handleNavigateUp = useCallback(() => {
     if (currentDirectory) {
       // Navigate to parent directory
@@ -178,26 +138,22 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
           fileName = `${currentDirectory}/${fileName}`;
         }
 
-        console.log('Creating new file:', fileName);
 
         // Create file with empty content using the manualSave function
         const success = await manualSave('', fileName);
 
         if (success) {
-          console.log('File created successfully:', fileName);
           // Refresh the file list to show the new file
           await refreshFiles();
 
           // Automatically select the new file
           setCurrentFile(fileName);
 
-          console.log('File explorer refreshed after creating:', fileName);
         } else {
           console.error('Failed to create file:', fileName);
         }
       } else {
         // Directory creation not implemented yet
-        console.log('Directory creation not implemented yet');
       }
     } catch (error) {
       console.error('Error creating file:', error);
@@ -206,35 +162,6 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
       setNewItemName('');
     }
   }, [newItemName, showCreateDialog, currentDirectory, manualSave, refreshFiles, setCurrentFile]);
-
-   
-  const _handleDeleteItem = useCallback((file: FileItem, event: React.MouseEvent) => {
-    event.stopPropagation();
-    
-    if (confirm(`Are you sure you want to delete "${file.name}"?`)) {
-      // Delete functionality not implemented in new API yet
-      console.log('Delete file functionality not implemented in new API yet');
-      
-      // If deleting current file, clear it
-      if (state.currentFile === file.path) {
-        setCurrentFile(null);
-      }
-    }
-  }, [state.currentFile, setCurrentFile]);
-
-   
-  const _handleExecuteFile = useCallback((file: FileItem, event: React.MouseEvent) => {
-    event.stopPropagation();
-    
-    if (file.type === 'file' && file.name.endsWith('.py')) {
-      // Execute Python file via terminal using full path
-      const command = `python "${file.path}"`;
-      console.log('🚀 Executing file via handleExecuteFile:', command);
-      // Terminal command functionality will be implemented later
-      console.log('Terminal command functionality not implemented yet:', command);
-    }
-  }, []);
-
 
   // Reset file loading flag when session changes
   useEffect(() => {
@@ -245,7 +172,6 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
   useEffect(() => {
     if (sessionUuid && state.currentSession && !hasLoadedInitialFiles.current) {
       hasLoadedInitialFiles.current = true;
-      console.log('🔄 [FileExplorer] Loading initial files for session:', state.currentSession.id);
       loadFiles('');
     }
   }, [sessionUuid, state.currentSession, loadFiles]);
@@ -447,7 +373,6 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                 return newSet;
               });
             } else {
-              console.log('🔄 [FileExplorer] Clicking file and fetching fresh content:', file.path);
               setCurrentFile(file.path);
               loadFileContent(file.name);
             }
@@ -509,12 +434,10 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                   if (file.type === 'file' && file.name.endsWith('.py')) {
                     if (reviewMode && onRunFile) {
                       // In review mode, use the callback to handle execution output
-                      console.log('🚀 Running Python file in review mode:', file.name);
                       onRunFile(file.name);
                     } else {
                       // Normal mode - use terminal command
                       const command = `python "${file.path}"`;
-                      console.log('🚀 Executing Python file:', command);
                       sendTerminalCommand(command);
                     }
                   }
@@ -534,7 +457,6 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                   if (file.type === 'file' && (file.name.endsWith('.js') || file.name.endsWith('.jsx'))) {
                     // Use the full path for execution with Node.js
                     const command = `node "${file.path}"`;
-                    console.log('🚀 Executing JavaScript file:', command);
                     sendTerminalCommand(command);
                   }
                 }}
@@ -553,7 +475,6 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                   if (file.type === 'file' && (file.name.endsWith('.ts') || file.name.endsWith('.tsx'))) {
                     // Use ts-node for TypeScript files
                     const command = `npx ts-node "${file.path}"`;
-                    console.log('🚀 Executing TypeScript file:', command);
                     sendTerminalCommand(command);
                   }
                 }}
@@ -608,7 +529,6 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
           <div className="flex gap-1">
             <button
               onClick={() => {
-                console.log('🔄 Refresh button clicked');
                 hasLoadedInitialFiles.current = false; // Reset the flag to force reload
                 loadFiles(currentDirectory, true); // Show errors for user-initiated refresh
               }}

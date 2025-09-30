@@ -6,7 +6,7 @@ import { Header } from '../../../components/Header';
 import { FileExplorer } from '../../../components/FileExplorer';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { useEffect, useState, use, useCallback } from 'react';
-import { useApp } from '../../../context/AppContext';
+import { useApp } from '../../../contexts/AppContext';
 import { apiService, type ReviewRequest } from '../../../services/api';
 import { getWorkspaceFiles, getFileContent, getWorkspaceStatus, ensureDefaultFiles } from '../../../services/workspaceApi';
 import WorkspaceStartupLoader from '../../../components/WorkspaceStartupLoader';
