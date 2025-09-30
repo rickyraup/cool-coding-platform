@@ -14,6 +14,110 @@ from app.services.file_sync import get_file_sync_service
 # File execution validation completely removed - all commands are allowed
 
 
+async def sync_pod_changes_to_database(session_id: str, command: str) -> None:
+    """Sync changes from pod filesystem back to database after commands that might modify files."""
+    # Only sync for commands that are likely to create/modify files
+    command_lower = command.lower().strip()
+    file_modifying_commands = [
+        "touch", "echo", "cat", "cp", "mv", "nano", "vim", "vi",
+        "python", "pip", "git", "wget", "curl", "unzip", "tar",
+        ">", ">>", "tee"
+    ]
+
+    # Check if command might modify files
+    should_sync = any(cmd in command_lower for cmd in file_modifying_commands)
+
+    if not should_sync:
+        return
+
+    try:
+        # Extract session UUID for database operations
+        session_uuid = None
+        if "_ws_" in session_id:
+            # Parse session_id format: user_{user_id}_ws_{workspace_id}_{timestamp}_{uuid}
+            parts = session_id.split("_ws_")
+            if len(parts) >= 2:
+                workspace_part = parts[1]  # {workspace_id}_{timestamp}_{uuid}
+                workspace_parts = workspace_part.split("_")
+                if len(workspace_parts) >= 1:
+                    session_uuid = workspace_parts[0]
+
+        if not session_uuid:
+            print(f"Could not extract session UUID from {session_id}, skipping sync")
+            return
+
+        # Get list of files from pod
+        from app.services.container_manager import container_manager
+        ls_output, ls_exit_code = await container_manager.execute_command(
+            session_id, "find /app -maxdepth 2 -type f -not -path '*/.*' 2>/dev/null | head -20"
+        )
+
+        if ls_exit_code != 0 or not ls_output.strip():
+            return
+
+        # Parse file list and sync each file
+        from app.models.postgres_models import CodeSession, WorkspaceItem
+
+        # Get or create session
+        session_db = CodeSession.get_by_uuid(session_uuid)
+        if not session_db:
+            session_db = CodeSession.create(uuid=session_uuid)
+
+        file_paths = [line.strip() for line in ls_output.strip().split('\n') if line.strip()]
+
+        for file_path in file_paths:
+            # Extract filename (remove /app/ prefix)
+            if file_path.startswith('/app/'):
+                filename = file_path[5:]  # Remove '/app/' prefix
+
+                # Skip directories and system files
+                if not filename or '/' in filename or filename.startswith('.'):
+                    continue
+
+                try:
+                    # Read file content from pod
+                    cat_output, cat_exit_code = await container_manager.execute_command(
+                        session_id, f"cat '{file_path}' 2>/dev/null || echo ''"
+                    )
+
+                    if cat_exit_code == 0:
+                        # Check if file exists in database
+                        existing_files = WorkspaceItem.get_all_by_session(session_db.id)
+                        file_exists = any(
+                            item.name == filename and item.type == "file"
+                            for item in existing_files
+                        )
+
+                        if file_exists:
+                            # Update existing file if content changed
+                            for item in existing_files:
+                                if item.name == filename and item.type == "file":
+                                    if item.content != cat_output:
+                                        item.update_content(cat_output)
+                                        print(f"Updated {filename} in database")
+                                    break
+                        else:
+                            # Create new file in database
+                            WorkspaceItem.create(
+                                session_id=session_db.id,
+                                parent_id=None,
+                                name=filename,
+                                item_type="file",
+                                content=cat_output,
+                            )
+                            print(f"Created {filename} in database")
+
+                        # Also sync to filesystem
+                        from app.api.workspace_files import sync_file_to_filesystem
+                        sync_file_to_filesystem(session_uuid, filename, cat_output)
+
+                except Exception as file_error:
+                    print(f"Failed to sync file {filename}: {file_error}")
+
+    except Exception as e:
+        print(f"Failed to sync pod changes to database: {e}")
+
+
 async def handle_file_creation_command(
     command: str,
     session_id: str,
@@ -43,6 +147,10 @@ async def handle_file_creation_command(
                         session_id,
                         f'echo "{echo_content}" > {filename}',
                     )
+
+                    # Sync the created file back to database
+                    if return_code == 0:
+                        await sync_pod_changes_to_database(session_id, command)
 
                     return {
                         "type": "terminal_output",
@@ -171,10 +279,21 @@ async def handle_touch_command(
                 )
 
             # Sync to filesystem for Kubernetes pod access
-            if sync_file_to_filesystem(session_uuid, filename, ""):
+            filesystem_sync = sync_file_to_filesystem(session_uuid, filename, "")
+
+            # Also sync directly to pod so file appears in ls immediately
+            from app.api.workspace_files import sync_file_to_pod
+            pod_sync = sync_file_to_pod(session_uuid, filename, "")
+
+            if filesystem_sync and pod_sync:
                 created_files.append(filename)
             else:
-                failed_files.append(f"{filename}: filesystem sync failed")
+                failed_reasons = []
+                if not filesystem_sync:
+                    failed_reasons.append("filesystem sync failed")
+                if not pod_sync:
+                    failed_reasons.append("pod sync failed")
+                failed_files.append(f"{filename}: {', '.join(failed_reasons)}")
 
         except Exception as e:
             failed_files.append(f"{filename}: {str(e)}")
@@ -482,6 +601,24 @@ async def handle_terminal_input(
     command = data.get("command", "").strip()
     session_id = data.get("sessionId", "default")
 
+    # Check if pod exists and is ready - if not, recreate it automatically
+    if session_id not in container_manager.active_sessions or not container_manager.is_pod_ready(session_id):
+        print(f"Pod not ready for session {session_id}, recreating...")
+        try:
+
+            # Create fresh session (this will load workspace files from database)
+            await container_manager.create_fresh_session(session_id)
+            
+        except Exception as e:
+            print(f"Failed to recreate pod for session {session_id}: {e}")
+            return {
+                "type": "terminal_output",
+                "sessionId": session_id,
+                "output": f"Failed to start workspace environment: {str(e)}\n",
+                "return_code": 1,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
     # Block restricted commands
     command_parts = command.split()
     if command_parts:
@@ -564,11 +701,21 @@ async def handle_terminal_input(
         output, return_code = await container_manager.execute_command(
             session_id,
             command,
+            websocket,
         )
         print(f"Kubernetes command completed with exit code {return_code}")
 
-        # Return just the command output, frontend will handle prompt formatting
+        # Sync any new/modified files back to database after command execution
+        if return_code == 0:  # Only sync if command succeeded
+            await sync_pod_changes_to_database(session_id, command)
+
+        # Filter out lost+found from ls output
         formatted_output = output if output else ""
+        if command.strip().startswith("ls"):
+            # Remove lost+found directory from output
+            lines = formatted_output.split("\n")
+            filtered_lines = [line for line in lines if "lost+found" not in line]
+            formatted_output = "\n".join(filtered_lines)
 
         # Trigger file synchronization after command execution
         response = {
@@ -791,6 +938,29 @@ async def handle_file_system(
                                     print(
                                         f"✅ Synced file {path} to filesystem for Kubernetes pod"
                                     )
+
+                                    # CRITICAL: Also copy the file to the running pod if it exists
+                                    session_obj = container_manager.active_sessions.get(session_id)
+                                    if session_obj and session_obj.pod_name:
+                                        from app.services.kubernetes_client import kubernetes_client_service
+                                        import os
+
+                                        # Get workspace directory
+                                        workspace_dir = os.path.join(
+                                            container_manager.sessions_dir,
+                                            f"workspace_{workspace_id}"
+                                        )
+
+                                        if os.path.exists(workspace_dir):
+                                            # Copy files to the running pod
+                                            copy_success = kubernetes_client_service.copy_files_to_pod(
+                                                session_obj.pod_name,
+                                                workspace_dir
+                                            )
+                                            if copy_success:
+                                                print(f"✅ Copied updated files to running pod {session_obj.pod_name}")
+                                            else:
+                                                print(f"❌ Failed to copy files to running pod {session_obj.pod_name}")
                                 else:
                                     print(
                                         f"❌ Failed to sync file {path} to filesystem for Kubernetes pod"

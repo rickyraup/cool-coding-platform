@@ -12,6 +12,61 @@ from app.models.postgres_models import CodeSession, WorkspaceItem
 router = APIRouter()
 
 
+def sync_file_to_pod(session_uuid: str, filename: str, content: str) -> bool:
+    """Sync a single file to the Kubernetes pod's /app directory."""
+    try:
+        # Import here to avoid circular imports
+        from app.services.container_manager import container_manager
+        from app.services.kubernetes_client import kubernetes_client_service
+        import io
+        import tarfile
+        from kubernetes.stream import stream
+
+        # Find the active container session
+        session_id = container_manager.find_session_by_workspace_id(session_uuid)
+        if not session_id or session_id not in container_manager.active_sessions:
+            # No active container, file will be synced when container starts
+            return True
+
+        container_session = container_manager.active_sessions[session_id]
+        pod_name = container_session.pod_name
+
+        # Create a tar archive containing just this file
+        tar_buffer = io.BytesIO()
+        with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
+            file_info = tarfile.TarInfo(name=filename)
+            file_info.size = len(content.encode('utf-8'))
+            tar.addfile(file_info, io.BytesIO(content.encode('utf-8')))
+
+        tar_buffer.seek(0)
+        tar_data = tar_buffer.read()
+
+        # Copy the file to the pod's /app directory
+        exec_command = ['tar', 'xf', '-', '-C', '/app']
+
+        resp = stream(
+            kubernetes_client_service.core_v1_api.connect_get_namespaced_pod_exec,
+            pod_name,
+            kubernetes_client_service._namespace,
+            command=exec_command,
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=False,
+            _preload_content=False
+        )
+
+        # Send the tar data to the pod
+        resp.write_stdin(tar_data)
+        resp.close()
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Failed to sync file to pod: {str(e)}")
+        return False
+
+
 def sync_file_to_filesystem(
     session_uuid: str, filename: str, content: str, verbose: bool = False
 ) -> bool:
@@ -279,6 +334,9 @@ async def save_file_content(
         actual_content = file_item.content or ""
         sync_file_to_filesystem(session_uuid, filename, actual_content)
 
+        # Also sync the file directly to the pod's /app directory so it appears in ls
+        sync_file_to_pod(session_uuid, filename, actual_content)
+
         return {
             "message": f"File {filename} {action} successfully",
             "file": {
@@ -469,6 +527,9 @@ async def ensure_default_files(session_uuid: str) -> dict[str, Any]:
 
             # Sync the default file to filesystem for Docker container access
             sync_file_to_filesystem(session_uuid, "main.py", default_content)
+
+            # Also sync the file directly to the pod's /app directory so it appears in ls
+            sync_file_to_pod(session_uuid, "main.py", default_content)
 
             return {
                 "message": "Created default main.py file",

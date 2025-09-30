@@ -85,6 +85,9 @@ class KubernetesClientService:
     def get_pod_security_config(self) -> dict[str, Any]:
         """Get the security configuration for pods - compatible with kind cluster."""
         return {
+            "runAsUser": 1000,
+            "runAsGroup": 1000,
+            "runAsNonRoot": True,
             "allowPrivilegeEscalation": False,
             "readOnlyRootFilesystem": False,  # Allow write access for pip installations
             "capabilities": {"drop": ["ALL"]},
@@ -92,12 +95,17 @@ class KubernetesClientService:
 
     def create_pod_spec(self, session_id: str, pvc_name: str) -> dict[str, Any]:
         """Create a pod specification for a user session."""
-        # Sanitize session_id to be RFC 1123 compliant (replace underscores with hyphens)
-        sanitized_id = session_id.replace("_", "-").lower()
-        pod_name = f"session-{sanitized_id}"
+        import hashlib
+
+        # Create a short hash of the session_id for pod name
+        # Pod names must be ≤63 characters
+        session_hash = hashlib.md5(session_id.encode()).hexdigest()[:12]
+        pod_name = f"pod-{session_hash}"
+
         security_config = self.get_pod_security_config()
 
-        # Truncate label value to 63 characters max (Kubernetes label value limit)
+        # For label, use a truncated version of sanitized session_id
+        sanitized_id = session_id.replace("_", "-").lower()
         label_value = sanitized_id[:63] if len(sanitized_id) > 63 else sanitized_id
 
         return {
@@ -140,16 +148,25 @@ class KubernetesClientService:
                     }
                 ],
                 "restartPolicy": "Never",
+                "securityContext": {
+                    "runAsUser": 1000,
+                    "runAsGroup": 1000,
+                    "fsGroup": 1000,
+                },
             },
         }
 
     def create_pvc_spec(self, session_id: str, size: str = "1Gi") -> dict[str, Any]:
         """Create a PersistentVolumeClaim specification for a user session."""
-        # Sanitize session_id to be RFC 1123 compliant (replace underscores with hyphens)
-        sanitized_id = session_id.replace("_", "-").lower()
-        pvc_name = f"workspace-{sanitized_id}"
+        import hashlib
 
-        # Truncate label value to 63 characters max (Kubernetes label value limit)
+        # Create a short hash of the session_id for PVC name
+        # PVC names must be ≤63 characters
+        session_hash = hashlib.md5(session_id.encode()).hexdigest()[:12]
+        pvc_name = f"pvc-{session_hash}"
+
+        # For label, use a truncated version of sanitized session_id
+        sanitized_id = session_id.replace("_", "-").lower()
         label_value = sanitized_id[:63] if len(sanitized_id) > 63 else sanitized_id
 
         return {
@@ -172,10 +189,13 @@ class KubernetesClientService:
 
     async def create_session_pod(self, session_id: str) -> PodSession:
         """Create a new pod for a user session."""
+        import asyncio
+        import hashlib
+
         try:
-            # Sanitize session_id to be RFC 1123 compliant
-            sanitized_id = session_id.replace("_", "-").lower()
-            pvc_name = f"workspace-{sanitized_id}"
+            # Create short hash for names (must be ≤63 characters)
+            session_hash = hashlib.md5(session_id.encode()).hexdigest()[:12]
+            pvc_name = f"pvc-{session_hash}"
             pvc_spec = self.create_pvc_spec(session_id)
 
             try:
@@ -192,21 +212,44 @@ class KubernetesClientService:
                 else:
                     raise
 
-            # Create pod with the PVC
+            # Create pod with the PVC - handle conflict if pod is being deleted
             pod_spec = self.create_pod_spec(session_id, pvc_name)
-            pod = self.core_v1_api.create_namespaced_pod(
-                namespace=self._namespace, body=pod_spec
-            )
+            max_retries = 10
+            retry_delay = 2
 
-            logger.info(f"Created pod {pod.metadata.name} for session {session_id}")
+            for attempt in range(max_retries):
+                try:
+                    pod = self.core_v1_api.create_namespaced_pod(
+                        namespace=self._namespace, body=pod_spec
+                    )
+                    logger.info(f"Created pod {pod.metadata.name} for session {session_id}")
 
-            return PodSession(
-                name=pod.metadata.name,
-                namespace=self._namespace,
-                pod=pod,
-                pvc_name=pvc_name,
-                status=pod.status.phase,
-            )
+                    return PodSession(
+                        name=pod.metadata.name,
+                        namespace=self._namespace,
+                        pod=pod,
+                        pvc_name=pvc_name,
+                        status=pod.status.phase,
+                    )
+                except ApiException as e:
+                    if e.status == 409 and "already exists" in str(e).lower():
+                        # Pod exists but might be terminating, wait and retry
+                        logger.warning(f"Pod already exists (attempt {attempt+1}/{max_retries}), waiting for deletion...")
+                        await asyncio.sleep(retry_delay)
+
+                        # Try to delete the existing pod if it's stuck
+                        if attempt > 3:
+                            try:
+                                pod_name = pod_spec["metadata"]["name"]
+                                self.delete_pod(pod_name)
+                                await asyncio.sleep(retry_delay)
+                            except Exception:
+                                pass
+                    else:
+                        raise
+
+            # If we get here, all retries failed
+            raise RuntimeError(f"Failed to create pod after {max_retries} attempts")
 
         except ApiException as e:
             logger.exception(f"Failed to create pod for session {session_id}: {e}")

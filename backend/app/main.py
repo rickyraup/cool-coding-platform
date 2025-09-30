@@ -46,6 +46,91 @@ def create_unique_session_id(
     return f"{base_session_id}_{timestamp}_{unique_id}"
 
 
+async def check_and_notify_pod_ready(session_id: str, websocket: WebSocket) -> None:
+    """Background task to check pod readiness and notify frontend."""
+    import asyncio
+    from datetime import datetime
+
+    max_wait = 60  # 60 seconds max wait
+    check_interval = 2  # Check every 2 seconds
+    elapsed = 0
+
+    while elapsed < max_wait:
+        await asyncio.sleep(check_interval)
+        elapsed += check_interval
+
+        # Clear previous progress line and send new progress update
+        try:
+            # First clear the previous line
+            if elapsed > check_interval:
+                await websocket_manager.send_personal_message(
+                    websocket,
+                    {
+                        "type": "terminal_clear_progress",
+                        "sessionId": session_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    },
+                )
+
+            # Then send new progress
+            await websocket_manager.send_personal_message(
+                websocket,
+                {
+                    "type": "terminal_output",
+                    "sessionId": session_id,
+                    "output": f"⏳ Initializing environment... ({elapsed}s)",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+        except Exception as e:
+            print(f"❌ Failed to send progress update: {e}")
+            break
+
+        # Check if pod is ready
+        session = await container_manager.get_or_create_session(session_id)
+        if session and container_manager.is_pod_ready(session_id):
+            try:
+                # Clear all progress messages
+                await websocket_manager.send_personal_message(
+                    websocket,
+                    {
+                        "type": "terminal_clear_progress",
+                        "sessionId": session_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    },
+                )
+
+                # Send pod ready notification
+                await websocket_manager.send_personal_message(
+                    websocket,
+                    {
+                        "type": "pod_ready",
+                        "sessionId": session_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    },
+                )
+                print(f"✅ Sent pod_ready notification for session {session_id}")
+            except Exception as e:
+                print(f"❌ Failed to send pod_ready: {e}")
+            break
+
+    if elapsed >= max_wait:
+        # Timeout - send error
+        try:
+            await websocket_manager.send_personal_message(
+                websocket,
+                {
+                    "type": "terminal_output",
+                    "sessionId": session_id,
+                    "output": "❌ Environment initialization timed out",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+        except Exception:
+            pass
+
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
@@ -205,6 +290,10 @@ async def websocket_endpoint(
                             f"🔄 Created unique session ID for user {user_id}: {workspace_uuid} → {unique_session_id}"
                         )
                         data["sessionId"] = unique_session_id
+
+                        # Start background task to check pod readiness
+                        import asyncio
+                        asyncio.create_task(check_and_notify_pod_ready(unique_session_id, websocket))
 
             # Handle the message
             response = await handle_websocket_message(data, websocket)

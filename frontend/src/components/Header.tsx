@@ -175,7 +175,7 @@ export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {})
             
 
             {/* Save Button - only show in workspace for non-reviewers */}
-            {pathname?.startsWith('/workspace/') && !reviewStatus?.isReviewer && (
+            {pathname?.startsWith('/workspace/') && (reviewStatus === undefined || !reviewStatus?.isReviewer) && (
               <button
                 onClick={handleSave}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm ${

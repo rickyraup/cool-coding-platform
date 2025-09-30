@@ -24,6 +24,7 @@ export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps
   const [historyIndex, setHistoryIndex] = useState(-1);
   const lastProcessedLineRef = useRef(0);
   const isInitializedRef = useRef(false);
+  const progressLineCountRef = useRef(0);
 
   const displayWelcomeMessage = useCallback((terminal: any) => {
     if (reviewMode) {
@@ -37,7 +38,7 @@ export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps
       terminal.writeln('\x1b[36m│     Welcome to the Terminal       │\x1b[0m');
       terminal.writeln('\x1b[36m│ Type commands or "help" to begin  │\x1b[0m');
       terminal.writeln('\x1b[36m╰────────────────────────────────────╯\x1b[0m');
-      terminal.write('\x1b[32m$ \x1b[0m');
+      terminal.write('\r\n\x1b[32m$ \x1b[0m');
     }
   }, [reviewMode]);
 
@@ -90,16 +91,8 @@ export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps
     const success = sendTerminalCommand(command);
     if (!success) {
       terminal.write('\x1b[31mCommand failed to send\x1b[0m\r\n\x1b[32m$ \x1b[0m');
-    } else {
-      // Add a fallback timeout in case server doesn't respond
-      setTimeout(() => {
-        // Check if we're still missing a prompt (cursor should be at beginning of line)
-        const currentBuffer = terminal.buffer?.active;
-        if (currentBuffer && currentBuffer.cursorX === 0) {
-          terminal.write('\x1b[32m$ \x1b[0m');
-        }
-      }, 5000); // 5 second timeout
     }
+    // No fallback timeout - let the output handler deal with the prompt
   }, [sendTerminalCommand]);
 
   // Initialize terminal once
@@ -243,20 +236,39 @@ export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps
     newLines.forEach((line) => {
       if (line.type === 'input') return;
 
+      // Ignore pod_ready and clear_progress messages
+      if (line.type === 'pod_ready' || line.type === 'clear_progress') {
+        return;
+      }
+
       if (line.type === 'output' || line.type === 'error') {
         if (line.content === 'CLEAR_TERMINAL') {
           terminal.clear();
           displayWelcomeMessage(terminal);
+          progressLineCountRef.current = 0;
           return;
         }
 
-        if (line.type === 'error') {
-          terminal.write(`\x1b[31mError: ${line.content.trim()}\x1b[0m`);
+        // Track progress messages (those starting with ⏳)
+        if (line.content.trim().startsWith('⏳')) {
+          // Progress messages overwrite the current line
+          terminal.write('\r\x1b[2K' + line.content.trim());
+          progressLineCountRef.current = 1;
         } else {
-          terminal.write(line.content.trim());
+          // Regular output
+          progressLineCountRef.current = 0;
+
+          if (line.type === 'error') {
+            terminal.write(`\x1b[31mError: ${line.content.trim()}\x1b[0m`);
+            terminal.write('\r\n\x1b[32m$ \x1b[0m');
+          } else {
+            // Write the output (trimmed to remove trailing newlines)
+            const output = line.content.trim();
+            terminal.write(output);
+            // Add newline and prompt after output
+            terminal.write('\r\n\x1b[32m$ \x1b[0m');
+          }
         }
-        
-        terminal.write('\r\n\x1b[32m$ \x1b[0m');
       }
     });
 

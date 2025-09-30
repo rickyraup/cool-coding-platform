@@ -1,0 +1,15 @@
+FROM rraup12/code-execution:latest
+
+# Install backend dependencies
+COPY requirements.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Copy backend code
+WORKDIR /backend
+COPY app/ ./app/
+
+# Expose port
+EXPOSE 8002
+
+# Run backend
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]

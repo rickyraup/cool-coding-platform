@@ -17,7 +17,7 @@ interface CodeSession {
 interface TerminalLine {
   id: string;
   content: string;
-  type: 'input' | 'output' | 'error';
+  type: 'input' | 'output' | 'error' | 'pod_ready' | 'clear_progress';
   timestamp: Date;
   command?: string;
 }

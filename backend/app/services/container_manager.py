@@ -153,6 +153,16 @@ class ContainerSessionManager:
 
         return await self.create_session(session_id)
 
+    def is_pod_ready(self, session_id: str) -> bool:
+        """Check if a pod exists and is ready for the given session."""
+        if session_id not in self.active_sessions:
+            return False
+
+        session = self.active_sessions[session_id]
+        pod = kubernetes_client_service.get_pod(session.pod_name)
+
+        return pod is not None and pod.status.phase == "Running"
+
     async def create_fresh_session(self, session_id: str) -> ContainerSession:
         """Create a new container session, cleaning up existing one if it exists."""
         # If session already exists, clean it up first
@@ -323,7 +333,7 @@ class ContainerSessionManager:
             msg = f"Failed to create container session: {e}"
             raise RuntimeError(msg) from e
 
-    async def execute_command(self, session_id: str, command: str) -> tuple[str, int]:
+    async def execute_command(self, session_id: str, command: str, websocket=None) -> tuple[str, int]:
         """Execute a command in the container session."""
         try:
             session = await self.get_or_create_session(session_id)
@@ -331,7 +341,7 @@ class ContainerSessionManager:
             # Update last activity
             session.last_activity = utc_now()
 
-            # Wait for pod to be ready before executing commands
+            # Wait for pod to be ready before executing commands (silently, no progress messages)
             import asyncio
             max_wait_seconds = 60
             wait_interval = 2

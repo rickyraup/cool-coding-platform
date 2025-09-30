@@ -159,7 +159,7 @@ function getWebSocketManager(): WebSocketManager {
 }
 
 interface WebSocketMessage {
-  type: 'terminal_input' | 'terminal_output' | 'terminal_clear' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'file_sync' | 'ping' | 'pong';
+  type: 'terminal_input' | 'terminal_output' | 'terminal_clear' | 'terminal_clear_progress' | 'pod_ready' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'file_sync' | 'ping' | 'pong';
   sessionId?: string;
   command?: string;
   output?: string;
@@ -210,6 +210,14 @@ export function useWebSocket() {
 
         case 'terminal_clear':
           addTerminalLine('CLEAR_TERMINAL', 'output');
+          break;
+
+        case 'terminal_clear_progress':
+          addTerminalLine('CLEAR_PROGRESS', 'clear_progress');
+          break;
+
+        case 'pod_ready':
+          addTerminalLine('POD_READY', 'pod_ready');
           break;
 
         case 'error':
