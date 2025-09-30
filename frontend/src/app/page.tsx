@@ -271,23 +271,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Guest Mode Link */}
-            <div className="flex items-center space-x-4">
-              <button 
-                onClick={() => {
-                  // Create anonymous session and navigate to guest workspace
-                  const guestId = `guest-${Date.now()}-${Math.random().toString(36).substring(2)}`;
-                  localStorage.setItem('guestMode', 'true');
-                  localStorage.setItem('guestId', guestId);
-                  router.push(`/workspace/guest/${guestId}`);
-                }}
-                className="px-6 py-3 bg-gradient-to-r from-gray-600 to-gray-700 text-white rounded-lg hover:from-gray-500 hover:to-gray-600 transition-all duration-200 flex items-center space-x-2"
-              >
-                <span>Try as Guest</span>
-                <span>👤</span>
-              </button>
-              <span className="text-gray-400 text-sm">No signup required • Session expires when browser closes</span>
-            </div>
           </div>
 
           {/* Right Side - Auth Form */}
