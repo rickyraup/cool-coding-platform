@@ -1,0 +1,35 @@
+# Multi-language execution environment with Python and Node.js
+FROM python:3.11-slim
+
+# Install Node.js and npm
+RUN apt-get update && \
+    apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install common Python packages
+RUN pip install --no-cache-dir \
+    pandas \
+    numpy \
+    scipy \
+    matplotlib \
+    requests \
+    flask \
+    fastapi \
+    uvicorn
+
+# Create app directory with proper permissions
+RUN mkdir -p /app && chmod 777 /app
+
+# Set working directory
+WORKDIR /app
+
+# Verify installations
+RUN python --version && \
+    node --version && \
+    npm --version
+
+# Default command (will be overridden by pod spec)
+CMD ["sleep", "infinity"]

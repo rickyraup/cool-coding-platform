@@ -1,0 +1,35 @@
+name: cool-coding-platform-backend
+region: nyc
+services:
+  - name: backend
+    github:
+      branch: main
+      deploy_on_push: true
+      repo: rickyraup/cool-coding-platform
+    source_dir: /backend
+    dockerfile_path: backend/Dockerfile.python
+    http_port: 8001
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+        value: ${db.DATABASE_URL}
+      - key: KUBERNETES_NAMESPACE
+        scope: RUN_TIME
+        value: default
+      - key: EXECUTION_IMAGE
+        scope: RUN_TIME
+        value: rraup12/code-execution:latest
+      - key: CORS_ORIGINS
+        scope: RUN_TIME
+        value: https://your-frontend.vercel.app,http://localhost:3000
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    production: false
+    cluster_name: cool-coding-platform-db

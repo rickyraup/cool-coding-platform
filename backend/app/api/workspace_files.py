@@ -408,25 +408,17 @@ async def get_workspace_status(session_uuid: str) -> dict[str, Any]:
                     "filesystem_synced": filesystem_exists,
                 }
 
-        # If workspace items exist but container doesn't, create container
+        # If workspace items exist but container doesn't, skip container creation for now
+        # and return ready status (container will be created on first command execution)
         if not container_ready:
-            try:
-                container_session = await container_manager.get_or_create_session(
-                    session_uuid
-                )
-                container_ready = True
-                return {
-                    "status": "initializing",
-                    "message": "Container created, loading workspace files...",
-                    "initialized": False,
-                    "filesystem_synced": True,
-                }
-            except Exception as e:
-                return {
-                    "status": "error",
-                    "message": f"Failed to create container: {str(e)}",
-                    "initialized": False,
-                }
+            return {
+                "status": "ready",
+                "message": "Workspace is ready (container will start on first use)",
+                "initialized": True,
+                "filesystem_synced": filesystem_exists,
+                "file_count": len(workspace_items),
+                "container_ready": False,
+            }
 
         # Both workspace items and container exist - check if everything is ready
         return {
@@ -435,6 +427,7 @@ async def get_workspace_status(session_uuid: str) -> dict[str, Any]:
             "initialized": True,
             "filesystem_synced": filesystem_exists,
             "file_count": len(workspace_items),
+            "container_ready": True,
         }
 
     except Exception as e:

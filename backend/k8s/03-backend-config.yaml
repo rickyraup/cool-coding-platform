@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: coding-platform
+  labels:
+    app: backend
+data:
+  KUBERNETES_NAMESPACE: "coding-platform"
+  EXECUTION_IMAGE: "rraup12/code-execution:latest"
+
+  # CORS origins - update with your Vercel frontend URL
+  CORS_ORIGINS: "http://localhost:3000,https://cool-coding-platform.vercel.app"
+
+  # API Configuration
+  FASTAPI_ENV: "production"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-secret
+  namespace: coding-platform
+  labels:
+    app: backend
+type: Opaque
+stringData:
+  # DATABASE_URL format: postgresql://user:password@host:port/database
+  DATABASE_URL: "postgresql://postgres.dbwplldqbkoahbghmmme:R1ckster10%21%40bb@aws-1-us-east-2.pooler.supabase.com:6543/postgres"
+
+  # Optional: Add secret key for sessions if needed
+  # SECRET_KEY: "your-secret-key-here"

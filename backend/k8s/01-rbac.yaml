@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-sa
+  namespace: coding-platform
+  labels:
+    app: coding-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-manager
+  namespace: coding-platform
+  labels:
+    app: coding-platform
+rules:
+  # Allow managing pods (create, delete, list, watch)
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/exec"]
+    verbs: ["get", "list", "create", "delete", "watch"]
+
+  # Allow managing persistent volume claims for user workspaces
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "create", "delete"]
+
+  # Allow listing namespaces (for health checks)
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-pod-manager
+  namespace: coding-platform
+  labels:
+    app: coding-platform
+subjects:
+  - kind: ServiceAccount
+    name: backend-sa
+    namespace: coding-platform
+roleRef:
+  kind: Role
+  name: pod-manager
+  apiGroup: rbac.authorization.k8s.io

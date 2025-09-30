@@ -43,8 +43,8 @@ class KubernetesClientService:
     def __init__(self) -> None:
         self._core_v1_api: Optional[client.CoreV1Api] = None
         self._namespace = os.getenv("KUBERNETES_NAMESPACE", "default")
-        self._image_name = os.getenv("EXECUTION_IMAGE", "python:3.11-slim")
-        # For production, we would use a custom image with pandas, numpy, etc. pre-installed
+        self._image_name = os.getenv("EXECUTION_IMAGE", "rraup12/code-execution:latest")
+        # Custom image with Python 3.11+, Node.js 20, pandas, scipy, numpy, and other required packages
 
     @property
     def core_v1_api(self) -> client.CoreV1Api:
@@ -85,9 +85,6 @@ class KubernetesClientService:
     def get_pod_security_config(self) -> dict[str, Any]:
         """Get the security configuration for pods - compatible with kind cluster."""
         return {
-            "runAsUser": 1000,
-            "runAsGroup": 1000,
-            "runAsNonRoot": True,
             "allowPrivilegeEscalation": False,
             "readOnlyRootFilesystem": False,  # Allow write access for pip installations
             "capabilities": {"drop": ["ALL"]},
@@ -95,8 +92,13 @@ class KubernetesClientService:
 
     def create_pod_spec(self, session_id: str, pvc_name: str) -> dict[str, Any]:
         """Create a pod specification for a user session."""
-        pod_name = f"session-{session_id}"
+        # Sanitize session_id to be RFC 1123 compliant (replace underscores with hyphens)
+        sanitized_id = session_id.replace("_", "-").lower()
+        pod_name = f"session-{sanitized_id}"
         security_config = self.get_pod_security_config()
+
+        # Truncate label value to 63 characters max (Kubernetes label value limit)
+        label_value = sanitized_id[:63] if len(sanitized_id) > 63 else sanitized_id
 
         return {
             "apiVersion": "v1",
@@ -106,7 +108,7 @@ class KubernetesClientService:
                 "namespace": self._namespace,
                 "labels": {
                     "app": "code-execution",
-                    "session-id": session_id,
+                    "session-id": label_value,
                     "managed-by": "cool-coding-platform",
                 },
             },
@@ -138,17 +140,17 @@ class KubernetesClientService:
                     }
                 ],
                 "restartPolicy": "Never",
-                "securityContext": {
-                    "runAsUser": security_config["runAsUser"],
-                    "runAsGroup": security_config["runAsGroup"],
-                    "fsGroup": 1000,
-                },
             },
         }
 
     def create_pvc_spec(self, session_id: str, size: str = "1Gi") -> dict[str, Any]:
         """Create a PersistentVolumeClaim specification for a user session."""
-        pvc_name = f"workspace-{session_id}"
+        # Sanitize session_id to be RFC 1123 compliant (replace underscores with hyphens)
+        sanitized_id = session_id.replace("_", "-").lower()
+        pvc_name = f"workspace-{sanitized_id}"
+
+        # Truncate label value to 63 characters max (Kubernetes label value limit)
+        label_value = sanitized_id[:63] if len(sanitized_id) > 63 else sanitized_id
 
         return {
             "apiVersion": "v1",
@@ -158,7 +160,7 @@ class KubernetesClientService:
                 "namespace": self._namespace,
                 "labels": {
                     "app": "code-execution",
-                    "session-id": session_id,
+                    "session-id": label_value,
                     "managed-by": "cool-coding-platform",
                 },
             },
@@ -171,8 +173,9 @@ class KubernetesClientService:
     async def create_session_pod(self, session_id: str) -> PodSession:
         """Create a new pod for a user session."""
         try:
-            # First create PVC for persistent storage
-            pvc_name = f"workspace-{session_id}"
+            # Sanitize session_id to be RFC 1123 compliant
+            sanitized_id = session_id.replace("_", "-").lower()
+            pvc_name = f"workspace-{sanitized_id}"
             pvc_spec = self.create_pvc_spec(session_id)
 
             try:
@@ -250,6 +253,56 @@ class KubernetesClientService:
                 logger.info(f"PVC {pvc_name} already deleted")
                 return True
             logger.exception(f"Failed to delete PVC {pvc_name}: {e}")
+            return False
+
+    def copy_files_to_pod(self, pod_name: str, local_dir: str) -> bool:
+        """Copy files from local directory to pod's /app directory."""
+        try:
+            import os
+            import tarfile
+            import io
+            from kubernetes.stream import stream
+
+            if not os.path.exists(local_dir):
+                logger.warning(f"Local directory {local_dir} does not exist")
+                return False
+
+            # Create a tar archive of the local directory
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
+                for root, dirs, files in os.walk(local_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, local_dir)
+                        tar.add(file_path, arcname=arcname)
+
+            tar_buffer.seek(0)
+            tar_data = tar_buffer.read()
+
+            # Copy tar archive to pod and extract
+            exec_command = ['tar', 'xf', '-', '-C', '/app']
+
+            resp = stream(
+                self.core_v1_api.connect_get_namespaced_pod_exec,
+                pod_name,
+                self._namespace,
+                command=exec_command,
+                stderr=True,
+                stdin=True,
+                stdout=True,
+                tty=False,
+                _preload_content=False
+            )
+
+            # Write tar data to stdin
+            resp.write_stdin(tar_data)
+            resp.close()
+
+            logger.info(f"Copied files from {local_dir} to pod {pod_name}")
+            return True
+
+        except Exception as e:
+            logger.exception(f"Failed to copy files to pod {pod_name}: {e}")
             return False
 
     def execute_command(self, pod_name: str, command: str) -> tuple[str, int]:

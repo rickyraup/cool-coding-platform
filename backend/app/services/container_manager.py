@@ -331,23 +331,59 @@ class ContainerSessionManager:
             # Update last activity
             session.last_activity = utc_now()
 
-            # Check if pod is still running
-            try:
-                pod = kubernetes_client_service.get_pod(session.pod_name)
-                if not pod or pod.status.phase != "Running":
-                    logger.warning(
-                        f"Pod for session {session_id} is not running: {pod.status.phase if pod else 'not found'}",
-                    )
-                    # Try to restart the session
-                    await self.cleanup_session(session_id)
-                    session = await self.create_session(session_id)
-            except Exception as pod_check_error:
-                logger.exception(
-                    f"Pod health check failed for session {session_id}: {pod_check_error}",
-                )
-                # Try to restart the session
-                await self.cleanup_session(session_id)
-                session = await self.create_session(session_id)
+            # Wait for pod to be ready before executing commands
+            import asyncio
+            max_wait_seconds = 60
+            wait_interval = 2
+            elapsed = 0
+
+            while elapsed < max_wait_seconds:
+                try:
+                    pod = kubernetes_client_service.get_pod(session.pod_name)
+                    if not pod:
+                        logger.warning(f"Pod {session.pod_name} not found")
+                        break
+
+                    if pod.status.phase == "Running":
+                        logger.info(f"Pod {session.pod_name} is ready")
+                        break
+                    elif pod.status.phase in ["Failed", "Unknown"]:
+                        logger.error(f"Pod {session.pod_name} failed with status: {pod.status.phase}")
+                        # Try to restart the session
+                        await self.cleanup_session(session_id)
+                        session = await self.create_session(session_id)
+                        elapsed = 0  # Reset wait timer for new pod
+                    else:
+                        logger.debug(f"Pod {session.pod_name} status: {pod.status.phase}, waiting...")
+                        await asyncio.sleep(wait_interval)
+                        elapsed += wait_interval
+                except Exception as pod_check_error:
+                    logger.exception(f"Pod health check failed: {pod_check_error}")
+                    await asyncio.sleep(wait_interval)
+                    elapsed += wait_interval
+
+            # Final check - if pod is still not running after wait, return error
+            pod = kubernetes_client_service.get_pod(session.pod_name)
+            if not pod or pod.status.phase != "Running":
+                error_msg = f"Pod not ready after {max_wait_seconds}s. Status: {pod.status.phase if pod else 'not found'}"
+                logger.error(error_msg)
+                return error_msg, 1
+
+            # Copy workspace files to pod if they exist (only on first command after pod creation)
+            if not hasattr(session, '_files_copied'):
+                workspace_id = self._extract_workspace_id(session_id)
+                if workspace_id:
+                    workspace_dir = os.path.join(self.sessions_dir, f"workspace_{workspace_id}")
+                    if os.path.exists(workspace_dir) and os.listdir(workspace_dir):
+                        logger.info(f"Copying workspace files to pod {session.pod_name}")
+                        if kubernetes_client_service.copy_files_to_pod(session.pod_name, workspace_dir):
+                            logger.info(f"Successfully copied files to pod {session.pod_name}")
+                            session._files_copied = True
+                        else:
+                            logger.warning(f"Failed to copy files to pod {session.pod_name}")
+                    else:
+                        logger.debug(f"No files to copy for workspace {workspace_id}")
+                        session._files_copied = True
 
             # Handle cd commands specially to maintain directory state
             if command.strip().startswith("cd "):
