@@ -161,7 +161,14 @@ class ContainerSessionManager:
         session = self.active_sessions[session_id]
         pod = kubernetes_client_service.get_pod(session.pod_name)
 
-        return pod is not None and pod.status.phase == "Running"
+        if pod is None or pod.status.phase != "Running":
+            return False
+
+        # Check if all containers are ready
+        if pod.status.container_statuses:
+            return all(container.ready for container in pod.status.container_statuses)
+
+        return False
 
     async def create_fresh_session(self, session_id: str) -> ContainerSession:
         """Create a new container session, cleaning up existing one if it exists."""
