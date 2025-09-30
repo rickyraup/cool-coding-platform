@@ -93,14 +93,10 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     
     case 'ADD_TERMINAL_LINE':
-      console.log('🔍 [AppContext] Reducer ADD_TERMINAL_LINE:', action.payload);
-      console.log('🔍 [AppContext] Current terminalLines count:', state.terminalLines.length);
-      const newState = {
+      return {
         ...state,
         terminalLines: [...state.terminalLines, action.payload],
       };
-      console.log('🔍 [AppContext] New terminalLines count:', newState.terminalLines.length);
-      return newState;
     
     case 'CLEAR_TERMINAL':
       return {
@@ -248,7 +244,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Session management is now handled manually through authentication and workspace selection
   // No longer auto-create sessions on app startup since we have proper user-based session management
   useEffect(() => {
-    console.log('AppContext initialized - session management handled by authentication system');
     // Sessions are now created/loaded explicitly when users navigate to workspaces
   }, []); // Only run on mount
 
@@ -262,7 +257,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, []),
     
     addTerminalLine: useCallback((content: string, type: 'input' | 'output' | 'error', command?: string) => {
-      console.log('🔍 [AppContext] addTerminalLine called:', { content, type, command });
       const line: TerminalLine = {
         id: Date.now().toString() + Math.random().toString(36).substring(2),
         content,
@@ -270,7 +264,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         timestamp: new Date(),
         ...(command !== undefined && { command }),
       };
-      console.log('🔍 [AppContext] Created terminal line:', line);
       dispatch({ type: 'ADD_TERMINAL_LINE', payload: line });
     }, []),
     

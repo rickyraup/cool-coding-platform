@@ -430,7 +430,6 @@ export function useWebSocket() {
     ) {
       const mainFile = state.files.find(file => file.name === 'main.py' && file.type === 'file');
       if (mainFile) {
-        console.log('Auto-loading main.py file via WebSocket');
         setCurrentFile(mainFile.path);
         performFileOperation('read', mainFile.path);
       }

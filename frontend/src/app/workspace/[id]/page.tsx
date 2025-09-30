@@ -136,16 +136,12 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
 
         // Load workspace files using new clean API
         try {
-          console.log('Loading workspace files for UUID:', sessionUuid);
 
           // Get all files in workspace
           let files = await getWorkspaceFiles(sessionUuid);
-          console.log('Files loaded:', files);
 
           // Note: Default file creation is handled by the backend automatically
-          console.log(`Loaded ${files.length} files from workspace`);
           if (files.length === 0) {
-            console.log('No files found in workspace - backend will handle default creation if needed');
           }
 
           // Set files in context
@@ -154,14 +150,12 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
           // Auto-select main.py if it exists
           const mainFile = files.find(file => file.name === 'main.py');
           if (mainFile) {
-            console.log('Auto-selecting main.py');
             setCurrentFile(mainFile.path);
 
             // Load main.py content only if we don't have it in context already
             if (!state.code || state.code.trim() === '') {
               const fileContent = await getFileContent(sessionUuid, mainFile.name);
               updateCode(fileContent.content);
-              console.log('Main.py content loaded:', fileContent.content.length, 'characters');
             }
           }
 
@@ -172,7 +166,6 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
 
         setFastLoading(true); // Enable fast loading to show UI immediately
 
-        console.log('Workspace loaded successfully using new API');
         
       } catch (error) {
         console.error('Failed to load session:', error);
@@ -192,7 +185,6 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
     try {
       const status = await apiService.getReviewStatusForSession(params.id);
       setReviewStatus(status);
-      console.log('Review status loaded for UI control:', status);
     } catch (error) {
       console.error('Failed to load review status:', error);
       // Don't show error for review status loading - it's optional

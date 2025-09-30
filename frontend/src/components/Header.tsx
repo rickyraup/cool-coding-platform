@@ -60,7 +60,6 @@ export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {})
       const result = await apiService.shutdownWorkspace(workspaceId);
 
       if (result.success) {
-        console.log('Workspace shutdown successful:', result);
 
         // Reset all app state completely to ensure clean workspace switching
         resetAllState();

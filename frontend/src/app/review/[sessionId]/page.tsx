@@ -120,22 +120,18 @@ export default function ReviewPage({ params: paramsPromise }: ReviewPageProps) {
 
         // Load workspace files
         try {
-          console.log('Loading workspace files for review UUID:', sessionUuid);
 
           let files = await getWorkspaceFiles(sessionUuid);
-          console.log('Files loaded:', files);
 
           setFiles(files);
 
           // Auto-select main.py if it exists
           const mainFile = files.find(file => file.name === 'main.py');
           if (mainFile) {
-            console.log('Auto-selecting main.py');
             setCurrentFile(mainFile.path);
 
             const fileContent = await getFileContent(sessionUuid, mainFile.name);
             updateCode(fileContent.content);
-            console.log('Main.py content loaded:', fileContent.content.length, 'characters');
           }
 
         } catch (fileError) {
@@ -157,12 +153,10 @@ export default function ReviewPage({ params: paramsPromise }: ReviewPageProps) {
 
             // Auto-transition from pending to in_review when reviewer accesses
             if (reviewStatus.reviewRequest.status === 'pending') {
-              console.log('Reviewer accessing pending review - transitioning to in_review');
               try {
                 await apiService.updateReviewStatus(reviewStatus.reviewRequest.id, 'in_review');
                 const updatedRequest = { ...reviewStatus.reviewRequest, status: 'in_review' as const };
                 setReviewRequest(updatedRequest);
-                console.log('Review status updated to in_review');
               } catch (updateError) {
                 console.error('Failed to update review status to in_review:', updateError);
               }
@@ -176,7 +170,6 @@ export default function ReviewPage({ params: paramsPromise }: ReviewPageProps) {
         }
 
         setFastLoading(true);
-        console.log('Review workspace loaded successfully');
 
       } catch (error) {
         console.error('Failed to load session:', error);

@@ -29,12 +29,10 @@ export function useWorkspaceApi() {
         return false;
       }
 
-      console.log('Saving file via API:', fileToSave, 'Content length:', codeToSave.length);
 
       // Save using new API
       const result = await saveFileContent(sessionUuid, fileToSave, codeToSave);
 
-      console.log('File saved successfully:', result);
 
       // Mark as saved in context
       markSaved(codeToSave);
@@ -54,12 +52,10 @@ export function useWorkspaceApi() {
         return false;
       }
 
-      console.log('Loading file content via API:', filename);
 
       // Load using new API
       const fileContent = await getFileContent(sessionUuid, filename);
 
-      console.log('File content loaded:', fileContent.content.length, 'characters');
 
       // Update context
       setCurrentFile(fileContent.path);
@@ -80,12 +76,10 @@ export function useWorkspaceApi() {
         return false;
       }
 
-      console.log('Refreshing file list via API');
 
       // Get files using new API
       const files = await getWorkspaceFiles(sessionUuid);
 
-      console.log('Files refreshed:', files);
 
       // Update context
       setFiles(files);
