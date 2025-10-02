@@ -15,31 +15,71 @@ export function CodeEditor({ readOnly = false, reviewMode = false }: CodeEditorP
   const { state, updateCode, markSaved, cacheCurrentFileContent } = useApp();
   const { manualSave } = useWebSocket();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const currentFileRef = useRef<string | null>(null);
+  const lastStateCodeRef = useRef<string>('');
 
-  const handleEditorDidMount = useCallback((editorInstance: editor.IStandaloneCodeEditor): void => {
+  // Keep currentFile in sync with a ref to avoid stale closures
+  useEffect(() => {
+    currentFileRef.current = state.currentFile;
+  }, [state.currentFile]);
+
+  // Track the last code from state to detect programmatic vs user changes
+  useEffect(() => {
+    lastStateCodeRef.current = state.code;
+  }, [state.code]);
+
+  // Create a stable save handler using refs
+  const handleSave = useCallback(() => {
+    if (currentFileRef.current && editorRef.current) {
+      const currentCode = editorRef.current.getValue();
+      const currentFile = currentFileRef.current;
+      // Update the state immediately before saving
+      updateCode(currentCode);
+      // Pass the filename explicitly to ensure we save to the correct file
+      manualSave(currentCode, currentFile);
+    }
+  }, [manualSave, updateCode]);
+
+  const handleEditorDidMount = useCallback((editorInstance: editor.IStandaloneCodeEditor, monacoInstance: any): void => {
     editorRef.current = editorInstance;
-    
+
     // Add keyboard shortcuts
-    editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+    editorInstance.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.Enter, () => {
       // Code execution via keyboard shortcut not currently supported
     });
-    
-    editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+
+    editorInstance.addCommand(monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS, () => {
       // Save code manually with Ctrl+S/Cmd+S
-      if (state.currentFile) {
-        manualSave();
-      }
+      handleSave();
     });
-  }, []);
+  }, [handleSave]);
+
+  // Prevent default browser save behavior
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleSave]);
 
   const handleEditorChange = useCallback((value: string | undefined): void => {
     if (readOnly) return; // Prevent changes in read-only mode
 
     const newCode = value ?? '';
+
+    // Don't update state if the value matches what we just set from state
+    // This prevents false "unsaved changes" when loading a file
+    if (newCode === lastStateCodeRef.current) {
+      return;
+    }
+
     updateCode(newCode);
-    // Cache the content locally for unsaved changes tracking
-    cacheCurrentFileContent();
-  }, [updateCode, cacheCurrentFileContent, readOnly]);
+  }, [updateCode, readOnly]);
 
 
   useEffect(() => {

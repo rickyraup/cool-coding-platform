@@ -151,12 +151,12 @@ async def create_session(session_data: SessionCreate) -> SessionDetailResponse:
 
         # Create default script.py file for the new session
         try:
-            default_script_content = """# Welcome to your new Python workspace!
-# This is your main script file.
+            default_script_content = """# Welcome to your new code workspace!
+# This workspace supports Python, JavaScript, TypeScript, and more.
 
 print("Hello, World!")
 
-# You can write your Python code here
+# You can write your code here
 # Use the terminal to run this file with: python script.py
 """
             WorkspaceItem.create(

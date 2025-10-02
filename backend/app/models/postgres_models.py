@@ -21,9 +21,15 @@ class User:
     updated_at: Optional[datetime] = None
 
     @classmethod
-    def create(cls, username: str, email: str, password_hash: str) -> "User":
+    def create(
+        cls,
+        username: str,
+        email: str,
+        password_hash: str,
+    ) -> "User":
         """Create a new user."""
         db = get_db()
+
         query = """
             INSERT INTO code_editor_project.users (username, email, password_hash)
             VALUES (%s, %s, %s)
@@ -36,7 +42,8 @@ class User:
         """Get user by ID."""
         db = get_db()
         query = """
-            SELECT id, username, email, password_hash, is_reviewer, reviewer_level, created_at, updated_at
+            SELECT id, username, email, password_hash, is_reviewer, reviewer_level,
+                   created_at, updated_at
             FROM code_editor_project.users
             WHERE id = %s
         """
@@ -59,7 +66,8 @@ class User:
         """Get user by username."""
         db = get_db()
         query = """
-            SELECT id, username, email, password_hash, is_reviewer, reviewer_level, created_at, updated_at
+            SELECT id, username, email, password_hash, is_reviewer, reviewer_level,
+                   created_at, updated_at
             FROM code_editor_project.users
             WHERE username = %s
         """
@@ -82,7 +90,8 @@ class User:
         """Get user by email."""
         db = get_db()
         query = """
-            SELECT id, username, email, password_hash, is_reviewer, reviewer_level, created_at, updated_at
+            SELECT id, username, email, password_hash, is_reviewer, reviewer_level,
+                   created_at, updated_at
             FROM code_editor_project.users
             WHERE email = %s
         """

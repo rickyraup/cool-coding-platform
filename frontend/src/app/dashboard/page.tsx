@@ -290,7 +290,7 @@ export default function DashboardPage(): React.JSX.Element {
                         </div>
                         <div>
                           <h3 className="text-lg font-semibold text-white">{workspace.name ?? `Workspace ${getHumanReadableId(workspace.id)}`}</h3>
-                          <p className="text-sm text-gray-400">Python workspace</p>
+                          <p className="text-sm text-gray-400">Code workspace</p>
                         </div>
                       </div>
                     </div>

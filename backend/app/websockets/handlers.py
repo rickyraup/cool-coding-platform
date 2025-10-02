@@ -134,11 +134,14 @@ async def handle_file_creation_command(
     session_id: str,
     websocket: WebSocket,
 ) -> dict[str, Any]:
-    """Handle interactive file creation commands like 'cat > file.py'."""
-    # Parse the command to extract filename
-    # Support patterns like: cat > file.py, echo "content" > file.py
-    if " > " in command:
-        parts = command.split(" > ")
+    """Handle interactive file creation commands like 'cat > file.py' and 'echo content >> file.py'."""
+    # Parse the command to extract filename and operation type
+    # Support patterns like: cat > file.py, echo "content" > file.py, echo "content" >> file.py
+    redirect_type = ">>"  if " >> " in command else ">"
+    separator = f" {redirect_type} "
+
+    if separator in command:
+        parts = command.split(separator)
         if len(parts) == 2:
             filename = parts[1].strip()
             left_part = parts[0].strip()
@@ -156,18 +159,37 @@ async def handle_file_creation_command(
                 try:
                     output, return_code = await container_manager.execute_command(
                         session_id,
-                        f'echo "{echo_content}" > {filename}',
+                        f'echo "{echo_content}" {redirect_type} {filename}',
                     )
 
-                    # Sync the created file back to database
+                    # Sync the created/modified file back to database
                     if return_code == 0:
                         await sync_pod_changes_to_database(session_id, command)
+
+                        # Send file sync notification to update UI
+                        try:
+                            from app.services.file_manager import FileManager
+                            file_manager = FileManager(session_id)
+                            files = await file_manager.list_files_structured("")
+
+                            await websocket.send_json({
+                                "type": "file_sync",
+                                "sessionId": session_id,
+                                "files": files,
+                                "sync_info": {
+                                    "updated_files": [filename],
+                                    "new_files": [] if redirect_type == ">>" else [filename],
+                                },
+                                "timestamp": datetime.utcnow().isoformat(),
+                            })
+                        except Exception as sync_error:
+                            print(f"File sync notification error: {sync_error}")
 
                     return {
                         "type": "terminal_output",
                         "sessionId": session_id,
                         "command": command,
-                        "output": f"Content written to {filename}",
+                        "output": "",  # Empty output like real echo command
                         "return_code": return_code,
                         "timestamp": datetime.utcnow().isoformat(),
                     }
@@ -180,8 +202,8 @@ async def handle_file_creation_command(
                         "timestamp": datetime.utcnow().isoformat(),
                     }
 
-            # Handle cat > filename (interactive mode)
-            elif left_part == "cat":
+            # Handle cat > filename (interactive mode) - only for >, not >>
+            elif left_part == "cat" and redirect_type == ">":
                 # Return interactive prompt for file content
                 return {
                     "type": "file_input_prompt",
@@ -310,13 +332,10 @@ async def handle_touch_command(
             failed_files.append(f"{filename}: {str(e)}")
 
     # Prepare response
+    print(f"[Touch] Created files: {created_files}, Failed files: {failed_files}")
     if created_files and not failed_files:
-        files_str = ", ".join(created_files)
-        output = (
-            f"Created files: {files_str}"
-            if len(created_files) > 1
-            else f"Created file: {files_str}"
-        )
+        # Success - no output (like real touch command)
+        output = ""
         return_code = 0
     elif created_files and failed_files:
         created_str = ", ".join(created_files)
@@ -328,13 +347,34 @@ async def handle_touch_command(
         output = f"touch: {failed_str}"
         return_code = 1
 
+    print(f"[Touch] Output message: {output}")
+
     # Always refresh file list after touch command - force file explorer update
     response_with_files = None
     try:
-        from app.services.file_manager import FileManager
+        # Extract workspace UUID from session_id
+        session_uuid = None
+        if "_ws_" in session_id:
+            parts_sid = session_id.split("_ws_")
+            if len(parts_sid) >= 2:
+                workspace_part = parts_sid[1]
+                workspace_parts = workspace_part.split("_")
+                if len(workspace_parts) >= 1:
+                    session_uuid = workspace_parts[0]
 
-        file_manager = FileManager(session_id)
-        files = await file_manager.list_files_structured("")
+        # Get files from database (same as REST API)
+        files = []
+        if session_uuid:
+            from app.models.postgres_models import CodeSession, WorkspaceItem
+            session_db = CodeSession.get_by_uuid(session_uuid)
+            if session_db:
+                workspace_items = WorkspaceItem.get_all_by_session(session_db.id)
+                for item in workspace_items:
+                    files.append({
+                        "name": item.name,
+                        "type": item.type,
+                        "path": item.get_full_path(),
+                    })
 
         response_with_files = {
             "type": "file_created",
@@ -348,23 +388,26 @@ async def handle_touch_command(
         }
 
         # FORCE a file sync message to ensure frontend refreshes
-        await websocket.send_json(
-            {
-                "type": "file_sync",
-                "sessionId": session_id,
-                "files": files,
-                "sync_info": {
-                    "updated_files": [],
-                    "new_files": created_files,
-                },
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-        )
+        file_sync_msg = {
+            "type": "file_sync",
+            "sessionId": session_id,
+            "files": files,
+            "sync_info": {
+                "updated_files": [],
+                "new_files": created_files,
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        print(f"[Touch] Sending file_sync message: {file_sync_msg}")
+        await websocket.send_json(file_sync_msg)
 
+        print(f"[Touch] Returning file_created response: {response_with_files}")
         return response_with_files
 
     except Exception as e:
         print(f"File refresh error after touch: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         # Return basic success even if file list refresh fails
         return {
             "type": "terminal_output",
@@ -381,7 +424,7 @@ async def handle_rm_command(
     session_id: str,
     websocket: WebSocket,
 ) -> dict[str, Any]:
-    """Handle rm command for deleting files through proper database + filesystem + Kubernetes sync."""
+    """Handle rm command for deleting files from database, pod, and filesystem."""
     # Parse the rm command to extract filename(s)
     # Support: rm file.py, rm file1.py file2.py, etc.
     parts = command.split()
@@ -398,7 +441,25 @@ async def handle_rm_command(
     deleted_files = []
     failed_files = []
 
-    # Delete each file through the workspace API (database + filesystem + Kubernetes sync)
+    # Extract workspace UUID from session_id
+    session_uuid = None
+    if "_ws_" in session_id:
+        parts_sid = session_id.split("_ws_")
+        if len(parts_sid) >= 2:
+            workspace_part = parts_sid[1]
+            workspace_parts = workspace_part.split("_")
+            if len(workspace_parts) >= 1:
+                session_uuid = workspace_parts[0]
+
+    if not session_uuid:
+        return {
+            "type": "terminal_output",
+            "sessionId": session_id,
+            "output": "rm: Could not extract workspace ID",
+            "return_code": 1,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
     for filename in filenames:
         # Validate filename (basic security check)
         if not filename or filename.startswith("/") or ".." in filename:
@@ -406,71 +467,68 @@ async def handle_rm_command(
             continue
 
         try:
-            # Use the workspace API to delete the file (ensures database + filesystem + Kubernetes sync)
-            from app.models.postgres_models import CodeSession
-            from app.services.workspace_loader import workspace_loader
-
-            # Extract session UUID from session_id for database operations
-            session_uuid = None
-            if "_ws_" in session_id:
-                # Parse session_id format: user_{user_id}_ws_{workspace_id}_{timestamp}_{uuid}
-                parts_sid = session_id.split("_ws_")
-                if len(parts_sid) >= 2:
-                    workspace_part = parts_sid[1]  # {workspace_id}_{timestamp}_{uuid}
-                    workspace_parts = workspace_part.split("_")
-                    if len(workspace_parts) >= 1:
-                        session_uuid = workspace_parts[0]
-
-            if not session_uuid:
-                # Fallback: try to find existing session by container session ID
-                session_uuid = (
-                    session_id.split("_")[-1] if "_" in session_id else session_id
-                )
-
-            # Get session from database
+            # Delete from database
+            from app.models.postgres_models import CodeSession, WorkspaceItem
             session_db = CodeSession.get_by_uuid(session_uuid)
-            if not session_db:
-                failed_files.append(f"{filename}: session not found")
-                continue
+            if session_db:
+                workspace_items = WorkspaceItem.get_all_by_session(session_db.id)
+                file_item = None
+                for item in workspace_items:
+                    if item.name == filename and item.type == "file":
+                        file_item = item
+                        break
 
-            # Use the existing delete_workspace_file method that I enhanced
-            success = await workspace_loader.delete_workspace_file(
-                session_db.id, filename
-            )
+                if file_item:
+                    file_item.delete()
+                    print(f"[rm] Deleted {filename} from database")
 
-            if success:
-                deleted_files.append(filename)
-            else:
-                failed_files.append(f"{filename}: deletion failed")
+            # Delete from pod
+            await container_manager.execute_command(session_id, f"rm -f /app/{filename}")
+            print(f"[rm] Deleted {filename} from pod")
+
+            # Delete from workspace filesystem
+            import os
+            workspace_dir = os.path.join("/tmp/coding_platform_sessions", f"workspace_{session_uuid}")
+            file_path = os.path.join(workspace_dir, filename)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"[rm] Deleted {filename} from filesystem")
+
+            deleted_files.append(filename)
+            print(f"[rm] Successfully deleted {filename}")
 
         except Exception as e:
             failed_files.append(f"{filename}: {str(e)}")
+            print(f"[rm] Failed to delete {filename}: {e}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
 
     # Prepare response
     if deleted_files and not failed_files:
-        files_str = ", ".join(deleted_files)
-        output = (
-            f"Deleted files: {files_str}"
-            if len(deleted_files) > 1
-            else f"Deleted file: {files_str}"
-        )
+        output = ""  # Empty like real rm command on success
         return_code = 0
     elif deleted_files and failed_files:
-        deleted_str = ", ".join(deleted_files)
         failed_str = "; ".join(failed_files)
-        output = f"Deleted: {deleted_str}; Failed: {failed_str}"
+        output = f"rm: Failed: {failed_str}"
         return_code = 0  # Partial success
     else:
         failed_str = "; ".join(failed_files)
         output = f"rm: {failed_str}"
         return_code = 1
 
-    # Refresh file list to show updated files in UI
+    # Get updated file list from database
     try:
-        from app.services.file_manager import FileManager
-
-        file_manager = FileManager(session_id)
-        files = await file_manager.list_files_structured("")
+        from app.models.postgres_models import CodeSession, WorkspaceItem
+        files = []
+        session_db = CodeSession.get_by_uuid(session_uuid)
+        if session_db:
+            workspace_items = WorkspaceItem.get_all_by_session(session_db.id)
+            for item in workspace_items:
+                files.append({
+                    "name": item.name,
+                    "type": item.type,
+                    "path": item.get_full_path(),
+                })
 
         return {
             "type": "file_deleted",
@@ -482,7 +540,10 @@ async def handle_rm_command(
             "deleted_files": deleted_files,
             "timestamp": datetime.utcnow().isoformat(),
         }
-    except Exception:
+    except Exception as e:
+        print(f"[rm] File list refresh failed: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         # Return success even if file list refresh fails
         return {
             "type": "terminal_output",
@@ -634,17 +695,97 @@ async def handle_terminal_input(
     command_parts = command.split()
     if command_parts:
         base_command = command_parts[0].lower()
-        if base_command in ["cd", "mkdir"]:
+
+        # System/Privilege commands - Critical security risk
+        privilege_commands = [
+            "sudo", "su", "passwd",
+            "chown", "chgrp", "chmod",
+            "useradd", "userdel", "usermod",
+            "groupadd", "groupdel", "groupmod"
+        ]
+
+        # Network/Remote access commands - Prevent external connections
+        network_commands = [
+            "ssh", "scp", "sftp",
+            "nc", "netcat", "ncat",
+            "telnet", "ftp",
+            "rsync", "socat"
+        ]
+
+        # System control commands - Prevent container/service disruption
+        system_control_commands = [
+            "reboot", "shutdown", "halt", "poweroff", "init",
+            "systemctl", "service",
+            "killall", "pkill",  # Allow kill with PID, but block mass killing
+            "docker", "kubectl", "podman"  # No container management from inside
+        ]
+
+        # Background/Persistence commands - Prevent resource abuse and persistence
+        persistence_commands = [
+            "crontab",  # Scheduled tasks
+            "at", "batch",  # Scheduled jobs
+            "nohup",  # Background processes that persist
+            "disown",  # Detach processes from shell
+            "screen", "tmux"  # Persistent terminal sessions (redundant in web terminal)
+        ]
+
+        # File system navigation (already blocked)
+        navigation_commands = ["cd", "mkdir"]
+
+        # Combine all blocked commands
+        blocked_commands = privilege_commands + network_commands + system_control_commands + persistence_commands + navigation_commands
+
+        if base_command in blocked_commands:
             return {
                 "type": "terminal_output",
                 "sessionId": session_id,
                 "command": command,
-                "output": f"Error: '{base_command}' command is not allowed right now.",
+                "output": f"Error: '{base_command}' command is not allowed for security reasons.",
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
-    # Check for interactive file editing commands
-    if ">" in command and any(cmd in command for cmd in ["cat >", "echo >", "cat >"]):
+    # Check for dangerous file operation patterns
+    dangerous_patterns = [
+        # Dangerous rm patterns - target system/root directories
+        (r'rm\s+.*\s+-rf\s*/+\s*$', "Cannot delete root directory"),
+        (r'rm\s+.*\s+-rf\s*/+\*', "Cannot delete all files in root"),
+        (r'rm\s+.*\s+-rf\s+~', "Cannot delete home directory"),
+        (r'rm\s+.*\s+-rf\s+/\w+', "Cannot delete system directories"),
+        (r'rm\s+-rf\s*/+\s*$', "Cannot delete root directory"),
+        (r'rm\s+-rf\s*/+\*', "Cannot delete all files in root"),
+        (r'rm\s+-rf\s+~', "Cannot delete home directory"),
+
+        # Dangerous disk operations
+        (r'\bdd\s+', "dd command is not allowed"),
+        (r'\bmkfs\b', "Filesystem formatting is not allowed"),
+        (r'\bfdisk\b', "Disk partitioning is not allowed"),
+        (r'\bparted\b', "Disk partitioning is not allowed"),
+
+        # Mount operations
+        (r'\bmount\s+', "Mount operations are not allowed"),
+        (r'\bumount\s+', "Unmount operations are not allowed"),
+
+        # Writing to device files
+        (r'>\s*/dev/', "Writing to device files is not allowed"),
+
+        # Fork bombs and resource abuse
+        (r':\(\)\{.*:\|:.*\};:', "Fork bombs are not allowed"),
+        (r'while\s+true.*do.*done', "Infinite loops may cause resource issues"),
+    ]
+
+    import re
+    for pattern, error_msg in dangerous_patterns:
+        if re.search(pattern, command, re.IGNORECASE):
+            return {
+                "type": "terminal_output",
+                "sessionId": session_id,
+                "command": command,
+                "output": f"Error: {error_msg}",
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+    # Check for interactive file editing commands (including append >>)
+    if (">" in command or ">>" in command) and any(cmd in command for cmd in ["cat >", "cat >>", "echo >", "echo >>"]):
         return await handle_file_creation_command(command, session_id, websocket)
 
     # Handle touch command for file creation
@@ -674,6 +815,7 @@ async def handle_terminal_input(
                         python script.py    - Run Python script (.py)
                         node script.js      - Run JavaScript/TypeScript script (.js, .ts, .jsx, .tsx, .mjs)
                         pip install <pkg>   - Install Python package
+                        npm install <pkg>   - Install Node.js package
                         ps                  - Show running processes (container-isolated)
                         ls                  - List files
                         cat <file>          - Show file contents
@@ -682,14 +824,18 @@ async def handle_terminal_input(
                         pwd                 - Show current directory
                         touch <file>        - Create empty file
                         rm <file>           - Delete file
-                        mkdir <dir>         - Create directory
                         echo "text" > file  - Write text to file
+                        kill <PID>          - Stop a process by ID
+                        wget/curl           - Download files
 
-                        File execution restrictions:
-                        Only Python (.py), JavaScript (.js, .mjs, .jsx), and TypeScript (.ts, .tsx)
-                        files can be executed. Other file types can be created and viewed but not run.
+                    Security restrictions:
+                        • System commands (sudo, chmod, reboot, etc.) are blocked
+                        • Network tools (ssh, nc, telnet, etc.) are blocked
+                        • Directory navigation (cd, mkdir) is blocked
+                        • Background processes (nohup, crontab, screen) are blocked
+                        • Dangerous operations (rm -rf /, dd, mount) are blocked
 
-                        All commands run in your isolated Kubernetes pod.
+                    All commands run in your isolated, secure Kubernetes pod.
                     """
         return {
             "type": "terminal_output",
@@ -863,6 +1009,8 @@ async def handle_file_system(
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
+            print(f"[FileSystem] Write action - isManualSave: {is_manual_save}, path: {path}")
+
             # For manual saves, also persist to database using the same approach as REST API
             if is_manual_save:
                 try:
@@ -984,8 +1132,13 @@ async def handle_file_system(
                 except Exception as persist_error:
                     print(f"❌ Persistence error for manual save: {persist_error}")
 
-                response["message"] = f"File {path} saved successfully"
+                response["toast"] = {
+                    "type": "success",
+                    "message": f"File {path} saved successfully"
+                }
+                print(f"[FileSystem] Added toast to response: {response.get('toast')}")
 
+            print(f"[FileSystem] Returning response: {response}")
             return response
 
         if action == "list":

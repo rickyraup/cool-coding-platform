@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { toast } from 'sonner';
 import { useApp } from '../contexts/AppContext';
 
 // Global WebSocket singleton with proper cleanup
@@ -159,7 +160,7 @@ function getWebSocketManager(): WebSocketManager {
 }
 
 interface WebSocketMessage {
-  type: 'terminal_input' | 'terminal_output' | 'terminal_clear' | 'terminal_clear_progress' | 'pod_ready' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'file_sync' | 'ping' | 'pong';
+  type: 'terminal_input' | 'terminal_output' | 'terminal_clear' | 'terminal_clear_progress' | 'pod_ready' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'file_deleted' | 'file_sync' | 'ping' | 'pong';
   sessionId?: string;
   command?: string;
   output?: string;
@@ -170,6 +171,10 @@ interface WebSocketMessage {
   path?: string;
   content?: string;
   message?: string;
+  toast?: {
+    type: 'success' | 'error' | 'info' | 'warning';
+    message: string;
+  };
   files?: { name: string; type: 'file' | 'directory'; path: string; }[];
   sync_info?: {
     updated_files?: string[];
@@ -180,6 +185,7 @@ interface WebSocketMessage {
 export function useWebSocket() {
   const { state, setConnected, addTerminalLine, setError, setFiles, updateCode, markSaved, clearTerminal, setCurrentFile, setFileContent } = useApp();
   const pathname = usePathname();
+  const performFileOperationRef = useRef<((action: string, path: string, content?: string, isManualSave?: boolean) => boolean) | null>(null);
   
   // Import useUserId hook to get current user ID
   const [userId, setUserId] = useState<string | null>(null);
@@ -198,14 +204,32 @@ export function useWebSocket() {
     if (handlersRegisteredRef.current) return;
     
     const handleMessage = (message: WebSocketMessage) => {
+      // Handle toast notifications first (before type-specific handling)
+      if (message.toast) {
+        const { type, message: toastMessage } = message.toast;
+        switch (type) {
+          case 'success':
+            toast.success(toastMessage);
+            break;
+          case 'error':
+            toast.error(toastMessage);
+            break;
+          case 'info':
+            toast.info(toastMessage);
+            break;
+          case 'warning':
+            toast.warning(toastMessage);
+            break;
+        }
+      }
+
       switch (message.type) {
         case 'connection_established':
           break;
 
         case 'terminal_output':
-          if (message.output) {
-            addTerminalLine(message.output, 'output', message.command);
-          }
+          // Always add terminal line, even for empty output, to ensure cursor moves to new line
+          addTerminalLine(message.output || '', 'output', message.command);
           break;
 
         case 'terminal_clear':
@@ -243,11 +267,34 @@ export function useWebSocket() {
           break;
 
         case 'file_created':
+          // Always add terminal line, even for empty output, to ensure cursor moves to new line
+          addTerminalLine(message.output || '', 'output', message.command);
+          // Update file list from message if available
           if (message.files) {
             setFiles(message.files);
+          } else {
+            // Fallback: Request fresh file list after file creation
+            setTimeout(() => {
+              if (performFileOperationRef.current) {
+                performFileOperationRef.current('list', '');
+              }
+            }, 100);
           }
-          if (message.message) {
-            addTerminalLine(message.message, 'output');
+          break;
+
+        case 'file_deleted':
+          // Always add terminal line, even for empty output, to ensure cursor moves to new line
+          addTerminalLine(message.output || '', 'output', message.command);
+          // Update file list from message if available
+          if (message.files) {
+            setFiles(message.files);
+          } else {
+            // Fallback: Request fresh file list after file deletion
+            setTimeout(() => {
+              if (performFileOperationRef.current) {
+                performFileOperationRef.current('list', '');
+              }
+            }, 100);
           }
           break;
 
@@ -272,10 +319,7 @@ export function useWebSocket() {
           } else if (message.action === 'write' && message.content !== undefined && message.path) {
             // Update file content cache and mark as saved
             setFileContent(message.path, message.content);
-            // Only show save message if backend provided one (for manual saves)
-            if (message.message) {
-              addTerminalLine(message.message, 'output');
-            }
+            // Don't show message in terminal - toast will be shown if backend provides one
           }
           break;
 
@@ -344,15 +388,22 @@ export function useWebSocket() {
   }, [state.currentSession?.id]);
 
   const performFileOperation = useCallback((action: string, path: string, content?: string, isManualSave?: boolean) => {
-    return getWebSocketManager().sendMessage({
+    const message = {
       type: 'file_system',
       sessionId: state.currentSession?.id || 'default',
       action,
       path,
       ...(content !== undefined && { content }),
       ...(isManualSave !== undefined && { isManualSave })
-    });
+    };
+    console.log('[FileOperation] Sending message:', message);
+    return getWebSocketManager().sendMessage(message);
   }, [state.currentSession?.id]);
+
+  // Store in ref so message handlers can access it
+  useEffect(() => {
+    performFileOperationRef.current = performFileOperation;
+  }, [performFileOperation]);
 
   const saveCurrentFile = useCallback((content: string, filename?: string, isManualSave: boolean = false) => {
     const currentFile = filename || state.currentFile || 'main.py';
@@ -369,8 +420,9 @@ export function useWebSocket() {
   
   const manualSave = useCallback((content?: string, filename?: string) => {
     const codeToSave = content || state.code;
+    console.log('[ManualSave] Saving file:', filename || state.currentFile, 'Manual save: true');
     return saveCurrentFile(codeToSave, filename, true);
-  }, [saveCurrentFile, state.code]);
+  }, [saveCurrentFile, state.code, state.currentFile]);
 
   const sendFileInputResponse = useCallback((filename: string, content: string) => {
     return getWebSocketManager().sendMessage({

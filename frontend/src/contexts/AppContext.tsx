@@ -90,6 +90,13 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         ...state,
         code: action.payload,
         hasUnsavedChanges: action.payload !== state.lastSavedCode,
+        // Also update fileContents for the current file to track unsaved changes
+        fileContents: state.currentFile
+          ? {
+              ...state.fileContents,
+              [state.currentFile]: action.payload,
+            }
+          : state.fileContents,
       };
     
     case 'ADD_TERMINAL_LINE':
@@ -154,6 +161,13 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         ...state,
         lastSavedCode: action.payload,
         hasUnsavedChanges: false,
+        // Update the saved state for the current file
+        fileSavedStates: state.currentFile
+          ? {
+              ...state.fileSavedStates,
+              [state.currentFile]: action.payload,
+            }
+          : state.fileSavedStates,
       };
     
     case 'CLEAR_UNSAVED_CHANGES':
@@ -197,8 +211,21 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
       return {
         ...state,
         code: fileContent,
-        hasUnsavedChanges: fileContent !== (state.fileSavedStates[state.currentFile || ''] || ''),
-        lastSavedCode: state.fileSavedStates[state.currentFile || ''] || '',
+        hasUnsavedChanges: false,
+        lastSavedCode: fileContent,
+        // Update both fileContents and fileSavedStates when loading from backend
+        fileContents: state.currentFile
+          ? {
+              ...state.fileContents,
+              [state.currentFile]: fileContent,
+            }
+          : state.fileContents,
+        fileSavedStates: state.currentFile
+          ? {
+              ...state.fileSavedStates,
+              [state.currentFile]: fileContent,
+            }
+          : state.fileSavedStates,
       };
 
     case 'RESET_ALL_STATE':
@@ -234,6 +261,8 @@ interface AppContextType {
   loadFileContent: (content: string) => void;
   // Complete state reset for workspace switching
   resetAllState: () => void;
+  // Helper to check if a file has unsaved changes
+  hasFileUnsavedChanges: (filePath: string) => boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -314,6 +343,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     resetAllState: useCallback(() => {
       dispatch({ type: 'RESET_ALL_STATE' });
     }, []),
+
+    hasFileUnsavedChanges: useCallback((filePath: string): boolean => {
+      // Check if the file has unsaved changes by comparing current content with saved state
+      const currentContent = state.fileContents[filePath];
+      const savedContent = state.fileSavedStates[filePath];
+
+      // If we don't have current content, the file hasn't been modified
+      if (currentContent === undefined) return false;
+
+      // Compare with saved state (undefined saved state means never saved, so it has changes if there's content)
+      return currentContent !== (savedContent || '');
+    }, [state.fileContents, state.fileSavedStates]),
   };
 
   return (

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, useRef } from 'react';
+import { toast } from 'sonner';
 import type { FileItem } from '../contexts/AppContext';
 import { useApp } from '../contexts/AppContext';
 import { useWorkspaceApi } from '../hooks/useWorkspaceApi';
@@ -14,7 +15,7 @@ interface FileExplorerProps {
 }
 
 export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = false }: FileExplorerProps = {}): JSX.Element {
-  const { state, setCurrentFile, setFiles } = useApp();
+  const { state, setCurrentFile, setFiles, addTerminalLine, hasFileUnsavedChanges } = useApp();
   const { manualSave, loadFileContent, refreshFiles, sessionUuid } = useWorkspaceApi();
   const { sendTerminalCommand } = useWebSocket();
   const [loading, setLoading] = useState(false);
@@ -23,6 +24,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
   const [newItemName, setNewItemName] = useState('');
   const [currentDirectory, setCurrentDirectory] = useState('');
   const [allFiles, setAllFiles] = useState<{[key: string]: FileItem[]}>({});
+  const [fileToDelete, setFileToDelete] = useState<{ name: string; path: string } | null>(null);
   const hasLoadedInitialFiles = useRef(false);
   const lastDirectoryListTime = useRef<{[key: string]: number}>({});
 
@@ -49,9 +51,11 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
 
       // Refresh file list to reflect changes
       await refreshFiles();
+
+      toast.success(`File "${filename}" deleted successfully`);
     } catch (error) {
       console.error('Failed to delete file:', error);
-      // You could show a toast notification here
+      toast.error(`Failed to delete file "${filename}"`);
     }
   }, [sessionUuid, state.currentFile, setCurrentFile, refreshFiles]);
 
@@ -149,8 +153,10 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
           // Automatically select the new file
           setCurrentFile(fileName);
 
+          toast.success(`File "${fileName}" created successfully`);
         } else {
           console.error('Failed to create file:', fileName);
+          toast.error(`Failed to create file "${fileName}"`);
         }
       } else {
         // Directory creation not implemented yet
@@ -417,6 +423,13 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
           <span className="flex-shrink-0">{getFileIconComponent(file)}</span>
           <span className="truncate flex-1 font-medium flex items-center gap-2">
             {file.name}
+            {/* Unsaved changes indicator (VS Code style dot) */}
+            {file.type === 'file' && hasFileUnsavedChanges(file.path) && (
+              <span
+                className="w-2 h-2 bg-white rounded-full flex-shrink-0"
+                title="Unsaved changes"
+              ></span>
+            )}
             {/* File type badge */}
             {getFileTypeBadge(file) && (
               <span className="px-1.5 py-0.5 text-xs font-mono font-semibold bg-gray-600/80 text-gray-200 rounded border border-gray-500/50 flex-shrink-0">
@@ -437,7 +450,8 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                       onRunFile(file.name);
                     } else {
                       // Normal mode - use terminal command
-                      const command = `python "${file.path}"`;
+                      const command = `python3 ${file.path}`;
+                      addTerminalLine(command, 'input', command);
                       sendTerminalCommand(command);
                     }
                   }
@@ -456,7 +470,8 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                   e.stopPropagation();
                   if (file.type === 'file' && (file.name.endsWith('.js') || file.name.endsWith('.jsx'))) {
                     // Use the full path for execution with Node.js
-                    const command = `node "${file.path}"`;
+                    const command = `node ${file.path}`;
+                    addTerminalLine(command, 'input', command);
                     sendTerminalCommand(command);
                   }
                 }}
@@ -474,7 +489,8 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                   e.stopPropagation();
                   if (file.type === 'file' && (file.name.endsWith('.ts') || file.name.endsWith('.tsx'))) {
                     // Use ts-node for TypeScript files
-                    const command = `npx ts-node "${file.path}"`;
+                    const command = `npx ts-node ${file.path}`;
+                    addTerminalLine(command, 'input', command);
                     sendTerminalCommand(command);
                   }
                 }}
@@ -490,9 +506,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm(`Are you sure you want to delete "${file.name}"?`)) {
-                    handleDeleteFile(file.name, file.path);
-                  }
+                  setFileToDelete({ name: file.name, path: file.path });
                 }}
                 className="p-1 text-red-400 hover:text-red-300 hover:bg-red-400/20 rounded transition-colors"
                 title="Delete"
@@ -514,7 +528,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
     });
     
     return items;
-  }, [allFiles, currentDirectory, expandedDirs, state.currentFile]);
+  }, [allFiles, currentDirectory, expandedDirs, state.currentFile, hasFileUnsavedChanges, state.fileContents, state.fileSavedStates, setCurrentFile, loadFileContent, loadDirectoryContents, getFileIconComponent, getFileTypeBadge, handleDeleteFile, onRunFile, reviewMode, addTerminalLine, sendTerminalCommand]);
 
 
   return (
@@ -661,13 +675,13 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
             <h3 className="text-lg font-semibold text-white mb-2">
               Create New {showCreateDialog === 'file' ? 'File' : 'Folder'}
             </h3>
-            
+
             {currentDirectory && (
               <p className="text-sm text-gray-400 mb-4">
                 in: /{currentDirectory}
               </p>
             )}
-            
+
             <input
               type="text"
               value={newItemName}
@@ -683,7 +697,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
               className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
               autoFocus
             />
-            
+
             <div className="flex gap-2 mt-4">
               <button
                 onClick={handleCreateItem}
@@ -701,6 +715,47 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {fileToDelete && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 w-96 border border-gray-600">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  Delete File
+                </h3>
+                <p className="text-gray-300 mb-4">
+                  Are you sure you want to delete <span className="font-semibold text-white">"{fileToDelete.name}"</span>? This action cannot be undone.
+                </p>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      handleDeleteFile(fileToDelete.name, fileToDelete.path);
+                      setFileToDelete(null);
+                    }}
+                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors font-medium"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    onClick={() => setFileToDelete(null)}
+                    className="flex-1 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

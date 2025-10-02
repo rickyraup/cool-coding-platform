@@ -19,7 +19,7 @@ interface WorkspacePageProps {
 
 export default function WorkspacePage({ params: paramsPromise }: WorkspacePageProps) {
   const params = use(paramsPromise);
-  const { state, setSession, setLoading, updateCode, setCurrentFile, setFiles, clearTerminal } = useApp();
+  const { state, setSession, setLoading, updateCode, setCurrentFile, setFiles, clearTerminal, setFileContent } = useApp();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const userId = useUserId();
   const router = useRouter();
@@ -150,12 +150,14 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
           // Auto-select main.py if it exists
           const mainFile = files.find(file => file.name === 'main.py');
           if (mainFile) {
-            setCurrentFile(mainFile.path);
-
             // Load main.py content only if we don't have it in context already
             if (!state.code || state.code.trim() === '') {
               const fileContent = await getFileContent(sessionUuid, mainFile.name);
-              updateCode(fileContent.content);
+              // Use setFileContent to mark as saved and prevent false "unsaved changes"
+              setFileContent(fileContent.path, fileContent.content);
+              setCurrentFile(fileContent.path);
+            } else {
+              setCurrentFile(mainFile.path);
             }
           }
 

@@ -19,10 +19,10 @@ interface HeaderProps {
 }
 
 export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {}): JSX.Element {
-  const { state, setSession, setLoading, setError, setCurrentFile, resetAllState } = useApp();
+  const { state, setSession, setLoading, setError, setCurrentFile, resetAllState, addTerminalLine } = useApp();
   const { user, isAuthenticated, logout } = useAuth();
   const userId = useUserId();
-  const { isConnected, manualSave } = useWebSocket();
+  const { isConnected, manualSave, sendTerminalCommand } = useWebSocket();
   const [showAuth, setShowAuth] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
@@ -35,10 +35,72 @@ export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {})
       console.warn('No session or file selected');
       return;
     }
-    
+
     // Use WebSocket-based manual save for consistency with autosave
     manualSave();
   }, [state.currentSession, state.currentFile, manualSave]);
+
+  const handleRunCode = useCallback((): void => {
+    if (!state.currentFile) {
+      console.warn('No file selected to run');
+      return;
+    }
+
+    // Determine the command based on file extension
+    const extension = state.currentFile.split('.').pop()?.toLowerCase();
+    let command = '';
+
+    switch (extension) {
+      case 'py':
+        command = `python3 ${state.currentFile}`;
+        break;
+      case 'js':
+        command = `node ${state.currentFile}`;
+        break;
+      case 'ts':
+        command = `ts-node ${state.currentFile}`;
+        break;
+      case 'sh':
+        command = `bash ${state.currentFile}`;
+        break;
+      case 'rb':
+        command = `ruby ${state.currentFile}`;
+        break;
+      case 'java':
+        // For Java, compile and run
+        const className = state.currentFile.replace('.java', '');
+        command = `javac ${state.currentFile} && java ${className}`;
+        break;
+      case 'cpp':
+      case 'cc':
+      case 'cxx':
+        // For C++, compile and run
+        const outFile = state.currentFile.replace(/\.(cpp|cc|cxx)$/, '');
+        command = `g++ ${state.currentFile} -o ${outFile} && ./${outFile}`;
+        break;
+      case 'c':
+        // For C, compile and run
+        const cOutFile = state.currentFile.replace('.c', '');
+        command = `gcc ${state.currentFile} -o ${cOutFile} && ./${cOutFile}`;
+        break;
+      case 'go':
+        command = `go run ${state.currentFile}`;
+        break;
+      case 'rs':
+        command = `rustc ${state.currentFile} && ./${state.currentFile.replace('.rs', '')}`;
+        break;
+      default:
+        console.warn(`Unsupported file type: ${extension}`);
+        return;
+    }
+
+    if (command) {
+      // Show the command in the terminal as if it was typed
+      addTerminalLine(command, 'input', command);
+      // Then execute the command
+      sendTerminalCommand(command);
+    }
+  }, [state.currentFile, sendTerminalCommand, addTerminalLine]);
 
   const handleLogout = useCallback(() => {
     logout();
@@ -171,7 +233,19 @@ export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {})
             )}
 
             {/* Action Buttons */}
-            
+
+
+            {/* Run Code Button - only show in workspace */}
+            {pathname?.startsWith('/workspace/') && state.currentFile && (
+              <button
+                onClick={handleRunCode}
+                className="px-4 py-2 text-sm font-medium bg-green-600 hover:bg-green-500 active:bg-green-700 text-white rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                disabled={!state.currentFile || state.isLoading}
+                title="Run current file"
+              >
+                ▶️ Run Code
+              </button>
+            )}
 
             {/* Save Button - only show in workspace for non-reviewers */}
             {pathname?.startsWith('/workspace/') && (reviewStatus === undefined || !reviewStatus?.isReviewer) && (

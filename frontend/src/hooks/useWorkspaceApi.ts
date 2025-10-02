@@ -8,7 +8,7 @@ import { useApp } from '../contexts/AppContext';
 import { useParams } from 'next/navigation';
 
 export function useWorkspaceApi() {
-  const { state, markSaved, updateCode, setFiles, setCurrentFile } = useApp();
+  const { state, markSaved, updateCode, setFiles, setCurrentFile, setFileContent } = useApp();
   const params = useParams();
   // Support both workspace pages (/workspace/[id]) and review pages (/review/[sessionId])
   const sessionUuid = (params?.['id'] || params?.['sessionId']) as string;
@@ -42,7 +42,7 @@ export function useWorkspaceApi() {
       console.error('Failed to save file:', error);
       return false;
     }
-  }, [sessionUuid, markSaved]);
+  }, [sessionUuid, state.code, state.currentFile, markSaved]);
 
   // Load file content using the new API
   const loadFileContent = useCallback(async (filename: string): Promise<boolean> => {
@@ -57,16 +57,16 @@ export function useWorkspaceApi() {
       const fileContent = await getFileContent(sessionUuid, filename);
 
 
-      // Update context
+      // Update context - use setFileContent to mark as saved
       setCurrentFile(fileContent.path);
-      updateCode(fileContent.content);
+      setFileContent(fileContent.path, fileContent.content);
 
       return true;
     } catch (error) {
       console.error('Failed to load file content:', error);
       return false;
     }
-  }, [sessionUuid, setCurrentFile, updateCode]);
+  }, [sessionUuid, setCurrentFile, setFileContent]);
 
   // Refresh file list
   const refreshFiles = useCallback(async (): Promise<boolean> => {

@@ -184,14 +184,12 @@ const sessionId = 'user_1_ws_abc123_1234567890_uuid';
 const ws = new WebSocket(`ws://localhost:8002/api/terminal/ws/${sessionId}`);
 
 ws.onopen = () => {
-  console.log('Connected to terminal WebSocket');
   // Send initial command
   ws.send('ls -la\n');
 };
 
 ws.onmessage = (event) => {
   // Receive plain text terminal output
-  console.log('Terminal output:', event.data);
 };
 
 ws.onerror = (error) => {
