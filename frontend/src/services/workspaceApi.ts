@@ -3,21 +3,17 @@
  * Handles per-workspace (UUID session) file operations
  */
 
+import type { FileItem } from '../contexts/AppContext';
+
 const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8002';
 
-export interface FileItem {
-  name: string;
-  type: 'file' | 'directory';
-  path: string;
-}
-
-export interface FileContent {
+interface FileContent {
   name: string;
   path: string;
   content: string;
 }
 
-export interface SaveFileResponse {
+interface SaveFileResponse {
   message: string;
   file: {
     name: string;

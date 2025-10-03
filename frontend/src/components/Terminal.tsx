@@ -4,20 +4,21 @@ import type { JSX } from 'react';
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { useApp } from '../contexts/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
+import type { Terminal as XTermTerminal } from '@xterm/xterm';
+import type { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalProps {
   readOnly?: boolean;
-  reviewMode?: boolean;
 }
 
-export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps): JSX.Element {
+export function Terminal({ readOnly = false }: TerminalProps): JSX.Element {
   const { state } = useApp();
   const { sendTerminalCommand } = useWebSocket();
 
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<any>(null);
-  const fitAddonRef = useRef<any>(null);
+  const xtermRef = useRef<XTermTerminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
   const [, setCurrentLine] = useState('');
   const currentLineRef = useRef('');
   const cursorPositionRef = useRef(0); // Track cursor position within the line
@@ -27,21 +28,13 @@ export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps
   const isInitializedRef = useRef(false);
   const progressLineCountRef = useRef(0);
 
-  const displayWelcomeMessage = useCallback((terminal: any) => {
-    if (reviewMode) {
-      terminal.writeln('\x1b[36m╭────────────────────────────────────╮\x1b[0m');
-      terminal.writeln('\x1b[36m│     Review Mode Terminal          │\x1b[0m');
-      terminal.writeln('\x1b[36m│ Read-only: Use arrows to run files │\x1b[0m');
-      terminal.writeln('\x1b[36m╰────────────────────────────────────╯\x1b[0m');
-      terminal.writeln('');
-    } else {
-      terminal.writeln('\x1b[36m╭────────────────────────────────────╮\x1b[0m');
-      terminal.writeln('\x1b[36m│     Welcome to the Terminal       │\x1b[0m');
-      terminal.writeln('\x1b[36m│ Type commands or "help" to begin  │\x1b[0m');
-      terminal.writeln('\x1b[36m╰────────────────────────────────────╯\x1b[0m');
-      terminal.write('\r\n\x1b[32m$ \x1b[0m');
-    }
-  }, [reviewMode]);
+  const displayWelcomeMessage = useCallback((terminal: XTermTerminal) => {
+    terminal.writeln('\x1b[36m╭────────────────────────────────────╮\x1b[0m');
+    terminal.writeln('\x1b[36m│     Welcome to the Terminal       │\x1b[0m');
+    terminal.writeln('\x1b[36m│ Type commands or "help" to begin  │\x1b[0m');
+    terminal.writeln('\x1b[36m╰────────────────────────────────────╯\x1b[0m');
+    terminal.write('\r\n\x1b[32m$ \x1b[0m');
+  }, []);
 
   const replaceCurrentLine = useCallback((newLine: string, cursorPos?: number): void => {
     const terminal = xtermRef.current;
@@ -118,7 +111,7 @@ export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps
     
     const initTerminal = async () => {
       try {
-        const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
+        const [{ Terminal: XTerm }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
           import('@xterm/xterm'),
           import('@xterm/addon-fit'),
           import('@xterm/addon-web-links'),
@@ -126,7 +119,7 @@ export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps
 
         if (!mounted || !terminalRef.current) return;
 
-        const terminal = new Terminal({
+        const terminal = new XTerm({
           theme: {
             background: '#000000',
             foreground: '#ffffff',
@@ -156,7 +149,7 @@ export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps
 
         terminal.onData((data: string) => {
           // In read-only mode, ignore all input
-          if (readOnly || reviewMode) {
+          if (readOnly) {
             return;
           }
 
@@ -351,12 +344,16 @@ export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps
       }
     };
 
-    initTerminal();
+    initTerminal().catch((error) => {
+      console.error('Failed to start terminal:', error);
+    });
 
     return () => {
       mounted = false;
     };
-  }, []); // Empty dependency array - only run once
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Handle terminal output
   useEffect(() => {
@@ -414,7 +411,7 @@ export function Terminal({ readOnly = false, reviewMode = false }: TerminalProps
     });
 
     lastProcessedLineRef.current = state.terminalLines.length;
-  }, [state.terminalLines]);
+  }, [state.terminalLines, displayWelcomeMessage]);
 
   // Handle resize
   useEffect(() => {

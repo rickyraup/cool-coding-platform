@@ -1,18 +1,18 @@
 'use client';
 
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, JSX } from 'react';
 import Editor from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
+import type * as Monaco from 'monaco-editor';
 import { useApp } from '../contexts/AppContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 
 interface CodeEditorProps {
   readOnly?: boolean;
-  reviewMode?: boolean;
 }
 
-export function CodeEditor({ readOnly = false, reviewMode = false }: CodeEditorProps): JSX.Element {
-  const { state, updateCode, markSaved, cacheCurrentFileContent } = useApp();
+export function CodeEditor({ readOnly = false }: CodeEditorProps): JSX.Element {
+  const { state, updateCode } = useApp();
   const { manualSave } = useWebSocket();
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const currentFileRef = useRef<string | null>(null);
@@ -40,7 +40,7 @@ export function CodeEditor({ readOnly = false, reviewMode = false }: CodeEditorP
     }
   }, [manualSave, updateCode]);
 
-  const handleEditorDidMount = useCallback((editorInstance: editor.IStandaloneCodeEditor, monacoInstance: any): void => {
+  const handleEditorDidMount = useCallback((editorInstance: editor.IStandaloneCodeEditor, monacoInstance: typeof Monaco): void => {
     editorRef.current = editorInstance;
 
     // Add keyboard shortcuts
@@ -135,6 +135,8 @@ export function CodeEditor({ readOnly = false, reviewMode = false }: CodeEditorP
             return { suggestions };
           }
         });
+      }).catch((error) => {
+        console.error('Failed to configure Monaco editor:', error);
       });
     }
   }, []);

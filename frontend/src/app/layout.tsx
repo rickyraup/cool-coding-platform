@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import "./globals.css";
 import { AppProvider } from "../contexts/AppContext";
 import { AuthProvider } from "../contexts/AuthContext";
+import { JSX } from "react";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

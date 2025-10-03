@@ -14,6 +14,27 @@ from app.services.file_sync import get_file_sync_service
 # File execution validation completely removed - all commands are allowed
 
 
+def get_workspace_session_id(session_id: str) -> str:
+    """
+    Extract workspace ID and return the consistent workspace directory name.
+
+    This ensures FileManager looks in the same directory as container_manager creates,
+    which is workspace_{workspace_id} instead of the mangled session ID.
+    """
+    workspace_id = container_manager._extract_workspace_id(session_id)
+    print(f"🔍 [Debug] get_workspace_session_id called with session_id: {session_id}")
+    print(f"🔍 [Debug] Extracted workspace_id: {workspace_id}")
+    if workspace_id:
+        # Use workspace_{workspace_id} directory format (same as container_manager creates)
+        result = f"workspace_{workspace_id}"
+        print(f"🔍 [Debug] Returning workspace directory: {result}")
+        return result
+    else:
+        # Fallback to session_id if no workspace_id found
+        print(f"🔍 [Debug] No workspace_id found, returning original session_id: {session_id}")
+        return session_id
+
+
 async def sync_pod_changes_to_database(session_id: str, command: str) -> None:
     """Sync changes from pod filesystem back to database after commands that might modify files."""
     # Only sync for commands that are likely to create/modify/delete files
@@ -168,8 +189,7 @@ async def handle_file_creation_command(
 
                         # Send file sync notification to update UI
                         try:
-                            from app.services.file_manager import FileManager
-                            file_manager = FileManager(session_id)
+                            file_manager = FileManager(get_workspace_session_id(session_id))
                             files = await file_manager.list_files_structured("")
 
                             await websocket.send_json({
@@ -586,9 +606,7 @@ async def handle_file_input_response(
         if return_code == 0:
             # Also refresh file list
             try:
-                from app.services.file_manager import FileManager
-
-                file_manager = FileManager(session_id)
+                file_manager = FileManager(get_workspace_session_id(session_id))
                 files = await file_manager.list_files_structured("")
 
                 return {
@@ -893,9 +911,7 @@ async def handle_terminal_input(
                 results = sync_result["results"]
                 if results.get("updated_files") or results.get("new_files"):
                     # Send file list update to client
-                    from app.services.file_manager import FileManager
-
-                    file_manager = FileManager(session_id)
+                    file_manager = FileManager(get_workspace_session_id(session_id))
                     files = await file_manager.list_files_structured("")
 
                     # Send file sync notification to WebSocket
@@ -985,18 +1001,45 @@ async def handle_file_system(
     )
 
     try:
-        file_manager = FileManager(session_id)
+        file_manager = FileManager(get_workspace_session_id(session_id))
 
         if action == "read":
-            file_content = await file_manager.read_file(path)
-            return {
-                "type": "file_system",
-                "action": "read",
-                "sessionId": session_id,
-                "path": path,
-                "content": file_content,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
+            # Check if pod is ready before attempting read
+            pod_ready = container_manager.is_pod_ready(session_id)
+
+            # If pod is not ready, try to sync files from database to filesystem first
+            if not pod_ready:
+                workspace_id = container_manager._extract_workspace_id(session_id)
+                if workspace_id:
+                    from app.api.workspace_files import sync_all_files_to_filesystem
+                    print(f"📂 [FileSystem] Pod not ready, syncing files from database for workspace {workspace_id}")
+                    sync_all_files_to_filesystem(workspace_id, verbose=False)
+
+            try:
+                file_content = await file_manager.read_file(path)
+                return {
+                    "type": "file_system",
+                    "action": "read",
+                    "sessionId": session_id,
+                    "path": path,
+                    "content": file_content,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            except Exception as read_error:
+                # If pod is not ready and file read fails, suppress error to avoid confusing user
+                if not pod_ready:
+                    print(f"📂 [FileSystem] File read failed for {path} but pod not ready - suppressing error")
+                    # Return empty content silently - frontend will retry when needed
+                    return {
+                        "type": "file_system",
+                        "action": "read",
+                        "sessionId": session_id,
+                        "path": path,
+                        "content": "",
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                # If pod is ready but read still fails, propagate the error
+                raise read_error
 
         if action == "write":
             await file_manager.write_file(path, content)
@@ -1142,6 +1185,13 @@ async def handle_file_system(
             return response
 
         if action == "list":
+            # CRITICAL: Ensure files are synced from database to filesystem before listing
+            workspace_id = container_manager._extract_workspace_id(session_id)
+            if workspace_id:
+                from app.api.workspace_files import sync_all_files_to_filesystem
+                print(f"📂 [FileSystem] Syncing files from database before listing for workspace {workspace_id}")
+                sync_all_files_to_filesystem(workspace_id, verbose=False)
+
             # Ensure container session exists before listing files
             if container_manager.is_kubernetes_available():
                 try:

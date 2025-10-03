@@ -1,23 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef, JSX } from 'react';
+import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
 import type { FileItem } from '../contexts/AppContext';
 import { useApp } from '../contexts/AppContext';
-import { useWorkspaceApi } from '../hooks/useWorkspaceApi';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { deleteFile } from '../services/workspaceApi';
 
-interface FileExplorerProps {
-  onRunFile?: (fileName: string) => void;
-  reviewMode?: boolean;
-  showRunButtons?: boolean;
-}
-
-export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = false }: FileExplorerProps = {}): JSX.Element {
-  const { state, setCurrentFile, setFiles, addTerminalLine, hasFileUnsavedChanges } = useApp();
-  const { manualSave, loadFileContent, refreshFiles, sessionUuid } = useWorkspaceApi();
-  const { sendTerminalCommand } = useWebSocket();
+export function FileExplorer(): JSX.Element {
+  const { state, setCurrentFile, addTerminalLine, hasFileUnsavedChanges } = useApp();
+  const { manualSave, performFileOperation, sendTerminalCommand } = useWebSocket();
+  const params = useParams();
+  const sessionUuid = params?.['id'] as string;
   const [loading, setLoading] = useState(false);
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [showCreateDialog, setShowCreateDialog] = useState<'file' | 'folder' | null>(null);
@@ -31,13 +26,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
   // Delete file handler
   const handleDeleteFile = useCallback(async (filename: string, filePath: string) => {
     if (!sessionUuid) {
-      console.error('No session UUID available for delete', { reviewMode, sessionUuid });
-      return;
-    }
-
-    // Disable delete in review mode
-    if (reviewMode) {
-      console.warn('Delete operation disabled in review mode');
+      console.error('No session UUID available for delete', { sessionUuid });
       return;
     }
 
@@ -50,14 +39,14 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
       }
 
       // Refresh file list to reflect changes
-      await refreshFiles();
+      performFileOperation('list', '');
 
       toast.success(`File "${filename}" deleted successfully`);
     } catch (error) {
       console.error('Failed to delete file:', error);
       toast.error(`Failed to delete file "${filename}"`);
     }
-  }, [sessionUuid, state.currentFile, setCurrentFile, refreshFiles]);
+  }, [sessionUuid, state.currentFile, setCurrentFile, performFileOperation]);
 
   const loadFiles = useCallback(async (path: string = '', showErrors: boolean = false) => {
     if (!sessionUuid) {
@@ -69,7 +58,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
 
     // Debounce directory listing requests (1 second)
     const now = Date.now();
-    const lastList = lastDirectoryListTime.current[path] || 0;
+    const lastList = lastDirectoryListTime.current[path] ?? 0;
     const timeSinceLastList = now - lastList;
     const DEBOUNCE_DELAY = 1000; // 1 second
 
@@ -80,10 +69,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
     lastDirectoryListTime.current[path] = now;
     setLoading(true);
     try {
-      const success = await refreshFiles();
-      if (!success && showErrors) {
-        console.error('Failed to refresh files');
-      }
+      performFileOperation('list', '');
     } catch (error) {
       if (showErrors) {
         console.error('Error loading files:', error);
@@ -91,16 +77,16 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
     } finally {
       setLoading(false);
     }
-  }, [sessionUuid, refreshFiles]);
+  }, [sessionUuid, performFileOperation]);
 
-  const loadDirectoryContents = useCallback(async (path: string) => {
+  const loadDirectoryContents = useCallback(async (_path: string) => {
     // For now, since we only support flat file structure, just refresh the main files
     try {
-      await refreshFiles();
+      performFileOperation('list', '');
     } catch (error) {
       console.error('Error loading directory contents:', error);
     }
-  }, [refreshFiles]);
+  }, [performFileOperation]);
 
   // Update allFiles when state.files changes
   useEffect(() => {
@@ -120,13 +106,13 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
       // Navigate to parent directory
       const parentPath = currentDirectory.split('/').slice(0, -1).join('/');
       setCurrentDirectory(parentPath);
-      loadFiles(parentPath, true); // Show errors for user-initiated actions
+      loadFiles(parentPath, true).catch(console.error); // Show errors for user-initiated actions
     }
   }, [currentDirectory, loadFiles]);
 
   const handleNavigateToRoot = useCallback(() => {
     setCurrentDirectory('');
-    loadFiles('', true); // Show errors for user-initiated actions
+    loadFiles('', true).catch(console.error); // Show errors for user-initiated actions
   }, [loadFiles]);
 
   const handleCreateItem = useCallback(async () => {
@@ -144,30 +130,26 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
 
 
         // Create file with empty content using the manualSave function
-        const success = await manualSave('', fileName);
+        manualSave('', fileName);
 
-        if (success) {
-          // Refresh the file list to show the new file
-          await refreshFiles();
+        // Refresh the file list to show the new file
+        performFileOperation('list', '');
 
-          // Automatically select the new file
-          setCurrentFile(fileName);
+        // Automatically select the new file
+        setCurrentFile(fileName);
 
-          toast.success(`File "${fileName}" created successfully`);
-        } else {
-          console.error('Failed to create file:', fileName);
-          toast.error(`Failed to create file "${fileName}"`);
-        }
+        toast.success(`File "${fileName}" created successfully`);
       } else {
         // Directory creation not implemented yet
       }
     } catch (error) {
       console.error('Error creating file:', error);
+      toast.error(`Failed to create file "${__filename}"`);
     } finally {
       setShowCreateDialog(null);
       setNewItemName('');
     }
-  }, [newItemName, showCreateDialog, currentDirectory, manualSave, refreshFiles, setCurrentFile]);
+  }, [newItemName, showCreateDialog, currentDirectory, manualSave, performFileOperation, setCurrentFile]);
 
   // Reset file loading flag when session changes
   useEffect(() => {
@@ -178,7 +160,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
   useEffect(() => {
     if (sessionUuid && state.currentSession && !hasLoadedInitialFiles.current) {
       hasLoadedInitialFiles.current = true;
-      loadFiles('');
+      loadFiles('').catch(console.error);
     }
   }, [sessionUuid, state.currentSession, loadFiles]);
 
@@ -197,7 +179,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
     }
 
     // File icons based on extension
-    const ext = file.name.split('.').pop()?.toLowerCase();
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
     switch (ext) {
       case 'py':
         return <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
@@ -311,7 +293,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
   const getFileTypeBadge = useCallback((file: FileItem): string | null => {
     if (file.type === 'directory') return null;
 
-    const ext = file.name.split('.').pop()?.toLowerCase();
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
     switch (ext) {
       case 'py': return 'PY';
       case 'js': return 'JS';
@@ -358,7 +340,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
     }
     
     visited.add(basePath);
-    const files = allFiles[basePath] || [];
+    const files = allFiles[basePath] ?? [];
     const items: React.ReactElement[] = [];
     
     files.forEach((file, index) => {
@@ -374,20 +356,24 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                   newSet.delete(file.path);
                 } else {
                   newSet.add(file.path);
-                  loadDirectoryContents(file.path);
+                  loadDirectoryContents(file.path).catch(console.error);
                 }
                 return newSet;
               });
             } else {
               setCurrentFile(file.path);
-              loadFileContent(file.name);
+              // Only read from backend if we don't have it cached (preserves unsaved changes)
+              const isInCache = state.fileContents && file.path in state.fileContents;
+              if (!isInCache) {
+                performFileOperation('read', file.path);
+              }
             }
           }}
           onDoubleClick={() => {
             if (file.type === 'directory') {
               setCurrentDirectory(file.path);
               setExpandedDirs(new Set());
-              loadFiles(file.path, true); // Show errors for user-initiated actions
+              loadFiles(file.path, true).catch(console.error); // Show errors for user-initiated actions
             }
           }}
           className={`flex items-center gap-3 px-3 py-2 cursor-pointer group text-sm transition-all duration-150 ${
@@ -410,7 +396,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                     newSet.delete(file.path);
                   } else {
                     newSet.add(file.path);
-                    loadDirectoryContents(file.path);
+                    loadDirectoryContents(file.path).catch(console.error);
                   }
                   return newSet;
                 });
@@ -445,15 +431,10 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                 onClick={(e) => {
                   e.stopPropagation();
                   if (file.type === 'file' && file.name.endsWith('.py')) {
-                    if (reviewMode && onRunFile) {
-                      // In review mode, use the callback to handle execution output
-                      onRunFile(file.name);
-                    } else {
-                      // Normal mode - use terminal command
-                      const command = `python3 ${file.path}`;
-                      addTerminalLine(command, 'input', command);
-                      sendTerminalCommand(command);
-                    }
+                    // Use terminal command
+                    const command = `python3 ${file.path}`;
+                    addTerminalLine(command, 'input', command);
+                    sendTerminalCommand(command);
                   }
                 }}
                 className="p-1 text-green-400 hover:text-green-300 hover:bg-green-400/20 rounded transition-colors"
@@ -502,20 +483,18 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                 </svg>
               </button>
             )}
-            {!reviewMode && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFileToDelete({ name: file.name, path: file.path });
-                }}
-                className="p-1 text-red-400 hover:text-red-300 hover:bg-red-400/20 rounded transition-colors"
-                title="Delete"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setFileToDelete({ name: file.name, path: file.path });
+              }}
+              className="p-1 text-red-400 hover:text-red-300 hover:bg-red-400/20 rounded transition-colors"
+              title="Delete"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
           </div>
         </div>
       );
@@ -528,7 +507,8 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
     });
     
     return items;
-  }, [allFiles, currentDirectory, expandedDirs, state.currentFile, hasFileUnsavedChanges, state.fileContents, state.fileSavedStates, setCurrentFile, loadFileContent, loadDirectoryContents, getFileIconComponent, getFileTypeBadge, handleDeleteFile, onRunFile, reviewMode, addTerminalLine, sendTerminalCommand]);
+
+  }, [allFiles, currentDirectory, expandedDirs, state.currentFile, hasFileUnsavedChanges, setCurrentFile, performFileOperation, loadDirectoryContents, getFileIconComponent, getFileTypeBadge, addTerminalLine, sendTerminalCommand, loadFiles, state.fileContents]);
 
 
   return (
@@ -542,51 +522,24 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
           </div>
           <div className="flex gap-1">
             <button
-              onClick={() => {
-                hasLoadedInitialFiles.current = false; // Reset the flag to force reload
-                loadFiles(currentDirectory, true); // Show errors for user-initiated refresh
-              }}
-              disabled={loading || !sessionUuid}
-              className={`p-1.5 rounded-md transition-all duration-200 ${
-                loading || !sessionUuid
-                  ? 'text-gray-600 cursor-not-allowed opacity-50'
-                  : 'text-gray-400 hover:text-gray-100 hover:bg-gray-700/60'
-              }`}
-              title={
-                !sessionUuid
-                  ? 'Cannot refresh - No session available'
-                  : loading
-                    ? 'Loading...'
-                    : 'Refresh files'
-              }
+              onClick={() => setShowCreateDialog('file')}
+              className="p-1.5 text-gray-400 hover:text-gray-100 hover:bg-gray-700/60 rounded-md transition-all duration-200"
+              title="New File"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </button>
-            {!reviewMode && (
-              <button
-                onClick={() => setShowCreateDialog('file')}
-                className="p-1.5 text-gray-400 hover:text-gray-100 hover:bg-gray-700/60 rounded-md transition-all duration-200"
-                title="New File"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
-            )}
-            {!reviewMode && (
-              <button
-                onClick={() => alert('Folder creation is temporarily disabled. This feature will be available soon!')}
-                disabled={true}
-                className="p-1.5 text-gray-600 cursor-not-allowed opacity-50 rounded-md transition-all duration-200"
-                title="New Folder (Temporarily Disabled)"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
-              </button>
-            )}
+            <button
+              onClick={() => toast.info('Folder creation is temporarily disabled. This feature will be available soon!')}
+              disabled={true}
+              className="p-1.5 text-gray-600 cursor-not-allowed opacity-50 rounded-md transition-all duration-200"
+              title="New Folder (Temporarily Disabled)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+            </button>
           </div>
         </div>
         
@@ -616,7 +569,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                       <button
                         onClick={() => {
                           setCurrentDirectory(pathSoFar);
-                          loadFiles(pathSoFar, true); // Show errors for user-initiated navigation
+                          loadFiles(pathSoFar, true).catch(console.error); // Show errors for user-initiated navigation
                         }}
                         className="hover:text-white transition-colors px-1 py-0.5 rounded"
                       >
@@ -687,7 +640,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreateItem();
+                if (e.key === 'Enter') handleCreateItem().catch(console.error);
                 if (e.key === 'Escape') {
                   setShowCreateDialog(null);
                   setNewItemName('');
@@ -700,7 +653,7 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
 
             <div className="flex gap-2 mt-4">
               <button
-                onClick={handleCreateItem}
+                onClick={() => { handleCreateItem().catch(console.error); }}
                 disabled={!newItemName.trim()}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
@@ -735,13 +688,13 @@ export function FileExplorer({ onRunFile, reviewMode = false, showRunButtons = f
                   Delete File
                 </h3>
                 <p className="text-gray-300 mb-4">
-                  Are you sure you want to delete <span className="font-semibold text-white">"{fileToDelete.name}"</span>? This action cannot be undone.
+                  Are you sure you want to delete <span className="font-semibold text-white">&quot;{fileToDelete.name}&quot;</span>? This action cannot be undone.
                 </p>
 
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
-                      handleDeleteFile(fileToDelete.name, fileToDelete.path);
+                      handleDeleteFile(fileToDelete.name, fileToDelete.path).catch(console.error);
                       setFileToDelete(null);
                     }}
                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors font-medium"

@@ -35,7 +35,7 @@ docker build -f Dockerfile.backend -t $DOCKER_USERNAME/coding-platform-backend:l
 
 # Build executor image
 echo -e "\n${GREEN}Building executor image...${NC}"
-docker build -f Dockerfile.executor -t $DOCKER_USERNAME/coding-platform-executor:latest .
+docker build -f Dockerfile -t $DOCKER_USERNAME/coding-platform-executor:latest .
 
 # Push backend image
 echo -e "\n${GREEN}Pushing backend image...${NC}"

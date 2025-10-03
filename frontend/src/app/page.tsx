@@ -183,12 +183,12 @@ export default function HomePage() {
       
       // Redirect to dashboard on success
       router.push('/dashboard');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Authentication error:', err);
-      
+
       // Handle specific registration errors
-      if (!isLogin && err?.message) {
-        const errorMessage = err.message.toLowerCase();
+      const errorMessage = err instanceof Error ? err.message.toLowerCase() : '';
+      if (!isLogin && errorMessage) {
         if (errorMessage.includes('username') && errorMessage.includes('already')) {
           setValidationErrors({ username: 'This username is already taken' });
         } else if (errorMessage.includes('email') && errorMessage.includes('already')) {
@@ -302,7 +302,7 @@ export default function HomePage() {
               </div>
 
               {/* Form */}
-              <form className="space-y-4" onSubmit={handleSubmit}>
+              <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); handleSubmit(e).catch(console.error); }}>
                 {error && (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
                     <p className="text-red-400 text-sm">{error}</p>
@@ -310,9 +310,9 @@ export default function HomePage() {
                 )}
 
                 {/* General validation errors */}
-                {validationErrors.general && (
+                {validationErrors['general'] && (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                    <p className="text-red-400 text-sm">{validationErrors.general}</p>
+                    <p className="text-red-400 text-sm">{validationErrors['general']}</p>
                   </div>
                 )}
 
@@ -328,11 +328,11 @@ export default function HomePage() {
                         value={formData.username}
                         onChange={handleInputChange}
                         className={`w-full px-3 py-2 pr-10 bg-gray-800 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 ${
-                          validationErrors.username 
+                          validationErrors['username'] 
                             ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
-                            : realTimeValidation.username === 'valid'
+                            : realTimeValidation['username'] === 'valid'
                             ? 'border-green-500 focus:border-green-500 focus:ring-green-500'
-                            : realTimeValidation.username === 'invalid'
+                            : realTimeValidation['username'] === 'invalid'
                             ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                             : 'border-gray-700 focus:border-blue-500 focus:ring-blue-500'
                         }`}
@@ -340,9 +340,9 @@ export default function HomePage() {
                         required={!isLogin}
                       />
                       {/* Real-time validation indicator */}
-                      {formData.username && realTimeValidation.username !== 'neutral' && (
+                      {formData.username && realTimeValidation['username'] !== 'neutral' && (
                         <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                          {realTimeValidation.username === 'valid' ? (
+                          {realTimeValidation['username'] === 'valid' ? (
                             <span className="text-green-400 text-sm">✓</span>
                           ) : (
                             <span className="text-red-400 text-sm">✗</span>
@@ -350,8 +350,8 @@ export default function HomePage() {
                         </div>
                       )}
                     </div>
-                    {validationErrors.username && (
-                      <p className="text-red-400 text-xs mt-1">{validationErrors.username}</p>
+                    {validationErrors['username'] && (
+                      <p className="text-red-400 text-xs mt-1">{validationErrors['username']}</p>
                     )}
                   </div>
                 )}
@@ -369,11 +369,11 @@ export default function HomePage() {
                       className={`w-full px-3 py-2 pr-10 bg-gray-800 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 ${
                         isLogin 
                           ? 'border-gray-700 focus:border-blue-500 focus:ring-blue-500'
-                          : (!isLogin && validationErrors.email) 
+                          : (!isLogin && validationErrors['email']) 
                             ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
-                            : realTimeValidation.email === 'valid'
+                            : realTimeValidation['email'] === 'valid'
                             ? 'border-green-500 focus:border-green-500 focus:ring-green-500'
-                            : realTimeValidation.email === 'invalid'
+                            : realTimeValidation['email'] === 'invalid'
                             ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                             : 'border-gray-700 focus:border-blue-500 focus:ring-blue-500'
                       }`}
@@ -381,9 +381,9 @@ export default function HomePage() {
                       required
                     />
                     {/* Real-time validation indicator - show only for signup */}
-                    {!isLogin && formData.email && realTimeValidation.email !== 'neutral' && (
+                    {!isLogin && formData.email && realTimeValidation['email'] !== 'neutral' && (
                       <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                        {realTimeValidation.email === 'valid' ? (
+                        {realTimeValidation['email'] === 'valid' ? (
                           <span className="text-green-400 text-sm">✓</span>
                         ) : (
                           <span className="text-red-400 text-sm">✗</span>
@@ -391,8 +391,8 @@ export default function HomePage() {
                       </div>
                     )}
                   </div>
-                  {!isLogin && validationErrors.email && (
-                    <p className="text-red-400 text-xs mt-1">{validationErrors.email}</p>
+                  {!isLogin && validationErrors['email'] && (
+                    <p className="text-red-400 text-xs mt-1">{validationErrors['email']}</p>
                   )}
                 </div>
                 
@@ -409,11 +409,11 @@ export default function HomePage() {
                       className={`w-full px-3 py-2 pr-10 bg-gray-800 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 ${
                         isLogin 
                           ? 'border-gray-700 focus:border-blue-500 focus:ring-blue-500'
-                          : validationErrors.password 
+                          : validationErrors['password'] 
                             ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
-                            : realTimeValidation.password === 'valid'
+                            : realTimeValidation['password'] === 'valid'
                             ? 'border-green-500 focus:border-green-500 focus:ring-green-500'
-                            : realTimeValidation.password === 'invalid'
+                            : realTimeValidation['password'] === 'invalid'
                             ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                             : 'border-gray-700 focus:border-blue-500 focus:ring-blue-500'
                       }`}
@@ -421,9 +421,9 @@ export default function HomePage() {
                       required
                     />
                     {/* Real-time validation indicator - show only for signup */}
-                    {!isLogin && formData.password && realTimeValidation.password !== 'neutral' && (
+                    {!isLogin && formData.password && realTimeValidation['password'] !== 'neutral' && (
                       <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                        {realTimeValidation.password === 'valid' ? (
+                        {realTimeValidation['password'] === 'valid' ? (
                           <span className="text-green-400 text-sm">✓</span>
                         ) : (
                           <span className="text-red-400 text-sm">✗</span>
@@ -431,12 +431,12 @@ export default function HomePage() {
                       </div>
                     )}
                   </div>
-                  {!isLogin && validationErrors.password && (
-                    <p className="text-red-400 text-xs mt-1">{validationErrors.password}</p>
+                  {!isLogin && validationErrors['password'] && (
+                    <p className="text-red-400 text-xs mt-1">{validationErrors['password']}</p>
                   )}
-                  {!isLogin && !validationErrors.password && (
+                  {!isLogin && !validationErrors['password'] && (
                     <div className="mt-2">
-                      {formData.password && realTimeValidation.password === 'invalid' ? (
+                      {formData.password && realTimeValidation['password'] === 'invalid' ? (
                         <div className="space-y-1">
                           <p className="text-gray-500 text-xs">Password requirements:</p>
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
@@ -493,11 +493,11 @@ export default function HomePage() {
                         value={formData.confirmPassword}
                         onChange={handleInputChange}
                         className={`w-full px-3 py-2 pr-10 bg-gray-800 border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 ${
-                          validationErrors.confirmPassword 
+                          validationErrors['confirmPassword'] 
                             ? 'border-red-500 focus:border-red-500 focus:ring-red-500' 
-                            : realTimeValidation.confirmPassword === 'valid'
+                            : realTimeValidation['confirmPassword'] === 'valid'
                             ? 'border-green-500 focus:border-green-500 focus:ring-green-500'
-                            : realTimeValidation.confirmPassword === 'invalid'
+                            : realTimeValidation['confirmPassword'] === 'invalid'
                             ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
                             : 'border-gray-700 focus:border-blue-500 focus:ring-blue-500'
                         }`}
@@ -505,9 +505,9 @@ export default function HomePage() {
                         required={!isLogin}
                       />
                       {/* Real-time validation indicator */}
-                      {formData.confirmPassword && realTimeValidation.confirmPassword !== 'neutral' && (
+                      {formData.confirmPassword && realTimeValidation['confirmPassword'] !== 'neutral' && (
                         <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                          {realTimeValidation.confirmPassword === 'valid' ? (
+                          {realTimeValidation['confirmPassword'] === 'valid' ? (
                             <span className="text-green-400 text-sm">✓</span>
                           ) : (
                             <span className="text-red-400 text-sm">✗</span>
@@ -515,8 +515,8 @@ export default function HomePage() {
                         </div>
                       )}
                     </div>
-                    {validationErrors.confirmPassword && (
-                      <p className="text-red-400 text-xs mt-1">{validationErrors.confirmPassword}</p>
+                    {validationErrors['confirmPassword'] && (
+                      <p className="text-red-400 text-xs mt-1">{validationErrors['confirmPassword']}</p>
                     )}
                   </div>
                 )}

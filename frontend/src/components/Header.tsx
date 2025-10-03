@@ -1,27 +1,17 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, JSX } from 'react';
 import { useApp } from '../contexts/AppContext';
-import { useAuth, useUserId } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { apiService } from '../services/api';
 import { Auth } from './Auth';
 import WorkspaceShutdownLoader from './WorkspaceShutdownLoader';
 import { useRouter, usePathname } from 'next/navigation';
 
-interface HeaderProps {
-  reviewStatus?: {
-    isUnderReview: boolean;
-    isReviewer?: boolean;
-    reviewRequest?: any;
-  };
-  onReviewStatusChange?: () => void;
-}
-
-export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {}): JSX.Element {
-  const { state, setSession, setLoading, setError, setCurrentFile, resetAllState, addTerminalLine } = useApp();
+export function Header(): JSX.Element {
+  const { state, setError, resetAllState, addTerminalLine } = useApp();
   const { user, isAuthenticated, logout } = useAuth();
-  const userId = useUserId();
   const { isConnected, manualSave, sendTerminalCommand } = useWebSocket();
   const [showAuth, setShowAuth] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -48,6 +38,12 @@ export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {})
 
     // Determine the command based on file extension
     const extension = state.currentFile.split('.').pop()?.toLowerCase();
+
+    if (!extension) {
+      console.warn('Could not determine file extension');
+      return;
+    }
+
     let command = '';
 
     switch (extension) {
@@ -160,27 +156,25 @@ export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {})
               {/* Navigation Buttons */}
               {isAuthenticated && (
                 <div className="flex items-center space-x-2">
-                  {(pathname?.startsWith('/workspace/') || pathname?.startsWith('/reviews') || pathname?.startsWith('/review/')) && (
+                  {pathname?.startsWith('/workspace/') && (
                     <button
-                      onClick={pathname?.startsWith('/workspace/') ? handleWorkspaceShutdown : () => router.push(pathname?.startsWith('/review/') ? '/reviews' : '/dashboard')}
+                      onClick={() => { handleWorkspaceShutdown().catch(console.error); }}
                       disabled={isShuttingDown}
                       className="px-3 py-1.5 text-sm font-medium bg-gray-700 hover:bg-gray-600 text-gray-200 hover:text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {isShuttingDown ? 'Shutting down...' : pathname?.startsWith('/review/') ? '← Reviews' : '← Dashboard'}
+                      {isShuttingDown ? 'Shutting down...' : '← Dashboard'}
                     </button>
                   )}
                 </div>
               )}
             </div>
-            
-            {!pathname?.startsWith('/reviews') && !pathname?.startsWith('/review/') && (
-              <div className="flex items-center space-x-3 bg-gray-700/50 px-3 py-1.5 rounded-lg">
-                <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-red-400 shadow-sm shadow-red-400/50'}`} />
-                <span className={`text-sm font-medium ${isConnected ? 'text-emerald-300' : 'text-red-300'}`}>
-                  {isConnected ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
-            )}
+
+            <div className="flex items-center space-x-3 bg-gray-700/50 px-3 py-1.5 rounded-lg">
+              <div className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-red-400 shadow-sm shadow-red-400/50'}`} />
+              <span className={`text-sm font-medium ${isConnected ? 'text-emerald-300' : 'text-red-300'}`}>
+                {isConnected ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
             
             {state.currentSession && (
               <div className="bg-blue-500/20 px-3 py-1.5 rounded-lg border border-blue-400/30">
@@ -247,17 +241,17 @@ export function Header({ reviewStatus, onReviewStatusChange }: HeaderProps = {})
               </button>
             )}
 
-            {/* Save Button - only show in workspace for non-reviewers */}
-            {pathname?.startsWith('/workspace/') && (reviewStatus === undefined || !reviewStatus?.isReviewer) && (
+            {/* Save Button - only show in workspace */}
+            {pathname?.startsWith('/workspace/') && (
               <button
                 onClick={handleSave}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm ${
-                  state.isAutosaveEnabled || !state.hasUnsavedChanges || !state.currentFile
+                  !state.hasUnsavedChanges || !state.currentFile
                     ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
                     : 'bg-gray-600 hover:bg-gray-500 active:bg-gray-700 text-white'
                 }`}
-                disabled={state.isAutosaveEnabled || !state.hasUnsavedChanges || !state.currentFile || state.isLoading}
-                title={state.isAutosaveEnabled ? 'Autosave is enabled' : 'Save file (Ctrl+S)'}
+                disabled={!state.hasUnsavedChanges || !state.currentFile || state.isLoading}
+                title={'Save file (Ctrl+S)'}
               >
                 💾 Save
               </button>

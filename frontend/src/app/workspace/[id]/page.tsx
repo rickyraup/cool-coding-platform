@@ -5,9 +5,9 @@ import { Terminal } from '../../../components/Terminal';
 import { Header } from '../../../components/Header';
 import { FileExplorer } from '../../../components/FileExplorer';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { useEffect, useState, use, useCallback } from 'react';
+import { useEffect, useState, use } from 'react';
 import { useApp } from '../../../contexts/AppContext';
-import { apiService, type ReviewRequest } from '../../../services/api';
+import { apiService } from '../../../services/api';
 import { getWorkspaceFiles, getFileContent, getWorkspaceStatus, ensureDefaultFiles } from '../../../services/workspaceApi';
 import WorkspaceStartupLoader from '../../../components/WorkspaceStartupLoader';
 import { useAuth, useUserId } from '../../../contexts/AuthContext';
@@ -19,7 +19,7 @@ interface WorkspacePageProps {
 
 export default function WorkspacePage({ params: paramsPromise }: WorkspacePageProps) {
   const params = use(paramsPromise);
-  const { state, setSession, setLoading, updateCode, setCurrentFile, setFiles, clearTerminal, setFileContent } = useApp();
+  const { state, setSession, setLoading, setCurrentFile, setFiles, clearTerminal, setFileContent } = useApp();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const userId = useUserId();
   const router = useRouter();
@@ -27,7 +27,6 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
   const [fastLoading, setFastLoading] = useState(false); // Show content as soon as session loads
   const [workspaceInitialized, setWorkspaceInitialized] = useState(false);
   const [showStartupLoader, setShowStartupLoader] = useState(true);
-  const [reviewStatus, setReviewStatus] = useState<{ isUnderReview: boolean; reviewRequest?: ReviewRequest; isReviewer?: boolean }>({ isUnderReview: false });
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -83,10 +82,10 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
 
             // Use exponential backoff: start with 1s, then 2s, then 3s, max 5s
             const delay = Math.min(1000 + (pollCount * 500), 5000);
-            setTimeout(poll, delay);
+            setTimeout(() => { poll().catch(console.error); }, delay);
           };
 
-          setTimeout(poll, 1000);
+          setTimeout(() => { poll().catch(console.error); }, 1000);
         }
       } catch (error) {
         console.error('Failed to check workspace status:', error);
@@ -95,28 +94,28 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
       }
     };
 
-    checkWorkspaceStatus();
+    checkWorkspaceStatus().catch(console.error);
   }, [params.id, isAuthenticated, authLoading, userId]);
 
   // Load session data
   useEffect(() => {
     const loadSession = async () => {
       if (!isAuthenticated || authLoading || !userId || !workspaceInitialized) return;
-      
+
       try {
         setLoading(true);
         setSessionLoadError(null);
-        
+
         // Clear terminal state when loading a new workspace
         // This ensures each workspace starts with a fresh terminal
         clearTerminal();
-        
+
         // Use session UUID directly (no parsing needed)
         const sessionUuid = params.id;
         if (!sessionUuid || sessionUuid.trim() === '') {
           throw new Error(`Invalid session UUID: ${params.id}`);
         }
-        
+
         // Load session metadata from API
         const sessionResponse = await apiService.getSession(sessionUuid, userId);
 
@@ -138,11 +137,7 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
         try {
 
           // Get all files in workspace
-          let files = await getWorkspaceFiles(sessionUuid);
-
-          // Note: Default file creation is handled by the backend automatically
-          if (files.length === 0) {
-          }
+          const files = await getWorkspaceFiles(sessionUuid);
 
           // Set files in context
           setFiles(files);
@@ -150,15 +145,11 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
           // Auto-select main.py if it exists
           const mainFile = files.find(file => file.name === 'main.py');
           if (mainFile) {
-            // Load main.py content only if we don't have it in context already
-            if (!state.code || state.code.trim() === '') {
-              const fileContent = await getFileContent(sessionUuid, mainFile.name);
-              // Use setFileContent to mark as saved and prevent false "unsaved changes"
-              setFileContent(fileContent.path, fileContent.content);
-              setCurrentFile(fileContent.path);
-            } else {
-              setCurrentFile(mainFile.path);
-            }
+            // Always load main.py content from the backend
+            const fileContent = await getFileContent(sessionUuid, mainFile.name);
+            // Use setFileContent to mark as saved and prevent false "unsaved changes"
+            setFileContent(fileContent.path, fileContent.content);
+            setCurrentFile(fileContent.path);
           }
 
         } catch (fileError) {
@@ -168,7 +159,7 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
 
         setFastLoading(true); // Enable fast loading to show UI immediately
 
-        
+
       } catch (error) {
         console.error('Failed to load session:', error);
         setSessionLoadError(error instanceof Error ? error.message : 'Failed to load workspace');
@@ -177,27 +168,9 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
       }
     };
 
-    loadSession();
-  }, [params.id, isAuthenticated, authLoading, userId, workspaceInitialized, clearTerminal]); // clearTerminal is stable from useCallback
+    loadSession().catch(console.error);
 
-  // Load review status for this session (for UI control only, not reviewer functionality)
-  const loadReviewStatus = useCallback(async () => {
-    if (!isAuthenticated || authLoading || !params.id) return;
-
-    try {
-      const status = await apiService.getReviewStatusForSession(params.id);
-      setReviewStatus(status);
-    } catch (error) {
-      console.error('Failed to load review status:', error);
-      // Don't show error for review status loading - it's optional
-    }
-  }, [params.id, isAuthenticated, authLoading]);
-
-  useEffect(() => {
-    loadReviewStatus();
-  }, [loadReviewStatus]);
-
-
+  }, [params.id, isAuthenticated, authLoading, userId, workspaceInitialized, clearTerminal, setLoading, setSession, setFiles, setFileContent, setCurrentFile]);
 
   // Show startup loader while workspace is initializing
   if (showStartupLoader) {
@@ -241,7 +214,7 @@ export default function WorkspacePage({ params: paramsPromise }: WorkspacePagePr
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-900 text-white overflow-hidden">
-      <Header reviewStatus={reviewStatus} onReviewStatusChange={loadReviewStatus} />
+      <Header />
 
 
       <div className="flex-1 overflow-hidden">

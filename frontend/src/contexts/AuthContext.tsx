@@ -40,8 +40,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
           const userData = JSON.parse(storedUser);
           setUser(userData);
         }
-      } catch (error) {
-        console.error('Failed to load stored user:', error);
+      } catch (err) {
+        console.error('Failed to load stored user:', err);
         // Clear invalid stored data
         localStorage.removeItem('user');
         localStorage.removeItem('userId');
@@ -69,10 +69,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
       
       return response;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Login failed';
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Login failed';
       setError(errorMessage);
-      throw error;
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -94,10 +94,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
       
       return response;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Registration failed';
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Registration failed';
       setError(errorMessage);
-      throw error;
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -145,23 +145,6 @@ export function useAuth(): AuthContextType {
 // Helper hook to get current user ID
 export function useUserId(): number | null {
   const { user } = useAuth();
-  return user?.id || null;
+  return user?.id ?? null;
 }
 
-// Helper hook for protected routes
-export function useRequireAuth(): User {
-  const { user, isAuthenticated, isLoading } = useAuth();
-  
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      // Redirect to login page or show login modal
-      console.warn('User not authenticated');
-    }
-  }, [isAuthenticated, isLoading]);
-
-  if (!user) {
-    throw new Error('User not authenticated');
-  }
-
-  return user;
-}

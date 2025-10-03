@@ -127,15 +127,15 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
         : state.fileContents;
 
       // Load content for new file if available in cache
-      const newFileContent = updatedFileContents[action.payload || ''] || '';
+      const newFileContent = updatedFileContents[action.payload ?? ''] ?? '';
 
       return {
         ...state,
         fileContents: updatedFileContents,
         currentFile: action.payload,
         code: newFileContent,
-        hasUnsavedChanges: newFileContent !== (state.fileSavedStates[action.payload || ''] || ''),
-        lastSavedCode: state.fileSavedStates[action.payload || ''] || '',
+        hasUnsavedChanges: newFileContent !== (state.fileSavedStates[action.payload ?? ''] ?? ''),
+        lastSavedCode: state.fileSavedStates[action.payload ?? ''] ?? '',
       };
     
     case 'SET_CONNECTED':
@@ -246,7 +246,7 @@ interface AppContextType {
   // Actions
   setSession: (session: CodeSession | null) => void;
   updateCode: (code: string) => void;
-  addTerminalLine: (content: string, type: 'input' | 'output' | 'error', command?: string) => void;
+  addTerminalLine: (content: string, type: 'input' | 'output' | 'error' | 'clear_progress' | 'pod_ready', command?: string) => void;
   clearTerminal: () => void;
   setFiles: (files: FileItem[]) => void;
   setCurrentFile: (path: string | null) => void;
@@ -285,7 +285,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'UPDATE_CODE', payload: code });
     }, []),
     
-    addTerminalLine: useCallback((content: string, type: 'input' | 'output' | 'error', command?: string) => {
+    addTerminalLine: useCallback((content: string, type: 'input' | 'output' | 'error' | 'clear_progress' | 'pod_ready', command?: string) => {
       const line: TerminalLine = {
         id: Date.now().toString() + Math.random().toString(36).substring(2),
         content,
@@ -353,7 +353,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (currentContent === undefined) return false;
 
       // Compare with saved state (undefined saved state means never saved, so it has changes if there's content)
-      return currentContent !== (savedContent || '');
+      return currentContent !== (savedContent ?? '');
     }, [state.fileContents, state.fileSavedStates]),
   };
 
