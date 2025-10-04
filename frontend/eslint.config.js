@@ -46,48 +46,49 @@ export default [
         },
 
         rules: {
-            // TypeScript Rules - Relaxed for deployment
-            "@typescript-eslint/no-explicit-any": "warn",
-            "@typescript-eslint/prefer-nullish-coalescing": "warn",
-            "@typescript-eslint/prefer-optional-chain": "warn",
-            "@typescript-eslint/no-non-null-assertion": "warn",
+            // TypeScript Rules - Strict Configuration
+            "@typescript-eslint/no-explicit-any": "error",
+            "@typescript-eslint/prefer-nullish-coalescing": "error",
+            "@typescript-eslint/prefer-optional-chain": "error",
+            "@typescript-eslint/no-non-null-assertion": "error",
             "@typescript-eslint/no-unnecessary-condition": "off",
-            "@typescript-eslint/no-unnecessary-type-assertion": "warn",
+            "@typescript-eslint/no-unnecessary-type-assertion": "error",
             "@typescript-eslint/prefer-readonly": "off",
             "@typescript-eslint/require-array-sort-compare": "off",
-            "@typescript-eslint/switch-exhaustiveness-check": "warn",
+            "@typescript-eslint/switch-exhaustiveness-check": "error",
             "@typescript-eslint/consistent-type-definitions": "off",
             "@typescript-eslint/consistent-type-imports": "off",
             "@typescript-eslint/no-import-type-side-effects": "off",
-            "@typescript-eslint/no-unused-vars": ["warn", {
+            "@typescript-eslint/no-unused-vars": ["error", {
                 argsIgnorePattern: "^_",
                 varsIgnorePattern: "^_",
                 caughtErrorsIgnorePattern: "^_"
             }],
-            "@typescript-eslint/no-shadow": "warn",
-            "@typescript-eslint/no-use-before-define": "warn",
-            "@typescript-eslint/prefer-as-const": "warn",
+            "@typescript-eslint/no-shadow": "error",
+            "@typescript-eslint/no-use-before-define": "error",
+            "@typescript-eslint/prefer-as-const": "error",
             "@typescript-eslint/explicit-function-return-type": "off",
             "@typescript-eslint/explicit-module-boundary-types": "off",
-            "@typescript-eslint/no-floating-promises": "warn",
-            "@typescript-eslint/await-thenable": "warn",
-            "@typescript-eslint/no-misused-promises": "warn",
+            "@typescript-eslint/no-floating-promises": "error",
+            "@typescript-eslint/await-thenable": "error",
+            "@typescript-eslint/no-misused-promises": "error",
 
             // Disable conflicting base ESLint rules
             "no-unused-vars": "off",
-            "no-shadow": "off", 
+            "no-shadow": "off",
             "no-use-before-define": "off",
 
+            // React Hooks
+            "react-hooks/exhaustive-deps": "warn",
+
             // General Code Quality
-            "complexity": ["warn", 20],
-            "max-depth": ["warn", 6],
-            "max-lines": ["warn", 800],
-            "max-lines-per-function": ["warn", 150],
-            "max-nested-callbacks": ["warn", 5],
-            "max-params": ["warn", 6],
+            "max-depth": ["error", 6],
+            "max-lines": ["error", 800],
+            "max-nested-callbacks": ["error", 5],
+            "max-params": ["error", 6],
             "no-console": "off",
             "no-debugger": "error",
-            "no-alert": "warn",
+            "no-alert": "error",
             "no-eval": "error",
             "no-implied-eval": "error",
             "no-new-func": "error",

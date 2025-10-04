@@ -1,19 +1,80 @@
 """Clean API for workspace file management - per UUID session."""
 
 import os
-import glob
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
 
-from app.models.postgres_models import CodeSession, WorkspaceItem
-
+from app.models.sessions import CodeSession
+from app.models.workspace_items import WorkspaceItem
+from app.schemas import FileContentRequest, FileContentResponse, FileResponse
 
 router = APIRouter()
 
 
-def sync_file_to_filesystem(session_uuid: str, filename: str, content: str, verbose: bool = False) -> bool:
-    """Sync a file from database to filesystem for Docker container access."""
+def sync_file_to_pod(session_uuid: str, filename: str, content: str) -> bool:
+    """Sync a single file to the Kubernetes pod's /app directory."""
+    try:
+        # Import here to avoid circular imports
+        import io
+        import tarfile
+
+        from kubernetes.stream import stream
+
+        from app.services.container_manager import container_manager
+        from app.services.kubernetes_client import kubernetes_client_service
+
+        # Find the active container session
+        session_id = container_manager.find_session_by_workspace_id(session_uuid)
+        if not session_id or session_id not in container_manager.active_sessions:
+            # No active container, file will be synced when container starts
+            return True
+
+        container_session = container_manager.active_sessions[session_id]
+        pod_name = container_session.pod_name
+
+        # Create a tar archive containing just this file
+        tar_buffer = io.BytesIO()
+        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+            file_info = tarfile.TarInfo(name=filename)
+            file_info.size = len(content.encode("utf-8"))
+            tar.addfile(file_info, io.BytesIO(content.encode("utf-8")))
+
+        tar_buffer.seek(0)
+        tar_data = tar_buffer.read()
+
+        # Copy the file to the pod's /app directory
+        exec_command = ["tar", "xf", "-", "-C", "/app"]
+
+        resp = stream(
+            kubernetes_client_service.core_v1_api.connect_get_namespaced_pod_exec,
+            pod_name,
+            kubernetes_client_service._namespace,
+            command=exec_command,
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=False,
+            _preload_content=False,
+        )
+
+        # Send the tar data to the pod
+        resp.write_stdin(tar_data)
+        resp.close()
+
+        return True
+
+    except Exception:
+        return False
+
+
+def sync_file_to_filesystem(
+    session_uuid: str,
+    filename: str,
+    content: str,
+    verbose: bool = False,
+) -> bool:
+    """Sync a file from database to filesystem for Kubernetes pod access."""
     try:
         # Use ONE consistent directory per workspace UUID
         sessions_dir = "/tmp/coding_platform_sessions"
@@ -30,45 +91,23 @@ def sync_file_to_filesystem(session_uuid: str, filename: str, content: str, verb
 
         # Check if file already exists with same content to avoid unnecessary writes
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding="utf-8") as f:
                 existing_content = f.read()
                 if existing_content == content:
-                    if verbose:
-                        print(f"⚡ Skipped sync for {filename} (content unchanged)")
                     return True
-        except (FileNotFoundError, IOError):
+        except (OSError, FileNotFoundError):
             # File doesn't exist or can't be read, continue with write
             pass
 
-        if verbose:
-            print(f"🔄 Starting sync for {filename} in session {session_uuid}")
-            print(f"📝 Content length: {len(content)} characters")
-
         # Write content to file with explicit flush and sync
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
             f.flush()  # Force write to OS buffer
             os.fsync(f.fileno())  # Force OS to write to disk
 
-        # Verify the file was written correctly (but only if verbose)
-        if verbose:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                written_content = f.read()
-                if written_content == content:
-                    print(f"✅ Synced file to workspace directory: {file_path}")
-                    print(f"📄 Verified content: {len(written_content)} characters")
-                else:
-                    print(f"❌ Content verification failed for {file_path}")
-                    print(f"Expected {len(content)} characters, got {len(written_content)}")
-                    return False
-
         return True
 
-    except Exception as e:
-        if verbose:
-            print(f"❌ Failed to sync file to filesystem: {str(e)}")
-            import traceback
-            traceback.print_exc()
+    except Exception:
         return False
 
 
@@ -77,7 +116,7 @@ def sync_all_files_to_filesystem(session_uuid: str, verbose: bool = False) -> bo
     try:
         # Get session
         session = CodeSession.get_by_uuid(session_uuid)
-        if not session:
+        if not session or session.id is None:
             return False
 
         # Get all workspace items
@@ -102,55 +141,34 @@ def sync_all_files_to_filesystem(session_uuid: str, verbose: bool = False) -> bo
                 # Use item.content or empty string to ensure empty files are properly synced
                 content = item.content or ""
                 # Only use verbose logging for individual file sync operations if explicitly requested
-                if sync_file_to_filesystem(session_uuid, item.name, content, verbose=False):
+                if sync_file_to_filesystem(
+                    session_uuid,
+                    item.name,
+                    content,
+                    verbose=False,
+                ):
                     total_synced += 1
                 else:
                     skipped_count += 1
 
-        if verbose or file_count > 0:
-            print(f"✅ Synced {total_synced} files to workspace directory for session {session_uuid}")
-            if skipped_count > 0:
-                print(f"   ⚡ Skipped {skipped_count} files (content unchanged)")
-            print(f"   Directory: {os.path.basename(workspace_dir)}")
-
         return total_synced > 0
 
-    except Exception as e:
-        if verbose:
-            print(f"❌ Failed to sync files to filesystem: {str(e)}")
+    except Exception:
         return False
 
 
-class FileContentRequest(BaseModel):
-    """Request model for saving file content."""
-    content: str
-
-
-class FileResponse(BaseModel):
-    """Response model for file data."""
-    name: str
-    type: str  # 'file' or 'directory'
-    path: str
-
-
-class FileContentResponse(BaseModel):
-    """Response model for file content."""
-    name: str
-    path: str
-    content: str
-
-
-@router.get("/{session_uuid}/files", response_model=List[FileResponse])
-async def get_workspace_files(session_uuid: str) -> List[FileResponse]:
+@router.get("/{session_uuid}/files")
+async def get_workspace_files(session_uuid: str) -> list[FileResponse]:
     """Get all files in a workspace by session UUID."""
     try:
         # Get session by UUID
         session = CodeSession.get_by_uuid(session_uuid)
-        if not session:
+        if not session or session.id is None:
             # New workspace - return empty list (no files yet)
             return []
 
         # Get all workspace items for this session
+        assert session.id is not None
         workspace_items = WorkspaceItem.get_all_by_session(session.id)
 
         # Only sync files to filesystem when workspace switching or first load (not on every API call)
@@ -159,31 +177,33 @@ async def get_workspace_files(session_uuid: str) -> List[FileResponse]:
         # Convert to response format
         files = []
         for item in workspace_items:
-            files.append(FileResponse(
-                name=item.name,
-                type=item.type,  # 'file' or 'folder'
-                path=item.get_full_path()
-            ))
+            files.append(
+                FileResponse(
+                    name=item.name,
+                    type=item.type,  # 'file' or 'folder'
+                    path=item.get_full_path(),
+                ),
+            )
 
         return files
 
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch workspace files: {str(e)}"
+            detail=f"Failed to fetch workspace files: {e!s}",
         )
 
 
-@router.get("/{session_uuid}/file/{filename:path}", response_model=FileContentResponse)
+@router.get("/{session_uuid}/file/{filename:path}")
 async def get_file_content(session_uuid: str, filename: str) -> FileContentResponse:
     """Get content of a specific file by session UUID and filename."""
     try:
         # Get session by UUID
         session = CodeSession.get_by_uuid(session_uuid)
-        if not session:
+        if not session or session.id is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Session {session_uuid} not found"
+                detail=f"Session {session_uuid} not found",
             )
 
         # Find the specific file
@@ -198,13 +218,13 @@ async def get_file_content(session_uuid: str, filename: str) -> FileContentRespo
         if not file_item:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"File {filename} not found in workspace"
+                detail=f"File {filename} not found in workspace",
             )
 
         return FileContentResponse(
             name=file_item.name,
             path=file_item.get_full_path(),
-            content=file_item.content or ""
+            content=file_item.content or "",
         )
 
     except HTTPException:
@@ -212,7 +232,7 @@ async def get_file_content(session_uuid: str, filename: str) -> FileContentRespo
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch file content: {str(e)}"
+            detail=f"Failed to fetch file content: {e!s}",
         )
 
 
@@ -220,16 +240,16 @@ async def get_file_content(session_uuid: str, filename: str) -> FileContentRespo
 async def save_file_content(
     session_uuid: str,
     filename: str,
-    request: FileContentRequest
-) -> Dict[str, Any]:
+    request: FileContentRequest,
+) -> dict[str, Any]:
     """Save content to a specific file by session UUID and filename."""
     try:
         # Get or create session by UUID
         session = CodeSession.get_by_uuid(session_uuid)
-        if not session:
+        if not session or session.id is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Session {session_uuid} not found"
+                detail=f"Session {session_uuid} not found",
             )
 
         # Get existing workspace items
@@ -248,17 +268,18 @@ async def save_file_content(
             if not success:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to update file content"
+                    detail="Failed to update file content",
                 )
             action = "updated"
         else:
             # Create new file
+            assert session.id is not None
             file_item = WorkspaceItem.create(
                 session_id=session.id,
                 parent_id=None,  # Root level
                 name=filename,
                 item_type="file",
-                content=request.content
+                content=request.content,
             )
             action = "created"
 
@@ -267,13 +288,16 @@ async def save_file_content(
         actual_content = file_item.content or ""
         sync_file_to_filesystem(session_uuid, filename, actual_content)
 
+        # Also sync the file directly to the pod's /app directory so it appears in ls
+        sync_file_to_pod(session_uuid, filename, actual_content)
+
         return {
             "message": f"File {filename} {action} successfully",
             "file": {
                 "name": file_item.name,
                 "path": file_item.get_full_path(),
-                "content": file_item.content
-            }
+                "content": file_item.content,
+            },
         }
 
     except HTTPException:
@@ -281,20 +305,20 @@ async def save_file_content(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save file: {str(e)}"
+            detail=f"Failed to save file: {e!s}",
         )
 
 
 @router.delete("/{session_uuid}/file/{filename:path}")
-async def delete_file(session_uuid: str, filename: str) -> Dict[str, str]:
+async def delete_file(session_uuid: str, filename: str) -> dict[str, str]:
     """Delete a specific file by session UUID and filename."""
     try:
         # Get session by UUID
         session = CodeSession.get_by_uuid(session_uuid)
-        if not session:
+        if not session or session.id is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Session {session_uuid} not found"
+                detail=f"Session {session_uuid} not found",
             )
 
         # Find and delete the file
@@ -309,10 +333,36 @@ async def delete_file(session_uuid: str, filename: str) -> Dict[str, str]:
         if not file_item:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"File {filename} not found in workspace"
+                detail=f"File {filename} not found in workspace",
             )
 
+        # Delete from database
         file_item.delete()
+
+        # Also delete from pod using rm command to keep things in sync
+        try:
+            from app.services.container_manager import container_manager
+
+            session_id = container_manager.find_session_by_workspace_id(session_uuid)
+            if session_id and session_id in container_manager.active_sessions:
+                # Execute rm command in the pod
+                await container_manager.execute_command(
+                    session_id,
+                    f"rm -f /app/{filename}",
+                )
+        except Exception:
+            # Don't raise - database deletion is the source of truth
+            pass
+
+        # Delete from filesystem
+        try:
+            sessions_dir = "/tmp/coding_platform_sessions"
+            workspace_dir = os.path.join(sessions_dir, f"workspace_{session_uuid}")
+            file_path = os.path.join(workspace_dir, filename)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception:
+            pass
 
         return {"message": f"File {filename} deleted successfully"}
 
@@ -321,24 +371,25 @@ async def delete_file(session_uuid: str, filename: str) -> Dict[str, str]:
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete file: {str(e)}"
+            detail=f"Failed to delete file: {e!s}",
         )
 
 
 @router.get("/{session_uuid}/status")
-async def get_workspace_status(session_uuid: str) -> Dict[str, Any]:
+async def get_workspace_status(session_uuid: str) -> dict[str, Any]:
     """Get workspace initialization status."""
     try:
         # Get session by UUID
         session = CodeSession.get_by_uuid(session_uuid)
-        if not session:
+        if not session or session.id is None:
             return {
                 "status": "not_found",
                 "message": "Session not found",
-                "initialized": False
+                "initialized": False,
             }
 
         # Check if workspace items exist
+        assert session.id is not None
         workspace_items = WorkspaceItem.get_all_by_session(session.id)
 
         # Check if filesystem is synced
@@ -348,63 +399,60 @@ async def get_workspace_status(session_uuid: str) -> Dict[str, Any]:
 
         # Check if container exists and is running
         from app.services.container_manager import container_manager
-        container_session = None
+
         container_ready = False
 
         # Look for existing container session
-        session_id_in_manager = container_manager.find_session_by_workspace_id(session_uuid)
-        if session_id_in_manager and session_id_in_manager in container_manager.active_sessions:
-            container_session = container_manager.active_sessions[session_id_in_manager]
-            try:
-                container_session.container.reload()
-                container_ready = container_session.container.status == "running"
-            except Exception:
-                container_ready = False
+        session_id_in_manager = container_manager.find_session_by_workspace_id(
+            session_uuid,
+        )
+        if (
+            session_id_in_manager
+            and session_id_in_manager in container_manager.active_sessions
+        ):
+            # Check if pod is ready using the container manager method
+            container_ready = container_manager.is_pod_ready(session_id_in_manager)
 
         if not workspace_items:
             # If no workspace items exist, we need to initialize
             if not container_ready:
                 # Trigger container creation (this will also create default files)
                 try:
-                    container_session = await container_manager.get_or_create_session(session_uuid)
+                    await container_manager.get_or_create_session(
+                        session_uuid,
+                    )
                     container_ready = True
                     return {
                         "status": "initializing",
                         "message": "Container created, initializing workspace...",
                         "initialized": False,
-                        "filesystem_synced": True
+                        "filesystem_synced": True,
                     }
                 except Exception as e:
                     return {
                         "status": "error",
-                        "message": f"Failed to create container: {str(e)}",
-                        "initialized": False
+                        "message": f"Failed to create container: {e!s}",
+                        "initialized": False,
                     }
             else:
                 return {
                     "status": "empty",
                     "message": "Workspace has no files, need to initialize",
                     "initialized": False,
-                    "filesystem_synced": filesystem_exists
+                    "filesystem_synced": filesystem_exists,
                 }
 
-        # If workspace items exist but container doesn't, create container
+        # If workspace items exist but container doesn't, skip container creation for now
+        # and return ready status (container will be created on first command execution)
         if not container_ready:
-            try:
-                container_session = await container_manager.get_or_create_session(session_uuid)
-                container_ready = True
-                return {
-                    "status": "initializing",
-                    "message": "Container created, loading workspace files...",
-                    "initialized": False,
-                    "filesystem_synced": True
-                }
-            except Exception as e:
-                return {
-                    "status": "error",
-                    "message": f"Failed to create container: {str(e)}",
-                    "initialized": False
-                }
+            return {
+                "status": "ready",
+                "message": "Workspace is ready (container will start on first use)",
+                "initialized": True,
+                "filesystem_synced": filesystem_exists,
+                "file_count": len(workspace_items),
+                "container_ready": False,
+            }
 
         # Both workspace items and container exist - check if everything is ready
         return {
@@ -412,46 +460,53 @@ async def get_workspace_status(session_uuid: str) -> Dict[str, Any]:
             "message": "Workspace is ready",
             "initialized": True,
             "filesystem_synced": filesystem_exists,
-            "file_count": len(workspace_items)
+            "file_count": len(workspace_items),
+            "container_ready": True,
         }
 
     except Exception as e:
         return {
             "status": "error",
-            "message": f"Failed to check workspace status: {str(e)}",
-            "initialized": False
+            "message": f"Failed to check workspace status: {e!s}",
+            "initialized": False,
         }
 
 
 @router.post("/{session_uuid}/ensure-default")
-async def ensure_default_files(session_uuid: str) -> Dict[str, Any]:
+async def ensure_default_files(session_uuid: str) -> dict[str, Any]:
     """Ensure workspace has default main.py file if no files exist."""
     try:
         # Get session by UUID
         session = CodeSession.get_by_uuid(session_uuid)
-        if not session:
+        if not session or session.id is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Session {session_uuid} not found"
+                detail=f"Session {session_uuid} not found",
             )
 
         # Check if any files exist
+        assert session.id is not None
         workspace_items = WorkspaceItem.get_all_by_session(session.id)
 
         if not workspace_items:
             # No files exist, create default main.py
-            default_content = "# Welcome to your coding session!\nprint('Hello, World!')\n"
+            default_content = (
+                "# Welcome to your coding session!\nprint('Hello, World!')\n"
+            )
 
             main_file = WorkspaceItem.create(
                 session_id=session.id,
                 parent_id=None,
                 name="main.py",
                 item_type="file",
-                content=default_content
+                content=default_content,
             )
 
             # Sync the default file to filesystem for Docker container access
             sync_file_to_filesystem(session_uuid, "main.py", default_content)
+
+            # Also sync the file directly to the pod's /app directory so it appears in ls
+            sync_file_to_pod(session_uuid, "main.py", default_content)
 
             return {
                 "message": "Created default main.py file",
@@ -459,19 +514,18 @@ async def ensure_default_files(session_uuid: str) -> Dict[str, Any]:
                 "file": {
                     "name": main_file.name,
                     "path": main_file.get_full_path(),
-                    "content": main_file.content
-                }
+                    "content": main_file.content,
+                },
             }
-        else:
-            return {
-                "message": "Workspace already has files, no defaults created",
-                "files_created": []
-            }
+        return {
+            "message": "Workspace already has files, no defaults created",
+            "files_created": [],
+        }
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to ensure default files: {str(e)}"
+            detail=f"Failed to ensure default files: {e!s}",
         )

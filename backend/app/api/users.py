@@ -1,20 +1,32 @@
 """User management API endpoints."""
 
 import bcrypt
-from typing import Annotated, Any
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field, ValidationError
+from fastapi import APIRouter, HTTPException, status
+from pydantic import ValidationError
 
-from app.models.postgres_models import User
-from app.schemas.postgres_schemas import (
+from app.models.users import User
+from app.schemas import (
     AuthResponse,
     UserCreate,
     UserLogin,
     UserResponse,
 )
 
-
 router = APIRouter()
+
+
+def user_to_response(user: User) -> UserResponse:
+    """Convert User model to UserResponse schema."""
+    assert user.id is not None
+    assert user.created_at is not None
+    assert user.updated_at is not None
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
 
 
 def hash_password(password: str) -> str:
@@ -31,7 +43,8 @@ def verify_password(password: str, hashed: str) -> bool:
 
 
 @router.post(
-    "/register", status_code=status.HTTP_201_CREATED,
+    "/register",
+    status_code=status.HTTP_201_CREATED,
 )
 async def register_user(user_data: UserCreate) -> AuthResponse:
     """Register a new user with comprehensive validation."""
@@ -61,13 +74,7 @@ async def register_user(user_data: UserCreate) -> AuthResponse:
         )
 
         # Convert to response format
-        user_response = UserResponse(
-            id=new_user.id,
-            username=new_user.username,
-            email=new_user.email,
-            created_at=new_user.created_at,
-            updated_at=new_user.updated_at,
-        )
+        user_response = user_to_response(new_user)
 
         return AuthResponse(
             success=True,
@@ -100,23 +107,9 @@ async def register_user(user_data: UserCreate) -> AuthResponse:
 async def login_user(login_data: UserLogin) -> AuthResponse:
     """Login user and return user info. Supports both username and email login."""
     try:
-        # Try to find user by username first, then by email
-        user = None
+        # Try to find user by username or email
         identifier = login_data.username
-
-        # Check if the identifier looks like an email
-        if "@" in identifier:
-            user = User.get_by_email(identifier)
-        else:
-            user = User.get_by_username(identifier)
-
-        # If not found by email, try username (in case user typed username with @)
-        if not user and "@" in identifier:
-            user = User.get_by_username(identifier)
-
-        # If not found by username, try email (in case user typed email without @)
-        if not user and "@" not in identifier:
-            user = User.get_by_email(identifier)
+        user = User.get_by_username(identifier) or User.get_by_email(identifier)
 
         if not user:
             raise HTTPException(
@@ -132,13 +125,7 @@ async def login_user(login_data: UserLogin) -> AuthResponse:
             )
 
         # Convert to response format
-        user_response = UserResponse(
-            id=user.id,
-            username=user.username,
-            email=user.email,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-        )
+        user_response = user_to_response(user)
 
         return AuthResponse(
             success=True,
@@ -154,179 +141,3 @@ async def login_user(login_data: UserLogin) -> AuthResponse:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Login failed: {e!s}",
         )
-
-
-@router.get("/search")
-async def search_users(q: str = "") -> dict[str, Any]:
-    """Search users by username or email for reviewer selection."""
-    try:
-        users = User.search_users(q)
-
-        user_data = []
-        for user in users:
-            user_data.append({
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "is_reviewer": user.is_reviewer,
-                "reviewer_level": user.reviewer_level,
-                "created_at": user.created_at.isoformat() if user.created_at else None,
-            })
-
-        return {
-            "success": True,
-            "data": user_data,
-            "total": len(user_data)
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to search users: {e!s}")
-
-
-@router.get("/{user_id}")
-async def get_user(user_id: int) -> AuthResponse:
-    """Get user by ID."""
-    try:
-        user = User.get_by_id(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="User not found",
-            )
-
-        user_response = UserResponse(
-            id=user.id,
-            username=user.username,
-            email=user.email,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-        )
-
-        return AuthResponse(
-            success=True, message="User retrieved successfully", user=user_response,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get user: {e!s}",
-        )
-
-
-@router.get("/username/{username}")
-async def get_user_by_username(username: str) -> AuthResponse:
-    """Get user by username."""
-    try:
-        user = User.get_by_username(username)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="User not found",
-            )
-
-        user_response = UserResponse(
-            id=user.id,
-            username=user.username,
-            email=user.email,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-        )
-
-        return AuthResponse(
-            success=True, message="User retrieved successfully", user=user_response,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get user: {e!s}",
-        )
-
-# Reviewer management endpoints
-class ReviewerStatusUpdate(BaseModel):
-    """Update reviewer status payload."""
-    is_reviewer: bool = Field(..., description="Whether user should be a reviewer")
-    reviewer_level: int = Field(1, ge=0, le=2, description="Reviewer level (0=regular, 1=junior, 2=senior)")
-
-
-class UserListResponse(BaseModel):
-    """User list response model."""
-    success: bool
-    data: list[UserResponse]
-    total: int
-
-
-# TODO: Add proper authentication and authorization checks
-def get_current_user_id() -> int:
-    """Get current user ID from session/token."""
-    # Hardcoded for development - replace with actual auth
-    return 5
-
-
-
-@router.get("/me")
-async def get_current_user(
-    current_user_id: Annotated[int, Depends(get_current_user_id)],
-) -> dict[str, Any]:
-    """Get current user info."""
-    try:
-        user = User.get_by_id(current_user_id)
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        return {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "is_reviewer": user.is_reviewer,
-            "reviewer_level": user.reviewer_level,
-            "created_at": user.created_at.isoformat() if user.created_at else None,
-            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch user: {e!s}")
-
-
-@router.put("/me/reviewer-status")
-async def toggle_my_reviewer_status(
-    status_update: ReviewerStatusUpdate,
-    current_user_id: Annotated[int, Depends(get_current_user_id)],
-) -> dict[str, Any]:
-    """Toggle current user's reviewer status - anyone can become a reviewer."""
-    try:
-        user = User.get_by_id(current_user_id)
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        success = user.update_reviewer_status(
-            status_update.is_reviewer,
-            status_update.reviewer_level
-        )
-
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to update reviewer status")
-
-        action = "You are now a" if status_update.is_reviewer else "You are no longer a"
-        level_text = ["regular user", "junior reviewer", "senior reviewer"][status_update.reviewer_level]
-
-        return {
-            "success": True,
-            "message": f"{action} {level_text}",
-            "user": {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "is_reviewer": user.is_reviewer,
-                "reviewer_level": user.reviewer_level,
-            }
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update reviewer status: {e!s}")

@@ -10,7 +10,6 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
-
 # Load environment variables
 load_dotenv()
 
@@ -29,12 +28,15 @@ class PostgreSQLDatabase:
 
     def _parse_database_url(self) -> dict[str, Any]:
         """Parse DATABASE_URL into connection parameters."""
+        assert DATABASE_URL is not None  # Already checked at module level
         if DATABASE_URL.startswith("postgresql://"):
             # Remove postgresql:// prefix
             url = DATABASE_URL[13:]
 
             # Find the last @ to split auth from host (in case password has @)
             at_pos = url.rfind("@")
+            user: Optional[str]
+            password: Optional[str]
             if at_pos != -1:
                 auth = url[:at_pos]
                 host_db = url[at_pos + 1 :]
@@ -48,7 +50,8 @@ class PostgreSQLDatabase:
                     user = auth
                     password = None
             else:
-                user = password = None
+                user = None
+                password = None
                 host_db = url
 
             # Split host:port/database
@@ -59,9 +62,10 @@ class PostgreSQLDatabase:
                 database = "postgres"
 
             # Split host:port
+            port: int
             if ":" in host_port:
-                host, port = host_port.split(":", 1)
-                port = int(port)
+                host, port_str = host_port.split(":", 1)
+                port = int(port_str)
             else:
                 host = host_port
                 port = 5432
@@ -94,21 +98,22 @@ class PostgreSQLDatabase:
 
     @contextmanager
     def get_cursor(
-        self, connection: psycopg2.extensions.connection,
+        self,
+        connection: psycopg2.extensions.connection,
     ) -> Generator[psycopg2.extras.DictCursor, None, None]:
         """Get a cursor with automatic cleanup."""
         cursor = None
         try:
             cursor = connection.cursor(cursor_factory=psycopg2.extras.DictCursor)
             yield cursor
-        except Exception:
-            raise
         finally:
             if cursor:
                 cursor.close()
 
     def execute_query(
-        self, query: str, params: Optional[tuple] = None,
+        self,
+        query: str,
+        params: Optional[tuple[Any, ...]] = None,
     ) -> list[dict[str, Any]]:
         """Execute a SELECT query and return results."""
         with self.get_connection() as conn, self.get_cursor(conn) as cursor:
@@ -116,7 +121,9 @@ class PostgreSQLDatabase:
             return [dict(row) for row in cursor.fetchall()]
 
     def execute_one(
-        self, query: str, params: Optional[tuple] = None,
+        self,
+        query: str,
+        params: Optional[tuple[Any, ...]] = None,
     ) -> Optional[dict[str, Any]]:
         """Execute a SELECT query and return the first result."""
         with self.get_connection() as conn, self.get_cursor(conn) as cursor:
@@ -125,24 +132,29 @@ class PostgreSQLDatabase:
             return dict(result) if result else None
 
     def execute_insert(
-        self, query: str, params: Optional[tuple] = None,
+        self,
+        query: str,
+        params: Optional[tuple[Any, ...]] = None,
     ) -> Optional[int]:
         """Execute an INSERT query and return the new ID."""
         with self.get_connection() as conn, self.get_cursor(conn) as cursor:
             cursor.execute(query + " RETURNING id", params)
             result = cursor.fetchone()
             conn.commit()
-            return result["id"] if result else None
+            if result:
+                id_value = result["id"]
+                return int(id_value) if id_value is not None else None
+            return None
 
-    def execute_update(self, query: str, params: Optional[tuple] = None) -> int:
+    def execute_update(self, query: str, params: Optional[tuple[Any, ...]] = None) -> int:
         """Execute an UPDATE/DELETE query and return affected rows count."""
         with self.get_connection() as conn, self.get_cursor(conn) as cursor:
             cursor.execute(query, params)
-            affected_rows = cursor.rowcount
+            affected_rows: int = cursor.rowcount
             conn.commit()
             return affected_rows
 
-    def execute_raw(self, query: str, params: Optional[tuple] = None) -> None:
+    def execute_raw(self, query: str, params: Optional[tuple[Any, ...]] = None) -> None:
         """Execute a raw SQL statement (for migrations, DDL, etc.)."""
         with self.get_connection() as conn:
             # Use regular cursor for DDL operations (not DictCursor)
@@ -155,14 +167,9 @@ class PostgreSQLDatabase:
         try:
             with self.get_connection() as conn:
                 with self.get_cursor(conn) as cursor:
-                    cursor.execute("SELECT NOW()")
-                    result = cursor.fetchone()
-                    print(
-                        f"✅ PostgreSQL connection successful! Current time: {result[0]}",
-                    )
+                    cursor.execute("SELECT 1")
                     return True
-        except Exception as e:
-            print(f"❌ PostgreSQL connection failed: {e}")
+        except Exception:
             return False
 
 
@@ -172,12 +179,7 @@ db = PostgreSQLDatabase()
 
 def init_db() -> None:
     """Initialize the database connection and test it."""
-    print("🗄️ Initializing PostgreSQL database connection...")
-
-    if db.test_connection():
-        print("✅ Database connection ready")
-    else:
-        print("❌ Database connection failed")
+    if not db.test_connection():
         msg = "Could not connect to PostgreSQL database"
         raise Exception(msg)
 

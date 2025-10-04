@@ -1,15 +1,13 @@
 """Pytest configuration and fixtures for backend tests."""
 
 import asyncio
-import os
-import tempfile
-from typing import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 
-from app.core.postgres import PostgreSQLDatabase, get_db
+from app.core.postgres import get_db
 from app.main import app
 
 
@@ -19,7 +17,6 @@ class MockPostgreSQLDatabase:
     def __init__(self):
         self.users = {}
         self.sessions = {}
-        self.reviews = {}
         self.next_id = 1
 
     def execute_insert(self, query: str, params: tuple) -> int:
@@ -34,7 +31,7 @@ class MockPostgreSQLDatabase:
                 "email": params[1],
                 "password_hash": params[2],
                 "created_at": "2024-01-01T00:00:00",
-                "updated_at": "2024-01-01T00:00:00"
+                "updated_at": "2024-01-01T00:00:00",
             }
         elif "code_sessions" in query:
             self.sessions[table_id] = {
@@ -45,7 +42,7 @@ class MockPostgreSQLDatabase:
                 "code": params[3] if len(params) > 3 else "",
                 "language": params[4] if len(params) > 4 else "python",
                 "created_at": "2024-01-01T00:00:00",
-                "updated_at": "2024-01-01T00:00:00"
+                "updated_at": "2024-01-01T00:00:00",
             }
 
         return table_id
@@ -55,7 +52,7 @@ class MockPostgreSQLDatabase:
         if "users" in query and "WHERE id" in query:
             user_id = params[0]
             return self.users.get(user_id)
-        elif "code_sessions" in query and "WHERE uuid" in query:
+        if "code_sessions" in query and "WHERE uuid" in query:
             uuid = params[0]
             for session in self.sessions.values():
                 if session["uuid"] == uuid:
@@ -66,7 +63,7 @@ class MockPostgreSQLDatabase:
         """Mock multi-result query."""
         if "users" in query:
             return list(self.users.values())
-        elif "code_sessions" in query:
+        if "code_sessions" in query:
             return list(self.sessions.values())
         return []
 
@@ -88,6 +85,7 @@ def test_db_session():
 @pytest.fixture(scope="function")
 def client(test_db_session) -> TestClient:
     """Create a test client with dependency overrides."""
+
     def override_get_db():
         return test_db_session
 
@@ -105,7 +103,7 @@ def sample_user_data() -> dict:
     return {
         "username": "testuser",
         "email": "test@example.com",
-        "password": "testpassword123"
+        "password": "testpassword123",
     }
 
 
@@ -116,24 +114,14 @@ def sample_session_data() -> dict:
         "user_id": 1,
         "name": "Test Session",
         "code": "print('Hello, World!')",
-        "language": "python"
-    }
-
-
-@pytest.fixture(scope="function")
-def sample_review_data() -> dict:
-    """Sample review request data for testing."""
-    return {
-        "session_id": "test-session-uuid-123",
-        "title": "Test Review Request",
-        "description": "This is a test review request",
-        "priority": "medium"
+        "language": "python",
     }
 
 
 @pytest_asyncio.fixture
 async def async_client(test_db_session) -> AsyncGenerator[TestClient, None]:
     """Async test client for testing async endpoints."""
+
     def override_get_db():
         try:
             yield test_db_session

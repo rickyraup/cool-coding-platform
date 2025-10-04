@@ -1,0 +1,38 @@
+line-length = 88
+
+[lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "DTZ", "T10", "EM", "ISC", "ICN", "G", "PIE", "T20", "PT", "Q", "RET", "SIM", "TID", "ARG", "PTH", "PD", "PL", "TRY", "NPY", "RUF"]
+ignore = [
+    "TRY301",  # Don't abstract raise to inner function
+    "BLE001",  # Allow catching general exceptions
+    "DTZ003",  # Allow datetime.utcnow()
+    "EM101",   # Allow exception strings in exception
+    "EM102",   # Allow f-strings in exceptions
+    "TRY003",  # Allow long messages in exceptions
+    "PLR0913", # Allow many function arguments
+    "ARG001",  # Allow unused function arguments
+    "ARG002",  # Allow unused method arguments
+    "ISC001",  # Formatter conflict
+    "T201",    # Allow print statements
+    "PTH",     # Allow os.path usage
+    "B904",    # Allow raise without from
+    "TRY300",  # Allow return in try block
+    "E501",    # Allow long lines (formatter handles it)
+    "PLR0911", # Allow many return statements
+    "PLR0912", # Allow many branches
+    "PLR0915", # Allow many statements
+    "PLR2004", # Allow magic values
+    "TRY002",  # Allow raising base Exception
+    "TRY203",  # Allow useless try-except
+    "TRY401",  # Allow redundant exception in logging
+    "SIM117",  # Allow nested with statements
+    "RUF006",  # Allow asyncio.create_task without storing reference
+    "PLW1508", # Allow invalid type for env default
+    "G004",    # Allow f-strings in logging
+    "UP007",   # Allow Optional[X] instead of X | None
+    "SIM105",  # Allow try-except-pass instead of contextlib.suppress
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"

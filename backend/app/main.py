@@ -1,10 +1,12 @@
 """Main FastAPI application for the Code Execution Platform."""
 
+import asyncio
 import os
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+from datetime import datetime
 from typing import Any, Optional
 
 import uvicorn
@@ -14,20 +16,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
     health,
-    postgres_sessions,
-    reviews,
-    session_workspace,
     sessions,
     users,
-    workspace,
     workspace_files,
 )
 from app.core.postgres import init_db
-from app.core.session_manager import session_manager
 from app.services.container_manager import container_manager
 from app.websockets.handlers import handle_websocket_message
 from app.websockets.manager import WebSocketManager
-
 
 # Load environment variables
 load_dotenv()
@@ -36,7 +32,10 @@ load_dotenv()
 websocket_manager = WebSocketManager()
 
 
-def create_unique_session_id(base_session_id: str, user_id: Optional[str] = None) -> str:
+def create_unique_session_id(
+    base_session_id: str,
+    user_id: Optional[str] = None,
+) -> str:
     """Create a unique session ID that includes user ID and timestamp to prevent reuse."""
     timestamp = int(time.time() * 1000)  # milliseconds
     unique_id = str(uuid.uuid4())[:8]  # short UUID
@@ -47,26 +46,115 @@ def create_unique_session_id(base_session_id: str, user_id: Optional[str] = None
     return f"{base_session_id}_{timestamp}_{unique_id}"
 
 
+async def cleanup_websocket_session(websocket: WebSocket, reason: str = "") -> None:
+    """Clean up WebSocket session and associated container if needed."""
+    # Get session ID before disconnecting
+    session_id = websocket_manager.get_session(websocket)
+    websocket_manager.disconnect(websocket)
+
+    # Clean up container if no other connections to this session
+    if (
+        session_id != "default"
+        and not websocket_manager.has_other_connections_to_session(session_id)
+    ):
+        try:
+            await container_manager.cleanup_session(session_id)
+        except Exception:
+            pass  # Cleanup errors are non-fatal
+
+
+async def check_and_notify_pod_ready(session_id: str, websocket: WebSocket) -> None:
+    """Background task to check pod readiness and notify frontend."""
+    max_wait = 60  # 60 seconds max wait
+    check_interval = 2  # Check every 2 seconds
+    elapsed = 0
+
+    while elapsed < max_wait:
+        await asyncio.sleep(check_interval)
+        elapsed += check_interval
+
+        # Clear previous progress line and send new progress update
+        try:
+            # First clear the previous line
+            if elapsed > check_interval:
+                await websocket_manager.send_personal_message(
+                    websocket,
+                    {
+                        "type": "terminal_clear_progress",
+                        "sessionId": session_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    },
+                )
+
+            # Then send new progress
+            await websocket_manager.send_personal_message(
+                websocket,
+                {
+                    "type": "terminal_output",
+                    "sessionId": session_id,
+                    "output": f"⏳ Initializing environment... ({elapsed}s)",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+        except Exception:
+            break
+
+        # Check if pod is ready
+        session = await container_manager.get_or_create_session(session_id)
+        if session and container_manager.is_pod_ready(session_id):
+            try:
+                # Clear all progress messages
+                await websocket_manager.send_personal_message(
+                    websocket,
+                    {
+                        "type": "terminal_clear_progress",
+                        "sessionId": session_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    },
+                )
+
+                # Send pod ready notification
+                await websocket_manager.send_personal_message(
+                    websocket,
+                    {
+                        "type": "pod_ready",
+                        "sessionId": session_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                    },
+                )
+            except Exception:
+                break
+
+            # Pod is ready, exit the loop
+            break
+
+    if elapsed >= max_wait:
+        # Timeout - send error
+        with suppress(Exception):
+            await websocket_manager.send_personal_message(
+                websocket,
+                {
+                    "type": "terminal_output",
+                    "sessionId": session_id,
+                    "output": "❌ Environment initialization timed out",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     from app.services.background_tasks import background_task_manager
 
     init_db()
-    print("🗄️ Database initialized")
-    print("🚀 Session manager ready")
 
     # Start background tasks for container management
-    print("🐳 Starting container lifecycle background tasks...")
     await background_task_manager.start_background_tasks()
 
     yield
     # Shutdown
-    print("🔄 Shutting down...")
-    print("🧹 Cleaning up active sessions and stopping background tasks...")
     await background_task_manager.stop_background_tasks()
-    await session_manager.cleanup_all_sessions()
-    print("✅ Cleanup complete")
 
 
 # Create FastAPI app
@@ -77,17 +165,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware - get allowed origins from environment variable
+cors_origins = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000",
+).split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://localhost:3002",
-        "http://127.0.0.1:3002",
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -95,35 +180,31 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health.router, prefix="/api/health", tags=["health"])
-app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
 
-# PostgreSQL-based routers
+# API routers
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(
-    postgres_sessions.router,
-    prefix="/api/postgres_sessions",
-    tags=["postgres_sessions"],
+    sessions.router,
+    prefix="/api/sessions",
+    tags=["sessions"],
 )
-app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
 app.include_router(
-    session_workspace.router,
-    prefix="/api/session_workspace",
-    tags=["session_workspace"],
+    workspace_files.router,
+    prefix="/api/workspace",
+    tags=["workspace_files"],
 )
-app.include_router(workspace_files.router, prefix="/api/workspace", tags=["workspace_files"])
-app.include_router(reviews.router, tags=["reviews"])
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None) -> None:
+async def websocket_endpoint(
+    websocket: WebSocket,
+    user_id: Optional[str] = None,
+) -> None:
     # Store user_id as a custom attribute on the websocket connection
     if user_id:
-        # Use setattr to store user_id since path_params is read-only
-        websocket.user_id = user_id
-        print(f"🔐 WebSocket connected for user: {user_id}")
+        websocket.user_id = user_id  # type: ignore[attr-defined]
     else:
-        websocket.user_id = None
-        print("⚠️ WebSocket connected without user authentication")
+        websocket.user_id = None  # type: ignore[attr-defined]
 
     await websocket_manager.connect(websocket)
 
@@ -133,7 +214,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
         {
             "type": "connection_established",
             "message": "WebSocket connected successfully",
-            "timestamp": "2024-01-01T00:00:00Z",
+            "timestamp": datetime.utcnow().isoformat(),
         },
     )
 
@@ -141,7 +222,6 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
         while True:
             # Receive message from client
             data = await websocket.receive_json()
-            print(f"🔍 WebSocket received data: {data}")
 
             # Create unique session ID for each workspace connection to ensure isolation
             if "sessionId" in data and data["sessionId"] != "default":
@@ -154,78 +234,66 @@ async def websocket_endpoint(websocket: WebSocket, user_id: Optional[str] = None
 
                 # Check if current session matches the workspace - reuse if same workspace
                 if current_session and current_session != "default":
-                    current_workspace = container_manager._extract_workspace_id(current_session)
+                    current_workspace = container_manager._extract_workspace_id(
+                        current_session,
+                    )
                     if current_workspace == workspace_uuid:
                         # Same workspace, reuse existing session
                         data["sessionId"] = current_session
-                        print(f"🔄 Reusing existing container session for user {user_id}: {current_session}")
                     else:
                         # Different workspace, look for existing session for this workspace
-                        existing_session = container_manager.find_session_by_workspace_id(workspace_uuid)
+                        existing_session = (
+                            container_manager.find_session_by_workspace_id(
+                                workspace_uuid,
+                            )
+                        )
                         if existing_session:
                             # Use existing session for this workspace
                             websocket_manager.set_session(websocket, existing_session)
                             data["sessionId"] = existing_session
-                            print(f"🔄 Switching to existing container session for user {user_id}: {existing_session}")
                         else:
                             # Create new unique session ID for new workspace
-                            unique_session_id = create_unique_session_id(workspace_uuid, user_id)
+                            unique_session_id = create_unique_session_id(
+                                workspace_uuid,
+                                user_id,
+                            )
                             websocket_manager.set_session(websocket, unique_session_id)
-                            print(f"🔄 Created unique session ID for user {user_id}: {workspace_uuid} → {unique_session_id}")
                             data["sessionId"] = unique_session_id
                 else:
                     # No current session, look for existing session for this workspace
-                    existing_session = container_manager.find_session_by_workspace_id(workspace_uuid)
+                    existing_session = container_manager.find_session_by_workspace_id(
+                        workspace_uuid,
+                    )
                     if existing_session:
                         # Use existing session for this workspace
                         websocket_manager.set_session(websocket, existing_session)
                         data["sessionId"] = existing_session
-                        print(f"🔄 Using existing container session for user {user_id}: {existing_session}")
                     else:
                         # Create new unique session ID and associate it with this WebSocket
-                        unique_session_id = create_unique_session_id(workspace_uuid, user_id)
+                        unique_session_id = create_unique_session_id(
+                            workspace_uuid,
+                            user_id,
+                        )
                         websocket_manager.set_session(websocket, unique_session_id)
-                        print(f"🔄 Created unique session ID for user {user_id}: {workspace_uuid} → {unique_session_id}")
                         data["sessionId"] = unique_session_id
+
+                        # Start background task to check pod readiness
+                        asyncio.create_task(
+                            check_and_notify_pod_ready(unique_session_id, websocket),
+                        )
 
             # Handle the message
             response = await handle_websocket_message(data, websocket)
-            print(f"🔍 WebSocket handler response: {response}")
 
             # Send response back to client
             if response:
                 await websocket_manager.send_personal_message(websocket, response)
 
     except WebSocketDisconnect:
-        # Get session ID before disconnecting
-        session_id = websocket_manager.get_session(websocket)
-        websocket_manager.disconnect(websocket)
+        await cleanup_websocket_session(websocket)
 
-        # Clean up container if no other connections to this session
-        if session_id != "default" and not websocket_manager.has_other_connections_to_session(session_id):
-            print(f"🧹 No other connections to session {session_id}, cleaning up container...")
-            try:
-                await container_manager.cleanup_session(session_id)
-                print(f"✅ Container cleanup completed for session {session_id}")
-            except Exception as cleanup_error:
-                print(f"❌ Error during container cleanup for session {session_id}: {cleanup_error}")
-
-        print("WebSocket client disconnected")
-
-    except Exception as e:
-        print(f"WebSocket error: {e}")
-        # Get session ID before disconnecting
-        session_id = websocket_manager.get_session(websocket)
-        websocket_manager.disconnect(websocket)
-
-        # Clean up container if no other connections to this session
-        if session_id != "default" and not websocket_manager.has_other_connections_to_session(session_id):
-            print(f"🧹 WebSocket error cleanup - removing container for session {session_id}")
-            try:
-                await container_manager.cleanup_session(session_id)
-                print(f"✅ Container cleanup completed for session {session_id}")
-            except Exception as cleanup_error:
-                print(f"❌ Error during container cleanup for session {session_id}: {cleanup_error}")
+    except Exception:
+        await cleanup_websocket_session(websocket, reason="WebSocket error cleanup")
 
 
 @app.get("/")
@@ -248,7 +316,7 @@ async def shutdown_workspace(workspace_id: str) -> dict[str, Any]:
             return {
                 "success": True,
                 "message": f"No active session found for workspace {workspace_id}",
-                "workspace_id": workspace_id
+                "workspace_id": workspace_id,
             }
 
         # Check if there are any active WebSocket connections to this session
@@ -263,15 +331,15 @@ async def shutdown_workspace(workspace_id: str) -> dict[str, Any]:
             "workspace_id": workspace_id,
             "session_id": session_id,
             "active_connections": connection_count,
-            "container_cleaned": cleanup_success
+            "container_cleaned": cleanup_success,
         }
 
     except Exception as e:
         return {
             "success": False,
-            "message": f"Error shutting down workspace {workspace_id}: {str(e)}",
+            "message": f"Error shutting down workspace {workspace_id}: {e!s}",
             "workspace_id": workspace_id,
-            "error": str(e)
+            "error": str(e),
         }
 
 
@@ -282,7 +350,6 @@ if __name__ == "__main__":
     enable_reload = os.getenv("ENABLE_RELOAD", "false").lower() == "true"
 
     if enable_reload:
-        print("🔄 Running in development mode with auto-reload")
         uvicorn.run(
             "app.main:app",
             host="0.0.0.0",
@@ -293,7 +360,6 @@ if __name__ == "__main__":
             reload_excludes=["venv/", "*.db", "__pycache__/", ".git/", "*.pyc"],
         )
     else:
-        print("🚀 Running in production mode (stable WebSocket connections)")
         uvicorn.run(
             "app.main:app",
             host="0.0.0.0",

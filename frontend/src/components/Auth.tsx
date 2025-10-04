@@ -9,7 +9,7 @@ interface AuthProps {
 }
 
 export function Auth({ onClose }: AuthProps) {
-  const { login, register, error, clearError, isLoading } = useAuth();
+  const { login, register, clearError, isLoading } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [formData, setFormData] = useState({
     username: '',
@@ -77,7 +77,7 @@ export function Auth({ onClose }: AuthProps) {
         </div>
 
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e).catch(console.error); }} className="space-y-4">
           <div>
             <label htmlFor="username" className="block text-sm font-medium text-gray-300 mb-2">
               Username

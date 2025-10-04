@@ -1,41 +1,41 @@
+"""Session-related Pydantic schemas."""
+
 from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
 
-
-class SessionBase(BaseModel):
-    user_id: Optional[str] = "anonymous"
-    code: Optional[str] = "# Write your Python code here\\nprint('Hello, World!')"
-    language: Optional[str] = "python"
-    is_active: Optional[bool] = True
+from app.schemas.base import BaseResponse
 
 
-class SessionCreate(SessionBase):
-    pass
+class SessionCreate(BaseModel):
+    """Schema for session creation."""
 
-
-class SessionUpdate(BaseModel):
-    code: Optional[str] = None
-    is_active: Optional[bool] = None
-
-
-class SessionData(SessionBase):
-    id: str
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
+    user_id: int
+    name: Optional[str] = None
 
 
 class SessionResponse(BaseModel):
-    success: bool
-    data: SessionData
-    message: str
+    """Schema for session data in responses."""
+
+    id: str  # Use UUID as public identifier (was internal int ID)
+    user_id: int
+    name: Optional[str]
+    code: str
+    language: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
 
 
-class SessionListResponse(BaseModel):
-    success: bool
-    data: list[SessionData]
-    message: str
+class SessionListResponse(BaseResponse):
+    """Schema for list of sessions response."""
+
+    data: list[SessionResponse]
+    count: int
+
+
+class SessionDetailResponse(BaseResponse):
+    """Schema for single session detail response."""
+
+    data: SessionResponse

@@ -3,10 +3,10 @@
 import os
 from pathlib import Path
 
+
 # Test database URL (will be overridden by conftest.py for SQLite)
 TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL",
-    "postgresql://testuser:testpass@localhost:5433/test_coolcoding"
+    "TEST_DATABASE_URL", "postgresql://testuser:testpass@localhost:5433/test_coolcoding"
 )
 
 # Ensure we're in test mode

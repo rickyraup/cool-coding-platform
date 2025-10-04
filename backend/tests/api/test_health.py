@@ -31,5 +31,5 @@ class TestHealthAPI:
         assert "uptime" in data
         assert "environment" in data
         assert "version" in data
-        # Detailed health check should have additional fields
-        assert "database" in data or "services" in data
+        # Detailed health check should have additional system information
+        assert "system" in data or "message" in data

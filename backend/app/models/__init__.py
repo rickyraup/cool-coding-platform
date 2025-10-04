@@ -1,21 +1,11 @@
-# Import SQLAlchemy models
-# Import PostgreSQL models
-from .postgres_models import (
-    CodeSession as PostgresCodeSession,
-    User as PostgresUser,
-    WorkspaceItem,
-)
-from .sessions import CodeSession, TerminalCommand
-from .users import User
-
+# Import models
+from .sessions import CodeSession as PostgresCodeSession
+from .users import User as PostgresUser
+from .workspace_items import WorkspaceItem
 
 __all__ = [
-    # SQLAlchemy models (legacy)
-    "CodeSession",
+    # PostgreSQL models
     "PostgresCodeSession",
-    # PostgreSQL models (new)
     "PostgresUser",
-    "TerminalCommand",
-    "User",
     "WorkspaceItem",
 ]

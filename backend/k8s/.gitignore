@@ -1,0 +1,9 @@
+# Ignore actual secrets files
+03-backend-secrets.yaml
+*-secrets.yaml
+!*-secrets.yaml.example
+
+# Ignore any files with credentials
+*credentials*
+*secret*
+!*.example

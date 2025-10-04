@@ -8,7 +8,7 @@ import Link from 'next/link';
 import type { CodeSession } from '../../services/api';
 import { apiService } from '../../services/api';
 
-export default function DashboardPage(): React.JSX.Element {
+export default function DashboardPage(): React.JSX.Element | null {
   const { user, logout, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
   const [workspaces, setWorkspaces] = useState<CodeSession[]>([]);
@@ -49,7 +49,7 @@ export default function DashboardPage(): React.JSX.Element {
       }
     };
 
-    fetchWorkspaces();
+    fetchWorkspaces().catch(console.error);
   }, [isAuthenticated, user, currentPage, workspacesPerPage]);
 
   // Helper function to generate a human-readable ID from UUID
@@ -183,47 +183,6 @@ export default function DashboardPage(): React.JSX.Element {
           </div>
         </div>
 
-        {/* Code Reviews Section - Disabled */}
-        <div className="mb-8 bg-gradient-to-r from-gray-800/40 to-gray-700/40 border border-gray-600/30 rounded-lg p-6 opacity-60">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="flex items-center space-x-2 mb-1">
-                <h3 className="text-xl font-semibold text-gray-300">Code Reviews</h3>
-                <span className="px-2 py-1 bg-yellow-600/20 text-yellow-400 text-xs font-medium rounded-md border border-yellow-500/30">
-                  🚧 Work in Progress
-                </span>
-              </div>
-              <p className="text-gray-500 text-sm">Review system is currently being updated</p>
-            </div>
-            <button
-              disabled
-              className="px-4 py-2 bg-gray-600 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
-            >
-              View All Reviews →
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <div className="bg-gray-800/30 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-gray-500">—</div>
-              <div className="text-sm text-gray-500">Pending Reviews</div>
-            </div>
-            <div className="bg-gray-800/30 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-gray-500">—</div>
-              <div className="text-sm text-gray-500">In Review</div>
-            </div>
-            <div className="bg-gray-800/30 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-gray-500">—</div>
-              <div className="text-sm text-gray-500">Approved</div>
-            </div>
-            <div className="bg-gray-800/30 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-gray-500">—</div>
-              <div className="text-sm text-gray-500">Total Requests</div>
-            </div>
-          </div>
-
-        </div>
-
         {/* Create New Workspace Button */}
         <div className="mb-8">
           <button
@@ -290,7 +249,7 @@ export default function DashboardPage(): React.JSX.Element {
                         </div>
                         <div>
                           <h3 className="text-lg font-semibold text-white">{workspace.name ?? `Workspace ${getHumanReadableId(workspace.id)}`}</h3>
-                          <p className="text-sm text-gray-400">Python workspace</p>
+                          <p className="text-sm text-gray-400">Code workspace</p>
                         </div>
                       </div>
                     </div>
@@ -412,7 +371,7 @@ export default function DashboardPage(): React.JSX.Element {
                   onChange={(e) => setNewProjectName(e.target.value)}
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && newProjectName.trim()) {
-                      handleCreateWorkspace();
+                      handleCreateWorkspace().catch(console.error);
                     }
                   }}
                   placeholder="My Awesome Project"
@@ -431,7 +390,7 @@ export default function DashboardPage(): React.JSX.Element {
                   Cancel
                 </button>
                 <button
-                  onClick={handleCreateWorkspace}
+                  onClick={() => { handleCreateWorkspace().catch(console.error); }}
                   disabled={!newProjectName.trim() || isCreating}
                   className="px-6 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >

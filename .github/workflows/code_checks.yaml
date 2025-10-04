@@ -2,35 +2,68 @@ name: Code Quality Checks
 
 on:
   pull_request:
-    branches: [main]  # or whatever your default branch is
+    branches: [main]
+  push:
+    branches: [main]
 
 jobs:
-  lint-and-type-check:
-    name: Lint, Format, and Type Check
+  backend-checks:
+    name: Backend - Ruff & mypy
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # Adjust as needed
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff black flake8 mypy
+          pip install -r requirements.txt
 
-      - name: Run Black (check only)
-        run: black --check .
+      - name: Run Ruff Linter
+        run: |
+          pip install ruff
+          ruff check .
 
-      - name: Run Ruff
-        run: ruff .
+      - name: Run Ruff Format Check
+        run: ruff format --check .
 
-      - name: Run Flake8
-        run: flake8 .
+      - name: Run mypy (strict mode)
+        run: |
+          pip install mypy
+          mypy app --strict --show-error-codes --no-error-summary
 
-      - name: Run mypy
-        run: mypy .
+  frontend-checks:
+    name: Frontend - ESLint & TypeScript
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ./frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: TypeScript Check
+        run: npx tsc --noEmit

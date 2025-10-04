@@ -1,6 +1,6 @@
 # Users API
 
-The Users API handles user authentication, profile management, and reviewer status management.
+The Users API handles user authentication and profile management.
 
 ## Endpoints
 
@@ -17,6 +17,11 @@ Register a new user account.
   "password": "securepassword"
 }
 ```
+
+**Validation Rules:**
+- `username`: 3-20 characters, alphanumeric with hyphens/underscores only
+- `email`: Valid email format
+- `password`: 8-128 characters, must include uppercase, lowercase, digit, and special character
 
 **Response:**
 ```json
@@ -51,8 +56,6 @@ Authenticate user and create session.
     "id": 123,
     "username": "johndoe",
     "email": "john@example.com",
-    "is_reviewer": false,
-    "reviewer_level": null,
     "created_at": "2024-01-01T00:00:00Z",
     "updated_at": "2024-01-01T00:00:00Z"
   },
@@ -73,75 +76,14 @@ Get current authenticated user's profile.
   "id": 123,
   "username": "johndoe",
   "email": "john@example.com",
-  "is_reviewer": true,
-  "reviewer_level": 2,
   "created_at": "2024-01-01T00:00:00Z",
   "updated_at": "2024-01-01T00:00:00Z"
-}
-```
-
-### Toggle Reviewer Status
-**PUT** `/api/users/me/reviewer-status`
-
-Update current user's reviewer status (self-service promotion).
-
-**Request Body:**
-```json
-{
-  "is_reviewer": true,
-  "reviewer_level": 2
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Reviewer status updated successfully",
-  "user": {
-    "id": 123,
-    "username": "johndoe",
-    "email": "john@example.com",
-    "is_reviewer": true,
-    "reviewer_level": 2,
-    "updated_at": "2024-01-01T01:00:00Z"
-  }
-}
-```
-
-### Get Reviewers
-**GET** `/api/users/reviewers`
-
-Get list of all users with reviewer status.
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": 123,
-      "username": "johndoe",
-      "email": "john@example.com",
-      "is_reviewer": true,
-      "reviewer_level": 2,
-      "created_at": "2024-01-01T00:00:00Z"
-    }
-  ],
-  "total": 1
 }
 ```
 
 ## Authentication
 
 Authentication is session-based. After successful login, the user session is maintained server-side.
-
-## Reviewer Levels
-
-- **Level 1**: Basic reviewer - can review simple code changes
-- **Level 2**: Intermediate reviewer - can review moderate complexity changes
-- **Level 3**: Senior reviewer - can review complex architectural changes
-- **Level 4**: Lead reviewer - can review critical system changes
 
 ## Error Responses
 

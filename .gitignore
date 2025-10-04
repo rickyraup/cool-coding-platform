@@ -60,6 +60,15 @@ wheels/
 *.egg
 MANIFEST
 
+# Python tool caches
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.mypy_cache/
+backend/.coverage
+backend/htmlcov/
+backend/.tox/
+backend/.hypothesis/
+
 # Virtual environments
 venv/
 ENV/
@@ -76,3 +85,12 @@ env/
 # Temporary files
 tmp/
 temp/
+
+# Kubernetes secrets - NEVER commit actual secrets!
+backend/k8s/*-secrets.yaml
+backend/k8s/03-backend-secrets.yaml
+!backend/k8s/*-secrets.yaml.example
+
+# Claude Code settings (may contain credentials in approved command list)
+.claude/
+.claude/settings.local.json

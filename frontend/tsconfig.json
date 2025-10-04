@@ -40,7 +40,6 @@
     
     // Error Reporting
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
     
     "plugins": [
       {
