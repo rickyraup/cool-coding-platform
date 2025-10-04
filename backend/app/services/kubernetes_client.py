@@ -75,8 +75,8 @@ class KubernetesClientService:
     def is_kubernetes_available(self) -> bool:
         """Check if Kubernetes API is available and responsive."""
         try:
-            # Try to list namespaces as a health check
-            self.core_v1_api.list_namespace()
+            # Try to read our namespace as a health check (namespace-scoped permission)
+            self.core_v1_api.read_namespace(self._namespace)
             return True
         except Exception as e:
             logger.warning(f"Kubernetes not available: {e}")
