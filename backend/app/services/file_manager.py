@@ -143,60 +143,20 @@ class FileManager:
                     # Check if file extension is allowed
                     _, ext = os.path.splitext(item)
 
-                    # Debug logging to see what files are being processed
-                    print(f"🔍 FileManager: Found file '{item}' with extension '{ext}'")
-
                     if (
                         ext in self.allowed_extensions or ext == ""
                     ):  # Allow files without extensions
                         files.append(
                             {"name": item, "type": "file", "path": path_prefix + item},
                         )
-                        print(f"✅ FileManager: Added file '{item}' to list")
-                    else:
-                        print(
-                            f"❌ FileManager: Skipped file '{item}' - extension '{ext}' not allowed"
-                        )
                 elif os.path.isdir(item_path):
                     files.append(
                         {"name": item, "type": "directory", "path": path_prefix + item},
                     )
-                    print(f"📁 FileManager: Added directory '{item}' to list")
 
             # Sort with directories first, then files
             files.sort(key=lambda x: (x["type"] == "file", x["name"].lower()))
             return files
-
-        except Exception as e:
-            msg = f"Failed to list files: {e!s}"
-            raise Exception(msg) from e
-
-    async def list_files(self, directory: str = "") -> list[str]:
-        """List files in the session directory or subdirectory."""
-        try:
-            if directory:
-                # Validate subdirectory path
-                directory = os.path.basename(directory)
-                search_dir = os.path.join(self.session_dir, directory)
-            else:
-                search_dir = self.session_dir
-
-            if not os.path.exists(search_dir):
-                return []
-
-            files = []
-            for item in os.listdir(search_dir):
-                item_path = os.path.join(search_dir, item)
-
-                if os.path.isfile(item_path):
-                    # Check if file extension is allowed
-                    _, ext = os.path.splitext(item)
-                    if ext in self.allowed_extensions:
-                        files.append(item)
-                elif os.path.isdir(item_path):
-                    files.append(f"{item}/")
-
-            return sorted(files)
 
         except Exception as e:
             msg = f"Failed to list files: {e!s}"
@@ -266,58 +226,3 @@ class FileManager:
         except Exception as e:
             msg = f"Failed to create file: {e!s}"
             raise Exception(msg) from e
-
-    async def file_exists(self, file_path: str) -> bool:
-        """Check if a file exists."""
-        try:
-            full_path = self._validate_path(file_path)
-            return os.path.exists(full_path)
-        except:
-            return False
-
-    async def get_file_info(self, file_path: str) -> dict:
-        """Get file information."""
-        try:
-            full_path = self._validate_path(file_path)
-
-            if not os.path.exists(full_path):
-                msg = f"File '{file_path}' not found"
-                raise FileNotFoundError(msg)
-
-            stat = os.stat(full_path)
-
-            return {
-                "name": os.path.basename(file_path),
-                "size": stat.st_size,
-                "modified": stat.st_mtime,
-                "is_file": os.path.isfile(full_path),
-                "extension": os.path.splitext(file_path)[1],
-            }
-
-        except FileNotFoundError:
-            raise
-        except Exception as e:
-            msg = f"Failed to get file info: {e!s}"
-            raise Exception(msg) from e
-
-    def cleanup_session(self) -> None:
-        """Clean up the entire session directory."""
-        try:
-            if os.path.exists(self.session_dir):
-                shutil.rmtree(self.session_dir)
-        except Exception as e:
-            print(f"Error cleaning up session {self.session_id}: {e}")
-
-    def get_session_size(self) -> int:
-        """Get total size of all files in session."""
-        total_size = 0
-        try:
-            for dirpath, _dirnames, filenames in os.walk(self.session_dir):
-                for filename in filenames:
-                    file_path = os.path.join(dirpath, filename)
-                    if os.path.exists(file_path):
-                        total_size += os.path.getsize(file_path)
-        except Exception:
-            pass
-
-        return total_size

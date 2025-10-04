@@ -255,10 +255,11 @@ function TerminalComponent({ sessionId }: { sessionId: string }) {
 **File:** `backend/app/websockets/handlers.py`
 
 **Key Functions:**
-- `handle_terminal_command()`: Main command handler
+- `handle_websocket_message()`: Main WebSocket message handler
+- `handle_terminal_command()`: Processes terminal commands
 - `sync_pod_changes_to_database()`: Syncs pod files to DB after commands
 - Uses `container_manager` to manage pod lifecycle
-- Uses `file_sync_service` for bidirectional sync
+- Performs bidirectional file synchronization
 
 ### Pod Management
 **File:** `backend/app/services/kubernetes_client.py`
@@ -269,11 +270,11 @@ function TerminalComponent({ sessionId }: { sessionId: string }) {
 - `exec_command()`: Executes command in pod via kubectl
 - `delete_pod()`: Cleans up pod and resources
 
-### File Sync Service
-**File:** `backend/app/services/file_sync.py`
+### File Synchronization
+**Implementation:** `backend/app/websockets/handlers.py`
 
 **Key Functions:**
-- `load_files_to_pod()`: DB → Pod (on session start)
-- `sync_pod_to_database()`: Pod → DB (after modifications)
+- `sync_pod_changes_to_database()`: Pod → DB (after modifications)
+- `sync_workspace_to_pod()`: DB → Pod (on session start)
 - Maintains directory structure
-- Handles binary and text files
+- Handles text files with proper encoding

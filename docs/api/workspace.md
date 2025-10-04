@@ -139,12 +139,12 @@ Each workspace is backed by a dedicated Kubernetes pod:
   - CPU Request: 200m, Limit: 500m
   - Memory Request: 256Mi, Limit: 512Mi
 - **Storage**: 1Gi PersistentVolumeClaim mounted at `/app/workspace/`
-- **Namespace**: `default`
+- **Namespace**: `coding-platform`
 
 ### File Synchronization
 - **Direction**: Bidirectional (DB ↔ Pod)
 - **Trigger**: Automatic after file-modifying commands (touch, echo, python, pip, etc.)
-- **Service**: `backend/app/services/file_sync.py`
+- **Implementation**: `backend/app/websockets/handlers.py` (sync_pod_changes_to_database function)
 - **Scope**: All files in `/app/workspace/` directory
 
 ### Workspace Status

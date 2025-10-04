@@ -1,5 +1,5 @@
 /**
- * API service for communicating with the backend PostgreSQL APIs
+ * API service for communicating with the backend
  */
 
 const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:8002';
@@ -31,9 +31,9 @@ interface AuthResponse {
   data: { user_id: number };
 }
 
-// Session types (PostgreSQL schema)
+// Session types
 interface CodeSession {
-  id: string;  // UUID string - changed from number to string for security
+  id: string;  // UUID string
   user_id: number;
   name?: string;
   created_at: string;
@@ -107,9 +107,9 @@ class ApiService {
     });
   }
 
-  // PostgreSQL Session Management
+  // Session Management
   async createSession(sessionData: SessionCreate): Promise<ApiResponse<CodeSession>> {
-    return await this.fetchWithErrorHandling<ApiResponse<CodeSession>>('/api/postgres_sessions/', {
+    return await this.fetchWithErrorHandling<ApiResponse<CodeSession>>('/api/sessions/', {
       method: 'POST',
       body: JSON.stringify(sessionData),
     });
@@ -121,7 +121,7 @@ class ApiService {
       params.append('user_id', userId.toString());
     }
     const queryString = params.toString() ? `?${params.toString()}` : '';
-    return await this.fetchWithErrorHandling<ApiResponse<CodeSession>>(`/api/postgres_sessions/${sessionUuid}${queryString}`);
+    return await this.fetchWithErrorHandling<ApiResponse<CodeSession>>(`/api/sessions/${sessionUuid}${queryString}`);
   }
 
   async getSessions(userId?: number, skip = 0, limit = 100): Promise<SessionListResponse> {
@@ -133,7 +133,7 @@ class ApiService {
       params.append('user_id', userId.toString());
     }
     return await this.fetchWithErrorHandling<SessionListResponse>(
-      `/api/postgres_sessions/?${params}`
+      `/api/sessions/?${params}`
     );
   }
 

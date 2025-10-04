@@ -1,7 +1,7 @@
 # Code Execution Platform Architecture
 
 ## Overview
-A full-stack web platform that provides users with an isolated Python development environment featuring a code editor, terminal interface, file management, and code review system. The platform is deployed on Kubernetes with automatic horizontal scaling to support multiple concurrent users.
+A full-stack web platform that provides users with an isolated Python development environment featuring a code editor, terminal interface, and file management. The platform is deployed on Kubernetes with automatic horizontal scaling to support multiple concurrent users.
 
 ## System Architecture
 
@@ -19,15 +19,12 @@ A full-stack web platform that provides users with an isolated Python developmen
 │  ┌──────────────────────┐  │
 │  │  File Explorer Tree   │  │ Workspace file management
 │  └──────────────────────┘  │
-│  ┌──────────────────────┐  │
-│  │  Code Review System   │  │ Review workflow + workspace review
-│  └──────────────────────┘  │
 └────────────┬───────────────┘
              │ HTTP API / WebSocket
              ▼
 ┌────────────────────────────┐
 │    Kubernetes Cluster      │
-│   (DigitalOcean DOKS)      │
+│     (kind - local dev)     │
 │                            │
 │  ┌──────────────────────┐  │
 │  │   LoadBalancer Svc    │  │ Distributes traffic to backend pods
@@ -47,13 +44,10 @@ A full-stack web platform that provides users with an isolated Python developmen
 │  │  │ K8s Pod Manager │ │  │ Creates/manages execution pods via K8s API
 │  │  └─────────────────┘ │  │
 │  │  ┌─────────────────┐ │  │
-│  │  │ File Sync Svc   │ │  │ Bidirectional DB ↔ Pod file sync
+│  │  │ File Sync Logic │ │  │ Bidirectional DB ↔ Pod file sync
 │  │  └─────────────────┘ │  │
 │  │  ┌─────────────────┐ │  │
-│  │  │ Auth Service    │ │  │ Authentication + reviewer system
-│  │  └─────────────────┘ │  │
-│  │  ┌─────────────────┐ │  │
-│  │  │ Review Service  │ │  │ Code review management
+│  │  │ Auth Service    │ │  │ Simple username/password authentication
 │  │  └─────────────────┘ │  │
 │  └──────────┬───────────┘  │
 │             │               │
@@ -70,22 +64,16 @@ A full-stack web platform that provides users with an isolated Python developmen
 │  │ Horizontal Pod        │  │
 │  │ Autoscaler (HPA)      │  │ Scales backend pods based on CPU/memory
 │  └──────────────────────┘  │
-│                            │
-│  ┌──────────────────────┐  │
-│  │ Cluster Autoscaler    │  │ Adds/removes nodes as needed
-│  └──────────────────────┘  │
 └────────────┬───────────────┘
              │ Database queries
              ▼
 ┌────────────────────────────┐
 │     PostgreSQL Database    │
-│   (Managed DigitalOcean)   │
+│      (Supabase/Local)      │
 │                            │
-│  - users (with reviewer    │
-│    level fields)           │
+│  - users                   │
 │  - sessions (UUID-based)   │
 │  - workspace_items         │
-│  - review_requests         │
 └────────────────────────────┘
 ```
 
@@ -104,23 +92,44 @@ A full-stack web platform that provides users with an isolated Python developmen
 - **Framework:** FastAPI with async/await support
 - **Language:** Python 3.9+ with type hints
 - **Database:** PostgreSQL with custom connection pooling
-- **Authentication:** Simple username/password (extensible)
+- **Authentication:** Simple username/password with bcrypt
 - **Orchestration:** Kubernetes for container management
 - **WebSocket:** Real-time terminal communication
 - **Background Tasks:** Pod lifecycle management via Kubernetes API
+- **Code Quality:** Ruff (linting + formatting) + mypy (strict type checking)
 
 ### Database (PostgreSQL)
-- **Users:** Authentication + reviewer system
+- **Users:** Authentication system
 - **Sessions:** UUID-based session management
-- **Workspace Items:** Hierarchical file storage
-- **Review Requests:** Code review workflow
-- **Managed Service:** DigitalOcean Managed PostgreSQL
+- **Workspace Items:** Hierarchical file/folder storage
+- **Managed Service:** Supabase (production) or local PostgreSQL (development)
 
-### Infrastructure (Kubernetes on DigitalOcean)
-- **Cluster:** DigitalOcean Kubernetes (DOKS)
-- **Nodes:** s-2vcpu-2gb droplets (1.9 cores, 1.96Gi each)
-- **Node Scaling:** Cluster Autoscaler (3-7 nodes)
-- **Execution Isolation:** Per-user Kubernetes pods with PVCs
+### Database Models Architecture
+Models are organized into separate logical files for better maintainability:
+
+**`backend/app/models/users.py`**
+- User model with CRUD operations
+- Password hashing with bcrypt
+- Username/email lookup methods
+
+**`backend/app/models/sessions.py`**
+- CodeSession model with UUID-based identification
+- Session lifecycle management
+- User association and workspace tracking
+
+**`backend/app/models/workspace_items.py`**
+- WorkspaceItem model for files and folders
+- Hierarchical structure with parent_id relationships
+- Content storage and path resolution
+
+**`backend/app/models/__init__.py`**
+- Centralized model exports
+- Backwards-compatible aliases
+
+### Infrastructure (Kubernetes)
+- **Development:** kind (Kubernetes in Docker) for local development
+- **Production:** DigitalOcean Kubernetes (DOKS) or similar
+- **Execution Isolation:** Per-user Kubernetes pods
 - **Backend Scaling:** Horizontal Pod Autoscaler (2-10 replicas)
 - **Load Balancing:** Kubernetes LoadBalancer Service
 - **Container Registry:** Docker Hub (rraup12/coding-platform-backend, rraup12/code-execution)
@@ -128,31 +137,49 @@ A full-stack web platform that provides users with an isolated Python developmen
 
 ## Current System Features
 
-### Code Review System
-- **Review Workflow:** Submit workspaces for review with priority levels
-- **Status Tracking:** pending → in_review → approved/rejected
-- **Reviewer Management:** Self-service reviewer promotion system
-- **Review Interface:** Dedicated review workspace with read-only code view
-
 ### Authentication & Authorization
-- **User Management:** Username/password authentication
-- **Session Management:** Server-side session tracking
-- **Reviewer System:** Multi-level reviewer permissions (Level 1-4)
-- **Access Control:** Role-based access to review functions
+- **User Management:** Username/password authentication with bcrypt
+- **Session Management:** Server-side session tracking with UUID identifiers
+- **Access Control:** User-based workspace isolation
 
 ### Workspace Management
-- **Session Isolation:** Each workspace gets unique Kubernetes pod with PVC
+- **Session Isolation:** Each workspace gets unique Kubernetes pod with dedicated PVC
 - **File Persistence:** Bidirectional sync between database and pod filesystems
 - **Real-time Collaboration:** WebSocket-based terminal sharing
 - **Pod Lifecycle:** Automatic creation, readiness checks, and cleanup
 - **File Sync:** Automatic synchronization after file-modifying commands
-- **Storage:** 1Gi PersistentVolumeClaim per execution pod
+- **Storage:** Database as single source of truth, synced to PVC-backed pod storage (1Gi per session)
 
 ### API Architecture
 - **RESTful Design:** Standard HTTP methods for resource operations
 - **WebSocket Integration:** Real-time terminal communication
 - **Error Handling:** Consistent error response format
-- **Type Safety:** Full TypeScript coverage on frontend
+- **Type Safety:** Full TypeScript coverage on frontend, strict mypy on backend
+
+### API Endpoints
+
+**Users API** (`/api/users/`)
+- `POST /register` - Create new user account
+- `POST /login` - Authenticate user
+- `GET /{user_id}` - Get user details
+
+**Sessions API** (`/api/sessions/`)
+- `GET /` - List user's sessions
+- `POST /` - Create new session
+- `GET /{session_uuid}` - Get session details
+
+**Workspace API** (`/api/workspace/{session_uuid}/`)
+- `GET /files` - List workspace files
+- `GET /file/{filename}` - Get file content
+- `POST /file/{filename}` - Save file content
+- `DELETE /file/{filename}` - Delete file
+- `GET /status` - Get workspace initialization status
+- `POST /ensure-default` - Create default main.py if workspace is empty
+
+**WebSocket** (`/ws`)
+- Real-time terminal I/O
+- Command execution in isolated pods
+- Environment readiness notifications
 
 ## Security Considerations
 
@@ -160,7 +187,7 @@ A full-stack web platform that provides users with an isolated Python developmen
 - **Process Isolation:** Each user session runs in separate Kubernetes pod
 - **Resource Limits:** Memory (512Mi limit) and CPU (500m limit) per execution pod
 - **Network Policies:** Isolated pod networking within Kubernetes
-- **File System Isolation:** Each pod has dedicated PVC, no host access
+- **File System Isolation:** Each pod has dedicated PVC storage (1Gi)
 - **Service Account:** Backend pods use RBAC-controlled service account for K8s API access
 
 ### Application Security
@@ -169,13 +196,13 @@ A full-stack web platform that provides users with an isolated Python developmen
 - **XSS Protection:** Content sanitization on frontend
 - **CORS Configuration:** Restricted to allowed origins
 - **Command Execution:** All commands executed within isolated pods
+- **Password Security:** bcrypt hashing with salt
 
 ### Data Protection
-- **Session Security:** Secure session management
-- **Code Privacy:** User code only accessible to owner and assigned reviewers
-- **Audit Logging:** Pod creation/deletion and review actions logged
-- **Data Encryption:** Sensitive data encrypted at rest
-- **Secret Management:** Database credentials stored in Kubernetes secrets
+- **Session Security:** Secure session management with UUID tokens
+- **Code Privacy:** User code only accessible to owner
+- **Audit Logging:** Pod creation/deletion logged
+- **Secret Management:** Database credentials stored in Kubernetes secrets or environment variables
 
 ## Performance Optimizations
 
@@ -184,40 +211,33 @@ A full-stack web platform that provides users with an isolated Python developmen
 - **Readiness Checks:** Backend waits for pod ready status before accepting commands
 - **Background Cleanup:** Automated pod deletion when sessions end
 - **Resource Monitoring:** Kubernetes metrics for pod CPU/memory usage
-- **PVC Persistence:** Reusable storage volumes for session continuity
 
 ### Horizontal Scaling
 - **Backend Autoscaling:** 2-10 replicas based on CPU (70%) and memory (80%) thresholds
 - **Load Balancing:** Kubernetes Service distributes traffic across backend pods
-- **Cluster Autoscaling:** 3-7 nodes added/removed based on pod scheduling needs
 - **Aggressive Scale-Up:** Doubles pods or adds 2 immediately under load
 - **Conservative Scale-Down:** 5-minute stabilization, removes 50% or 1 pod gradually
-- **Capacity Planning:** Current setup supports 10-40+ concurrent users
 
 ### Frontend Performance
 - **Code Splitting:** Route-based code splitting with Next.js
-- **Caching:** API response caching for static data
 - **Optimistic Updates:** Immediate UI feedback for user actions
 - **WebSocket Efficiency:** Minimal message overhead
+- **Turbopack:** Fast Next.js bundler for development and production
 
 ### Database Performance
 - **Connection Pooling:** Efficient database connection management
 - **Query Optimization:** Indexed queries for common operations
 - **Data Modeling:** Normalized schema with appropriate relationships
-- **Managed Service:** DigitalOcean managed PostgreSQL with automatic backups
 
 ## Kubernetes Deployment Architecture
 
 ### Cluster Configuration
-- **Provider:** DigitalOcean Kubernetes (DOKS)
-- **Region:** Configurable (currently using US regions)
-- **Node Pool:** s-2vcpu-2gb droplets
-  - CPU: 2 vCPUs (1.9 cores allocatable)
-  - Memory: 2GB RAM (1.96Gi allocatable)
-  - Nodes: 3-7 (managed by Cluster Autoscaler)
+- **Development:** kind cluster (local Kubernetes)
+- **Production:** DigitalOcean Kubernetes (DOKS) or similar
+- **Node Pool:** Configurable based on environment
 
 ### Backend Deployment
-**File:** `backend/k8s/03-backend.yaml`
+**File:** `backend/k8s/04-backend.yaml`
 
 **Deployment Spec:**
 - **Replicas:** 2 minimum (HPA managed)
@@ -236,7 +256,7 @@ A full-stack web platform that provides users with an isolated Python developmen
 - **Load Distribution:** Round-robin across backend pods
 
 ### Horizontal Pod Autoscaler (HPA)
-**File:** `backend/k8s/04-hpa.yaml`
+**File:** `backend/k8s/05-hpa.yaml`
 
 **Configuration:**
 - **Target:** backend deployment
@@ -251,25 +271,18 @@ A full-stack web platform that provides users with an isolated Python developmen
   - Policy: Min(1 pod, 50% of current)
   - Stabilization: 300 seconds (5 minutes)
 
-**How It Works:**
-1. Metrics Server collects CPU/memory data from pods
-2. HPA calculates average utilization across all backend pods
-3. If avg CPU > 70% OR avg memory > 80%: scale up immediately
-4. If utilization drops: wait 5 minutes, then scale down gradually
-5. Never goes below 2 replicas or above 10 replicas
-
 ### Execution Pod Management
-**Managed by:** `backend/app/services/kubernetes_client.py`
+**Managed by:** `backend/app/services/kubernetes_client.py` + `backend/app/services/container_manager.py`
 
 **Pod Specification:**
-- **Name:** exec-{session_id}
+- **Name:** pod-{random_hash}
 - **Image:** rraup12/code-execution:latest
   - Base: Python 3.11
   - Includes: Node.js 20, pandas, scipy, numpy
 - **Resources:**
   - CPU Request: 200m, Limit: 500m
   - Memory Request: 256Mi, Limit: 512Mi
-- **Storage:** 1Gi PersistentVolumeClaim per pod
+- **Storage:** 1Gi PersistentVolumeClaim per session (files synced to/from database)
 - **Lifecycle:**
   1. Created when user opens workspace
   2. Waits for "Running" and "Ready" status
@@ -278,55 +291,41 @@ A full-stack web platform that provides users with an isolated Python developmen
   5. Files synced back to database after modifications
   6. Deleted when session ends or user disconnects
 
-### Cluster Autoscaling
-**Managed by:** DigitalOcean Cluster Autoscaler
-
-**Behavior:**
-- Monitors unschedulable pods (insufficient node resources)
-- Adds new nodes when pods are pending due to resource constraints
-- Removes unused nodes after sustained low utilization
-- Respects min (3) and max (7) node limits
-
-**Example Scaling Scenario:**
-1. 10 users → 10 execution pods + 2 backend pods = ~2.5 CPU, 3.5Gi
-2. Fits on 3 nodes (5.7 CPU, 5.88Gi available)
-3. 30 users → 30 execution pods + 4 backend pods = ~7 CPU, 9Gi
-4. Cluster autoscaler adds nodes 4, 5, 6 (21 CPU, 17.6Gi total)
-5. All pods scheduled successfully
-
 ### File Synchronization
-**Service:** `backend/app/services/file_sync.py`
+**Service:** `backend/app/api/workspace_files.py` + `backend/app/services/workspace_loader.py`
 
 **Database → Pod (on session start):**
 1. Query workspace_items for session
-2. For each file/folder: create in pod filesystem
-3. Use kubectl exec to write file contents
+2. For each file/folder: create in pod filesystem using tar
+3. Write file contents to /app directory
 4. Maintain directory structure
 
-**Pod → Database (after commands):**
-1. Detect file-modifying commands (touch, echo, python, etc.)
-2. List all files in pod workspace using kubectl exec
-3. Read file contents from pod
-4. Update or create workspace_items in database
-5. Mark files as modified with timestamp
+**Pod → Database (on file save):**
+1. API receives file content from frontend
+2. Update workspace_items in database
+3. Sync to pod's /app directory using tar
+4. Both database and pod stay in sync
 
-**Synced Commands:**
-- touch, echo, cat, cp, mv, rm
-- python, pip, node, npm
-- git, wget, curl
-- nano, vim (if used)
-- Any command with >, >>, tee
+**Key Features:**
+- Database is single source of truth
+- Files persist across pod restarts
+- Real-time sync on file save/delete
+- Support for nested directories
 
 ### Deployment Process
+
 **Build & Push Images:**
 ```bash
-# Backend
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t rraup12/coding-platform-backend:latest --push backend/
+# Using the provided script
+cd backend
+./build-and-push.sh
 
-# Execution environment
+# Or manually
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t rraup12/code-execution:latest --push backend/execution-image/
+  -t rraup12/coding-platform-backend:latest -f Dockerfile.backend --push .
+
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t rraup12/code-execution:latest -f Dockerfile --push .
 ```
 
 **Deploy to Kubernetes:**
@@ -348,18 +347,156 @@ kubectl get hpa -n coding-platform --watch
 # Watch pod scaling
 kubectl get pods -n coding-platform -l app=backend --watch
 
-# Check node scaling
-kubectl get nodes --watch
+# Watch execution pods
+kubectl get pods -n default --watch
 ```
+
+### Development URLs
+- **Frontend:** http://localhost:3000
+- **Backend API:** http://localhost:8002/api/
+- **WebSocket:** ws://localhost:8002/ws
+- **Health Check:** http://localhost:8002/api/health/
 
 ### Production URLs
 - **Backend API:** http://<loadbalancer-ip>/api/
-- **WebSocket:** ws://<loadbalancer-ip>/api/terminal/ws/{session_id}
+- **WebSocket:** ws://<loadbalancer-ip>/ws
 - **Health Check:** http://<loadbalancer-ip>/api/health/
 
-### Capacity Planning
-See `CAPACITY-ANALYSIS.md` for detailed resource calculations:
-- **10 users:** Runs on 3 nodes comfortably (~50% utilization)
-- **50 users:** Requires 7+ nodes (hits current cluster max)
-- **Scaling limit:** ~40 users with current config (7 node max)
-- **Recommended:** Increase cluster max to 10 nodes for 50+ users
+## Code Quality & CI/CD
+
+### Linting & Formatting
+- **Backend:** Ruff for linting and formatting (configured in `backend/ruff.toml`)
+- **Frontend:** ESLint for TypeScript/React (configured in `frontend/eslint.config.js`)
+
+### Type Checking
+- **Backend:** mypy in strict mode (configured in `backend/mypy.ini`)
+- **Frontend:** TypeScript strict mode
+
+### Pre-commit Hooks
+Configured in `backend/.pre-commit-config.yaml`:
+- Trailing whitespace removal
+- YAML/TOML validation
+- Ruff linting and formatting
+- mypy type checking
+
+### GitHub Actions
+Automated code quality checks on PRs and pushes (`.github/workflows/code_checks.yaml`):
+- Backend: Ruff lint, Ruff format, mypy strict
+- Frontend: ESLint, TypeScript type check
+
+## Project Structure
+
+```
+cool-coding-platform/
+├── frontend/                    # Next.js 15 frontend
+│   ├── src/
+│   │   ├── app/                # App Router pages
+│   │   ├── components/         # React components
+│   │   ├── hooks/              # Custom React hooks
+│   │   └── services/           # API client, WebSocket
+│   ├── eslint.config.js        # ESLint configuration
+│   ├── tsconfig.json           # TypeScript config
+│   └── package.json
+│
+├── backend/                     # FastAPI backend
+│   ├── app/
+│   │   ├── api/                # API endpoints
+│   │   │   ├── health.py       # Health check endpoint
+│   │   │   ├── users.py        # User management
+│   │   │   ├── sessions.py     # Session management
+│   │   │   └── workspace_files.py  # File operations
+│   │   ├── models/             # Database models (organized)
+│   │   │   ├── users.py        # User model
+│   │   │   ├── sessions.py     # Session model
+│   │   │   ├── workspace_items.py  # File/folder model
+│   │   │   └── __init__.py     # Model exports
+│   │   ├── schemas/            # Pydantic schemas (organized)
+│   │   │   ├── base.py         # Base response schemas
+│   │   │   ├── users.py        # User schemas
+│   │   │   ├── sessions.py     # Session schemas
+│   │   │   ├── workspace.py    # Workspace schemas
+│   │   │   └── __init__.py     # Schema exports
+│   │   ├── services/           # Business logic
+│   │   │   ├── container_manager.py    # Pod lifecycle
+│   │   │   ├── kubernetes_client.py    # K8s API client
+│   │   │   ├── file_manager.py         # File operations
+│   │   │   ├── workspace_loader.py     # File sync
+│   │   │   └── background_tasks.py     # Cleanup tasks
+│   │   ├── websockets/         # WebSocket handlers
+│   │   │   ├── manager.py      # Connection management
+│   │   │   └── handlers.py     # Message handling
+│   │   ├── core/               # Core utilities
+│   │   │   └── postgres.py     # Database connection
+│   │   └── main.py             # FastAPI app + WebSocket endpoint
+│   ├── k8s/                    # Kubernetes manifests
+│   │   ├── 01-namespace.yaml
+│   │   ├── 02-rbac.yaml
+│   │   ├── 03-backend-config.yaml
+│   │   ├── 04-backend.yaml
+│   │   └── 05-hpa.yaml
+│   ├── tests/                  # Pytest tests
+│   ├── mypy.ini               # mypy strict config
+│   ├── ruff.toml              # Ruff linter/formatter config
+│   ├── requirements.txt       # Python dependencies
+│   └── Dockerfile.backend     # Backend container
+│
+├── docs/                       # Documentation
+│   ├── architecture/
+│   │   └── ARCHITECTURE.md    # This file
+│   ├── api/                   # API documentation
+│   └── database/              # Database schema docs
+│
+├── .github/
+│   └── workflows/
+│       └── code_checks.yaml   # CI/CD pipeline
+│
+└── CLAUDE.md                  # Project context for Claude Code
+```
+
+## Recent Architecture Changes
+
+### Model Reorganization (October 2024)
+- Split monolithic `postgres_models.py` into logical separate files
+- Models now organized by domain: `users.py`, `sessions.py`, `workspace_items.py`
+- Improved maintainability and code organization
+- Backwards-compatible imports via `__init__.py`
+
+### Schema Reorganization (October 2024)
+- Split schemas into domain-specific files
+- Base schemas extracted to `base.py`
+- Domain schemas: `users.py`, `sessions.py`, `workspace.py`
+- Cleaner imports and better organization
+
+### Code Cleanup (October 2024)
+- Removed review/approval system (not in current scope)
+- Removed dead code execution subprocess feature
+- Removed reviewer management system
+- Simplified authentication to basic username/password
+- Cleaned up empty exception handlers
+- Extracted helper functions to reduce duplication
+
+### CI/CD Improvements (October 2024)
+- Updated GitHub Actions to use Ruff instead of Black/Flake8
+- Added mypy strict type checking to CI pipeline
+- Added frontend ESLint and TypeScript checks
+- Separate jobs for backend and frontend validation
+
+## Future Enhancements
+
+### Potential Features
+- Multi-language support (currently Python + Node.js)
+- Collaborative editing (multiple users in same workspace)
+- Workspace templates and starter projects
+- Package management UI (pip, npm)
+- Larger storage volumes (currently 1Gi PVC per session)
+- User workspace quotas and limits
+- Admin dashboard for user/session management
+
+### Infrastructure Improvements
+- Production deployment to cloud Kubernetes (DOKS, EKS, GKE)
+- HTTPS/TLS termination with Let's Encrypt
+- Ingress controller for better routing
+- Monitoring and alerting (Prometheus + Grafana)
+- Log aggregation (ELK stack or similar)
+- Automated backups for database
+- Disaster recovery procedures

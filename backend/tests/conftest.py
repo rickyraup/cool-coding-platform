@@ -17,7 +17,6 @@ class MockPostgreSQLDatabase:
     def __init__(self):
         self.users = {}
         self.sessions = {}
-        self.reviews = {}
         self.next_id = 1
 
     def execute_insert(self, query: str, params: tuple) -> int:
@@ -116,17 +115,6 @@ def sample_session_data() -> dict:
         "name": "Test Session",
         "code": "print('Hello, World!')",
         "language": "python",
-    }
-
-
-@pytest.fixture(scope="function")
-def sample_review_data() -> dict:
-    """Sample review request data for testing."""
-    return {
-        "session_id": "test-session-uuid-123",
-        "title": "Test Review Request",
-        "description": "This is a test review request",
-        "priority": "medium",
     }
 
 

@@ -4,7 +4,8 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models.postgres_models import CodeSession, WorkspaceItem
+from app.models.sessions import CodeSession
+from app.models.workspace_items import WorkspaceItem
 
 
 @pytest.mark.api
@@ -14,7 +15,7 @@ class TestWorkspaceFilesAPI:
     def setup_method(self):
         """Set up test data before each test."""
         # Create a test user with unique username
-        from app.models.postgres_models import User
+        from app.models.users import User
         unique_id = str(uuid.uuid4())[:8]
         self.user = User.create(
             username=f"testuser_{unique_id}",

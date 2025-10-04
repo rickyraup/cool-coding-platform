@@ -5,8 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Optional
-
+from typing import Any
 
 try:
     from kubernetes import client, config
@@ -41,7 +40,7 @@ class KubernetesClientService:
     """Service for managing Kubernetes client and pod operations."""
 
     def __init__(self) -> None:
-        self._core_v1_api: Optional[client.CoreV1Api] = None
+        self._core_v1_api: client.CoreV1Api | None = None
         self._namespace = os.getenv("KUBERNETES_NAMESPACE", "default")
         self._image_name = os.getenv("EXECUTION_IMAGE", "rraup12/code-execution:latest")
         # Custom image with Python 3.11+, Node.js 20, pandas, scipy, numpy, and other required packages
@@ -50,7 +49,8 @@ class KubernetesClientService:
     def core_v1_api(self) -> client.CoreV1Api:
         """Get Kubernetes Core V1 API instance, creating if needed."""
         if not KUBERNETES_AVAILABLE or client is None or config is None:
-            raise ConnectionError("Kubernetes client library not available")
+            msg = "Kubernetes client library not available"
+            raise ConnectionError(msg)
 
         if self._core_v1_api is None:
             try:
@@ -139,13 +139,13 @@ class KubernetesClientService:
                         },
                         "securityContext": security_config,
                         "volumeMounts": [{"name": "workspace", "mountPath": "/app"}],
-                    }
+                    },
                 ],
                 "volumes": [
                     {
                         "name": "workspace",
                         "persistentVolumeClaim": {"claimName": pvc_name},
-                    }
+                    },
                 ],
                 "restartPolicy": "Never",
                 "securityContext": {
@@ -200,14 +200,16 @@ class KubernetesClientService:
 
             try:
                 self.core_v1_api.create_namespaced_persistent_volume_claim(
-                    namespace=self._namespace, body=pvc_spec
+                    namespace=self._namespace,
+                    body=pvc_spec,
                 )
                 logger.info(f"Created PVC {pvc_name} for session {session_id}")
             except ApiException as e:
                 if e.status == 409:  # Already exists
                     logger.info(f"PVC {pvc_name} already exists, reusing")
                     self.core_v1_api.read_namespaced_persistent_volume_claim(
-                        name=pvc_name, namespace=self._namespace
+                        name=pvc_name,
+                        namespace=self._namespace,
                     )
                 else:
                     raise
@@ -220,9 +222,12 @@ class KubernetesClientService:
             for attempt in range(max_retries):
                 try:
                     pod = self.core_v1_api.create_namespaced_pod(
-                        namespace=self._namespace, body=pod_spec
+                        namespace=self._namespace,
+                        body=pod_spec,
                     )
-                    logger.info(f"Created pod {pod.metadata.name} for session {session_id}")
+                    logger.info(
+                        f"Created pod {pod.metadata.name} for session {session_id}",
+                    )
 
                     return PodSession(
                         name=pod.metadata.name,
@@ -234,7 +239,9 @@ class KubernetesClientService:
                 except ApiException as e:
                     if e.status == 409 and "already exists" in str(e).lower():
                         # Pod exists but might be terminating, wait and retry
-                        logger.warning(f"Pod already exists (attempt {attempt+1}/{max_retries}), waiting for deletion...")
+                        logger.warning(
+                            f"Pod already exists (attempt {attempt+1}/{max_retries}), waiting for deletion...",
+                        )
                         await asyncio.sleep(retry_delay)
 
                         # Try to delete the existing pod if it's stuck
@@ -249,18 +256,20 @@ class KubernetesClientService:
                         raise
 
             # If we get here, all retries failed
-            raise RuntimeError(f"Failed to create pod after {max_retries} attempts")
+            msg = f"Failed to create pod after {max_retries} attempts"
+            raise RuntimeError(msg)
 
         except ApiException as e:
             logger.exception(f"Failed to create pod for session {session_id}: {e}")
             msg = f"Pod creation failed: {e}"
             raise RuntimeError(msg)
 
-    def get_pod(self, pod_name: str) -> Optional[V1Pod]:
+    def get_pod(self, pod_name: str) -> V1Pod | None:
         """Get pod by name."""
         try:
             return self.core_v1_api.read_namespaced_pod(
-                name=pod_name, namespace=self._namespace
+                name=pod_name,
+                namespace=self._namespace,
             )
         except ApiException as e:
             if e.status == 404:
@@ -272,7 +281,8 @@ class KubernetesClientService:
         """Delete a pod."""
         try:
             self.core_v1_api.delete_namespaced_pod(
-                name=pod_name, namespace=self._namespace
+                name=pod_name,
+                namespace=self._namespace,
             )
             logger.info(f"Deleted pod {pod_name}")
             return True
@@ -287,7 +297,8 @@ class KubernetesClientService:
         """Delete a PersistentVolumeClaim."""
         try:
             self.core_v1_api.delete_namespaced_persistent_volume_claim(
-                name=pvc_name, namespace=self._namespace
+                name=pvc_name,
+                namespace=self._namespace,
             )
             logger.info(f"Deleted PVC {pvc_name}")
             return True
@@ -301,9 +312,10 @@ class KubernetesClientService:
     def copy_files_to_pod(self, pod_name: str, local_dir: str) -> bool:
         """Copy files from local directory to pod's /app directory."""
         try:
+            import io
             import os
             import tarfile
-            import io
+
             from kubernetes.stream import stream
 
             if not os.path.exists(local_dir):
@@ -312,8 +324,8 @@ class KubernetesClientService:
 
             # Create a tar archive of the local directory
             tar_buffer = io.BytesIO()
-            with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
-                for root, dirs, files in os.walk(local_dir):
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+                for root, _dirs, files in os.walk(local_dir):
                     for file in files:
                         file_path = os.path.join(root, file)
                         arcname = os.path.relpath(file_path, local_dir)
@@ -323,7 +335,7 @@ class KubernetesClientService:
             tar_data = tar_buffer.read()
 
             # Copy tar archive to pod and extract
-            exec_command = ['tar', 'xf', '-', '-C', '/app']
+            exec_command = ["tar", "xf", "-", "-C", "/app"]
 
             resp = stream(
                 self.core_v1_api.connect_get_namespaced_pod_exec,
@@ -334,7 +346,7 @@ class KubernetesClientService:
                 stdin=True,
                 stdout=True,
                 tty=False,
-                _preload_content=False
+                _preload_content=False,
             )
 
             # Write tar data to stdin
@@ -391,7 +403,6 @@ class KubernetesClientService:
             # Extract resource limits from pod spec
             container = pod.spec.containers[0]
             memory_limit = container.resources.limits.get("memory", "512Mi")
-            container.resources.limits.get("cpu", "500m")
 
             # Convert memory limit to MB (simplified)
             memory_limit_mb = 512  # Default
@@ -418,13 +429,15 @@ class KubernetesClientService:
             }
 
     def cleanup_session_pods(
-        self, label_selector: str = "managed-by=cool-coding-platform"
+        self,
+        label_selector: str = "managed-by=cool-coding-platform",
     ) -> int:
         """Clean up all session pods (useful for cleanup)."""
         try:
             # Delete pods
             pods = self.core_v1_api.list_namespaced_pod(
-                namespace=self._namespace, label_selector=label_selector
+                namespace=self._namespace,
+                label_selector=label_selector,
             )
 
             pod_count = 0
@@ -437,7 +450,8 @@ class KubernetesClientService:
 
             # Delete PVCs
             pvcs = self.core_v1_api.list_namespaced_persistent_volume_claim(
-                namespace=self._namespace, label_selector=label_selector
+                namespace=self._namespace,
+                label_selector=label_selector,
             )
 
             pvc_count = 0

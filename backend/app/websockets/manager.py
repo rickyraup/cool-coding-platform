@@ -5,11 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
-from fastapi import WebSocket
-
-
 if TYPE_CHECKING:
-    pass
+    from fastapi import WebSocket
 
 
 logger = logging.getLogger(__name__)
@@ -52,7 +49,7 @@ class WebSocketManager:
         try:
             await websocket.send_json(message)
         except Exception as e:
-            print(f"Error sending message to WebSocket: {e}")
+            logger.exception("Failed to send message to websocket: %s", e)
             self.disconnect(websocket)
 
     def set_session(self, websocket: WebSocket, session_id: str) -> None:
@@ -64,7 +61,9 @@ class WebSocketManager:
         return self.connection_sessions.get(websocket, "default")
 
     def has_other_connections_to_session(
-        self, session_id: str, exclude_websocket: Optional[WebSocket] = None
+        self,
+        session_id: str,
+        exclude_websocket: Optional[WebSocket] = None,
     ) -> bool:
         """Check if there are other WebSocket connections to the same session."""
         for websocket, ws_session_id in self.connection_sessions.items():
@@ -74,8 +73,4 @@ class WebSocketManager:
 
     def get_session_connection_count(self, session_id: str) -> int:
         """Get the number of active connections for a specific session."""
-        count = 0
-        for ws_session_id in self.connection_sessions.values():
-            if ws_session_id == session_id:
-                count += 1
-        return count
+        return sum(1 for ws_session_id in self.connection_sessions.values() if ws_session_id == session_id)

@@ -35,7 +35,7 @@ docker build -f Dockerfile.backend -t $DOCKER_USERNAME/coding-platform-backend:l
 
 # Build executor image
 echo -e "\n${GREEN}Building executor image...${NC}"
-docker build -f Dockerfile -t $DOCKER_USERNAME/coding-platform-executor:latest .
+docker build -f Dockerfile -t $DOCKER_USERNAME/code-execution:latest .
 
 # Push backend image
 echo -e "\n${GREEN}Pushing backend image...${NC}"
@@ -43,7 +43,7 @@ docker push $DOCKER_USERNAME/coding-platform-backend:latest
 
 # Push executor image
 echo -e "\n${GREEN}Pushing executor image...${NC}"
-docker push $DOCKER_USERNAME/coding-platform-executor:latest
+docker push $DOCKER_USERNAME/code-execution:latest
 
 echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}Images built and pushed successfully!${NC}"
@@ -51,9 +51,9 @@ echo -e "${GREEN}========================================${NC}\n"
 
 echo -e "${YELLOW}Next steps:${NC}"
 echo "1. Update k8s/04-backend.yaml with image: $DOCKER_USERNAME/coding-platform-backend:latest"
-echo "2. Update k8s/03-backend-config.yaml with EXECUTION_IMAGE: $DOCKER_USERNAME/coding-platform-executor:latest"
-echo "3. Run: ./k8s/deploy.sh"
+echo "2. Update k8s/03-backend-config.yaml with EXECUTION_IMAGE: $DOCKER_USERNAME/code-execution:latest"
+echo "3. Apply changes: kubectl apply -f k8s/"
 
 echo -e "\n${YELLOW}Or update automatically:${NC}"
-echo "sed -i '' 's|your-dockerhub-username|$DOCKER_USERNAME|g' k8s/04-backend.yaml"
-echo "sed -i '' 's|your-dockerhub-username|$DOCKER_USERNAME|g' k8s/03-backend-config.yaml"
+echo "sed -i '' 's|rraup12/coding-platform-backend|$DOCKER_USERNAME/coding-platform-backend|g' k8s/04-backend.yaml"
+echo "sed -i '' 's|rraup12/code-execution|$DOCKER_USERNAME/code-execution|g' k8s/03-backend-config.yaml"

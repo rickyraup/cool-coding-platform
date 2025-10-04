@@ -160,13 +160,11 @@ function getWebSocketManager(): WebSocketManager {
 }
 
 interface WebSocketMessage {
-  type: 'terminal_input' | 'terminal_output' | 'terminal_clear' | 'terminal_clear_progress' | 'pod_ready' | 'code_execution' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'file_deleted' | 'file_sync' | 'ping' | 'pong';
+  type: 'terminal_input' | 'terminal_output' | 'terminal_clear' | 'terminal_clear_progress' | 'pod_ready' | 'file_system' | 'error' | 'connection_established' | 'file_list' | 'file_input_prompt' | 'file_input_response' | 'file_created' | 'file_deleted' | 'file_sync' | 'ping' | 'pong';
   sessionId?: string | undefined;
   command?: string | undefined;
   output?: string | undefined;
   timestamp?: string | undefined;
-  code?: string | undefined;
-  filename?: string | undefined;
   action?: string | undefined;
   path?: string | undefined;
   content?: string | undefined;
@@ -351,7 +349,6 @@ export function useWebSocket() {
           break;
 
         case 'terminal_input':
-        case 'code_execution':
         case 'file_input_response':
         case 'pong':
           // These message types are client-to-server only, ignore if received from server
@@ -390,15 +387,6 @@ export function useWebSocket() {
       type: 'terminal_input',
       sessionId: state.currentSession?.id ?? 'default',
       command
-    });
-  }, [state.currentSession?.id]);
-
-  const executeCode = useCallback((code: string, filename?: string) => {
-    return getWebSocketManager().sendMessage({
-      type: 'code_execution',
-      sessionId: state.currentSession?.id ?? 'default',
-      code,
-      ...(filename !== undefined && { filename })
     });
   }, [state.currentSession?.id]);
 
@@ -507,7 +495,6 @@ export function useWebSocket() {
     connect: () => manager.connect(),
     disconnect: () => manager.disconnect(),
     sendTerminalCommand,
-    executeCode,
     performFileOperation,
     saveCurrentFile,
     manualSave,

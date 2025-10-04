@@ -22,12 +22,14 @@ The Code Execution Platform provides a RESTful API built with FastAPI, offering 
 ## API Structure
 
 ### Core Services
-- **[Health](./health.md)** - Health check endpoints
 - **[Users](./users.md)** - User authentication and management
-- **[Sessions](./sessions.md)** - Session management (legacy and PostgreSQL)
-- **[Workspace](./workspace.md)** - Workspace operations and file management
-- **[Reviews](./reviews.md)** - Code review system
+- **[Workspace](./workspace.md)** - Workspace operations, sessions, and file management
 - **[WebSocket](./websocket.md)** - Real-time terminal communication
+
+### System
+- **Health** (`/api/health/`) - Health check and system status endpoints
+- **API Docs** (`/docs`) - Interactive Swagger documentation
+- **ReDoc** (`/redoc`) - Alternative API documentation format
 
 ### Authentication
 

@@ -4,9 +4,9 @@ import logging
 import os
 from typing import Optional
 
-from app.models.postgres_models import CodeSession, WorkspaceItem
+from app.models.sessions import CodeSession
+from app.models.workspace_items import WorkspaceItem
 from app.services.container_manager import container_manager
-
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class WorkspaceLoaderService:
 
             # Find container session by workspace ID (new user-aware session system)
             active_session_id = container_manager.find_session_by_workspace_id(
-                str(session_id)
+                str(session_id),
             )
             if not active_session_id:
                 # Fallback: create new session (should not normally happen)
@@ -84,7 +84,6 @@ class WorkspaceLoaderService:
         """Create a folder in the filesystem."""
         try:
             os.makedirs(folder_path, exist_ok=True)
-            logger.debug(f"Created folder: {folder_path}")
         except Exception as e:
             logger.exception(f"Failed to create folder {folder_path}: {e}")
             raise
@@ -101,7 +100,6 @@ class WorkspaceLoaderService:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            logger.debug(f"Created file: {file_path}")
         except Exception as e:
             logger.exception(f"Failed to create file {file_path}: {e}")
             raise
@@ -117,7 +115,7 @@ class WorkspaceLoaderService:
 
             # Find container session by workspace ID (new user-aware session system)
             active_session_id = container_manager.find_session_by_workspace_id(
-                str(session_id)
+                str(session_id),
             )
             if not active_session_id:
                 logger.error(f"No active container session for workspace {session_id}")
@@ -147,7 +145,7 @@ class WorkspaceLoaderService:
         base_dir: str,
         parent_id: Optional[int] = None,
         current_path: str = "",
-    ):
+    ) -> Optional[list[WorkspaceItem]]:
         """Recursively scan directory and save items to database."""
         try:
             if not os.path.exists(base_dir):
@@ -211,236 +209,6 @@ class WorkspaceLoaderService:
         except Exception as e:
             logger.exception(f"Failed to scan directory {base_dir}: {e}")
             raise
-
-    async def get_workspace_file_content(
-        self,
-        session_id: int,
-        file_path: str,
-    ) -> Optional[str]:
-        """Get content of a specific file from the container workspace."""
-        try:
-            # Find container session by workspace ID (new user-aware session system)
-            active_session_id = container_manager.find_session_by_workspace_id(
-                str(session_id)
-            )
-            if not active_session_id:
-                logger.error(f"No active container session for workspace {session_id}")
-                return None
-
-            container_session = container_manager.active_sessions[active_session_id]
-            working_dir = container_session.working_dir
-            full_path = os.path.join(working_dir, file_path.lstrip("/"))
-
-            if not os.path.exists(full_path) or not os.path.isfile(full_path):
-                logger.error(f"File not found: {full_path}")
-                return None
-
-            with open(full_path, encoding="utf-8") as f:
-                return f.read()
-
-        except Exception as e:
-            logger.exception(
-                f"Failed to read file {file_path} from session {session_id}: {e}",
-            )
-            return None
-
-    async def update_workspace_file_content(
-        self,
-        session_id: int,
-        file_path: str,
-        content: str,
-    ) -> bool:
-        """Update content of a specific file in the container workspace."""
-        try:
-            # Find container session by workspace ID (new user-aware session system)
-            active_session_id = container_manager.find_session_by_workspace_id(
-                str(session_id)
-            )
-            if not active_session_id:
-                logger.error(f"No active container session for workspace {session_id}")
-                return False
-
-            container_session = container_manager.active_sessions[active_session_id]
-            working_dir = container_session.working_dir
-            full_path = os.path.join(working_dir, file_path.lstrip("/"))
-
-            # Ensure parent directory exists
-            parent_dir = os.path.dirname(full_path)
-            if parent_dir and parent_dir != working_dir:
-                os.makedirs(parent_dir, exist_ok=True)
-
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-            logger.debug(f"Updated file content: {full_path}")
-            return True
-
-        except Exception as e:
-            logger.exception(
-                f"Failed to update file {file_path} in session {session_id}: {e}",
-            )
-            return False
-
-    async def create_workspace_file(
-        self, session_id: int, file_path: str, content: str = ""
-    ) -> bool:
-        """Create a new file in the container workspace."""
-        try:
-            # Get session from database
-            session = CodeSession.get_by_id(session_id)
-            if not session:
-                logger.error(f"Session {session_id} not found")
-                return False
-
-            # Get container session
-            session_str = str(session_id)
-            if session_str not in container_manager.active_sessions:
-                logger.error(f"No active container session for workspace {session_id}")
-                return False
-
-            container_session = container_manager.active_sessions[session_str]
-            working_dir = container_session.working_dir
-
-            # Create the file in container filesystem
-            full_path = os.path.join(working_dir, file_path)
-            await self._create_file(full_path, content)
-
-            logger.info(f"Created file {file_path} in session {session_id}")
-            return True
-
-        except Exception as e:
-            logger.exception(
-                f"Failed to create file {file_path} in session {session_id}: {e}"
-            )
-            return False
-
-    async def delete_workspace_file(self, session_id: int, file_path: str) -> bool:
-        """Delete a file from the container workspace."""
-        try:
-            # Get session from database
-            session = CodeSession.get_by_id(session_id)
-            if not session:
-                logger.error(f"Session {session_id} not found")
-                return False
-
-            # Get container session using UUID (sessions are stored by UUID string, not integer ID)
-            session_uuid = session.uuid
-            if session_uuid not in container_manager.active_sessions:
-                logger.error(
-                    f"No active container session for workspace {session_id} (UUID: {session_uuid})"
-                )
-                return False
-
-            container_session = container_manager.active_sessions[session_uuid]
-            working_dir = container_session.working_dir
-
-            # Delete the file from container filesystem
-            full_path = os.path.join(working_dir, file_path)
-            container_deleted = False
-            if os.path.exists(full_path):
-                if os.path.isfile(full_path):
-                    os.remove(full_path)
-                    container_deleted = True
-                    logger.info(
-                        f"Deleted file {file_path} from container session {session_id}"
-                    )
-                else:
-                    logger.error(f"Path {file_path} is not a file in container")
-                    return False
-            else:
-                logger.warning(
-                    f"File {file_path} not found in container session {session_id}"
-                )
-
-            # Also delete from the Docker mounted volume (filesystem sync location)
-            sessions_dir = "/tmp/coding_platform_sessions"
-            workspace_dir = os.path.join(sessions_dir, f"workspace_{session.uuid}")
-            sync_file_path = os.path.join(workspace_dir, file_path)
-
-            docker_deleted = False
-            if os.path.exists(sync_file_path):
-                if os.path.isfile(sync_file_path):
-                    os.remove(sync_file_path)
-                    docker_deleted = True
-                    logger.info(
-                        f"Deleted file {file_path} from Docker mounted volume for session {session.uuid}"
-                    )
-                else:
-                    logger.error(
-                        f"Path {file_path} is not a file in Docker mounted volume"
-                    )
-            else:
-                logger.warning(
-                    f"File {file_path} not found in Docker mounted volume for session {session.uuid}"
-                )
-
-            # CRUCIAL: Also delete from inside the Docker container filesystem
-            container_exec_deleted = False
-            try:
-                # Execute rm command inside the Docker container to remove the file
-                rm_command = f"rm /app/{file_path}"
-                output, exit_code = await container_manager.execute_command(
-                    session_uuid, rm_command
-                )
-                if exit_code == 0:
-                    container_exec_deleted = True
-                    logger.info(
-                        f"Successfully deleted file {file_path} from Docker container for session {session_uuid}"
-                    )
-                else:
-                    logger.warning(
-                        f"Failed to delete file {file_path} from Docker container: {output}"
-                    )
-            except Exception as e:
-                logger.error(
-                    f"Exception while deleting file {file_path} from Docker container: {e}"
-                )
-
-            # Also delete from the database (WorkspaceItem)
-            database_deleted = False
-            try:
-                # Find the WorkspaceItem by session_id and full_path
-                from app.models.postgres_models import WorkspaceItem
-
-                workspace_items = WorkspaceItem.get_all_by_session(session_id)
-                for item in workspace_items:
-                    if item.full_path == file_path and item.type == "file":
-                        if item.delete():
-                            database_deleted = True
-                            logger.info(
-                                f"Deleted WorkspaceItem from database for file {file_path} in session {session_id}"
-                            )
-                        break
-                if not database_deleted:
-                    logger.warning(
-                        f"WorkspaceItem not found in database for file {file_path} in session {session_id}"
-                    )
-            except Exception as e:
-                logger.error(
-                    f"Failed to delete WorkspaceItem from database for file {file_path} in session {session_id}: {e}"
-                )
-
-            # Return success if we deleted from at least one location
-            if (
-                container_deleted
-                or docker_deleted
-                or container_exec_deleted
-                or database_deleted
-            ):
-                logger.info(
-                    f"Successfully deleted file {file_path} from session {session_id} (container: {container_deleted}, docker: {docker_deleted}, container_exec: {container_exec_deleted}, database: {database_deleted})"
-                )
-                return True
-            logger.error(
-                f"File {file_path} not found in container, Docker mounted volume, Docker container exec, or database for session {session_id}"
-            )
-            return False
-
-        except Exception as e:
-            logger.exception(
-                f"Failed to delete file {file_path} from session {session_id}: {e}"
-            )
-            return False
 
 
 # Global instance

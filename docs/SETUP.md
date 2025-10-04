@@ -238,23 +238,28 @@ doctl kubernetes cluster kubeconfig save coolcoding-cluster
 ### 5. Configure Kubernetes Resources
 Update `backend/k8s/` files with your values:
 
-**00-namespace.yaml** - Already configured
+**01-namespace.yaml** - Already configured
 
-**01-secrets.yaml**
-```yaml
-stringData:
-  DATABASE_URL: "postgresql://user:pass@host:port/db"
+**03-backend-secrets.yaml** (create from example)
+```bash
+# Copy example and edit with actual values
+cp backend/k8s/03-backend-secrets.yaml.example backend/k8s/03-backend-secrets.yaml
+
+# Or create secret directly (recommended)
+kubectl create secret generic backend-secret \
+  --from-literal=DATABASE_URL='postgresql://user:pass@host:port/db' \
+  --namespace=coding-platform
 ```
 
-**02-configmap.yaml**
+**03-backend-config.yaml**
 ```yaml
 data:
-  KUBERNETES_NAMESPACE: "default"
+  KUBERNETES_NAMESPACE: "coding-platform"
   EXECUTION_IMAGE: "<your-dockerhub-username>/code-execution:latest"
   CORS_ORIGINS: "https://your-frontend-domain.com"
 ```
 
-**03-backend.yaml**
+**04-backend.yaml**
 ```yaml
 image: <your-dockerhub-username>/coding-platform-backend:latest
 ```
@@ -367,7 +372,9 @@ kubectl edit hpa backend-hpa -n coding-platform
 - **[Deployment Guide](./deployment/README.md)** - Production deployment strategies
 
 ### 🔌 API References
-- **[Reviews API](./api/reviews.md)** - Code review system endpoints
 - **[Users API](./api/users.md)** - User management and authentication
 - **[Workspace API](./api/workspace.md)** - File and session operations
 - **[WebSocket API](./api/websocket.md)** - Real-time terminal communication
+
+### ☸️ Kubernetes Deployment
+- **[Kubernetes Setup Guide](../backend/k8s/README.md)** - Complete K8s deployment guide
